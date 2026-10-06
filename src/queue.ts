@@ -59,7 +59,11 @@ export interface QueueRow {
   position: number;
   /** ms since epoch; an estimate until `fixed` is true. */
   scheduledStartMs: number;
+  /** scheduledStartMs + duration — when this reservation frees the machine. */
+  endMs: number;
   fixed: boolean;
+  /** Only set for the front, waiting reservation: when its 3-minute claim window runs out. */
+  claimDeadlineMs?: number;
 }
 
 // Position and estimated/fixed time, computed from the chain of
@@ -85,7 +89,8 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
       fixed = previousFixed;
     }
 
-    previousEnd = scheduledStartMs + r.durationMinutes * 60_000;
+    const endMs = scheduledStartMs + r.durationMinutes * 60_000;
+    previousEnd = endMs;
     previousFixed = fixed;
 
     return {
@@ -94,7 +99,9 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
       status: r.status,
       position: i + 1,
       scheduledStartMs,
+      endMs,
       fixed,
+      claimDeadlineMs: i === 0 && r.status === "waiting" && r.turnStartedAt != null ? r.turnStartedAt + CLAIM_WINDOW_MS : undefined,
     };
   });
 }
