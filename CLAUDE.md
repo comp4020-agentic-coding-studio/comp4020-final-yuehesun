@@ -20,12 +20,15 @@ what the agent needs to carry from any of it is your call.
   rough idea first, then the agent generates `plan.md`: a full outline plus
   a first-draft plan for every stage. Stage boundaries are the agent's own
   call — split where the work naturally breaks and the size feels right —
-  and can be adjusted later. There is one `plan.md` file for the whole
-  project, continuously iterated from there — never rewritten from scratch.
+  and can be adjusted later.
 - The top of `plan.md` must always have: instructions to read the relevant
   brief and spec, the project background (what we're building and the
   user's vision), and the current state — so `@plan` alone lets a new
-  conversation quickly understand the situation.
+  conversation quickly understand the situation. `plan.md` holds the
+  whole-project vision and is never rewritten, only grown; each crit also
+  gets its own plan file under `plans/` (e.g. `plans/crit-8.md`) with that
+  crit's stage-by-stage detail, linking back to `plan.md` for background
+  instead of repeating it.
 - Before starting a stage, refine that stage's own plan section against the
   real situation (not the whole outline).
 - Verify each stage by hand: write the code, stop, show the user something
@@ -78,3 +81,21 @@ what the agent needs to carry from any of it is your call.
   needs 400–600.
 - Also remind me to write `reflections/` from the whole `process-notes.md`,
   kept moments or not.
+
+## App rules (Laundry Queue)
+
+The enforceable rules behind `README.md`'s "good" argument. `spec/` checks
+whatever here is checkable; `PROCESS.md` says when something's judged
+instead.
+
+- No chat, direct message, comment, or friend/follow feature anywhere in
+  the app. The queue is the only channel between people.
+- No accounts or login. Identity is a self-declared name or room number,
+  typed once and remembered per browser — nothing verifies it's true, and
+  nothing more is stored about a person (see `docs/adr/0002-identity.md`).
+- The documented fairness rule is the only thing that decides turn order.
+  No feature may change someone's position except through it.
+- No feature exists purely to grow usage (invites, sharing prompts,
+  re-engagement notifications).
+- Every "enforced" line in `README.md` needs a matching `spec/` check
+  before it counts as shipped.
