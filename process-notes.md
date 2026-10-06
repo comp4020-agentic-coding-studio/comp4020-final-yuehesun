@@ -36,3 +36,30 @@ is built on. A room number is unique per resident where a name isn't.
   [`948cc4a`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/948cc4a) (README),
   [`4456a3a`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/4456a3a) (app code),
   [`849202c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/849202c) (spec)
+
+## Messaging: optional, not banned
+
+**What happened:** I'd written README's "what we chose not to build" as
+"No chat, messages... This isn't 'not yet' — it's the point," and
+CLAUDE.md's rule as an outright ban. After the site was live, I was told
+that overstated the actual position: the goal was always that talking is
+*optional* — the queue should be enough on its own — not that messaging is
+forbidden from ever existing.
+
+**The obvious alternative:** leave it, since nothing about the app's
+current behaviour was technically wrong — no messaging is built either
+way.
+
+**What we did instead:** reworded README (moved it into the roadmap
+bullet, not the exclusions list; fixed the matching judged claim) and
+CLAUDE.md's rule (no feature may *require* a person-to-person channel,
+rather than no such feature may exist) to say what was actually meant.
+
+**Why it helped:** the three-part harness is supposed to agree with the
+author's real argument, not just with itself — a rule the agent invented
+and then enforced against its own invention isn't the same as the
+student's own position being enforced.
+
+**Backed by:**
+- [`21b90b3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/21b90b3) (README)
+- [`b81fa8b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b81fa8b) (CLAUDE.md)
