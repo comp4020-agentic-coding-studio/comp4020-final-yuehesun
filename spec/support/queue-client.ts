@@ -10,12 +10,16 @@ export interface ReservationState {
   position: number;
 }
 
-// ADR 0004: identity is a room number only, as roomXXX.
+// ADR 0004: identity is a room number only, as roomXXX, 1-4 digits — tight
+// enough to reject a 14-digit timestamp, so this can't just be Date.now()
+// anymore. Derived from the clock + a counter, four digits, good enough to
+// avoid colliding with another identity in the same test run.
 let roomCounter = 0;
 
 export function uniqueRoom(): string {
   roomCounter += 1;
-  return `room${Date.now()}${roomCounter}`;
+  const n = (Date.now() + roomCounter * 97) % 9000;
+  return `room${1000 + n}`;
 }
 
 export async function identityCookie(baseUrl: string, room: string): Promise<string> {
@@ -62,6 +66,18 @@ export async function cancel(baseUrl: string, cookie: string, reservationId: num
     redirect: "manual",
   });
   expect(res.status, "cancelling a reservation should succeed").toBeLessThan(400);
+}
+
+// Best-effort teardown — a test's own reservations might already be past
+// cancelling (claimed/running/missed) by the time cleanup runs, and that's
+// fine; the point is never leaving a trace on whatever app this ran
+// against, including if someone points it at a live deployment.
+export async function cleanupReservation(baseUrl: string, cookie: string, reservationId: number): Promise<void> {
+  await fetch(new URL(`/reservations/${reservationId}/cancel`, baseUrl), {
+    method: "POST",
+    headers: { cookie },
+    redirect: "manual",
+  }).catch(() => undefined);
 }
 
 export async function state(baseUrl: string, machineId: number): Promise<ReservationState[]> {
