@@ -8,11 +8,29 @@
   https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/08-its-alive/
 - `spec/README.md` in this repo.
 
-## Background (short)
+## Background 
 
-Laundry Queue: a shared queue for a laundry room's machines, so strangers
-can coordinate over a scarce resource without chatting, friending, or
-accounts. Full mechanism and reasoning in `plan.md`.
+**What we're building:** a shared queue for a laundry room's machines. A
+student residence has ~10 machines for 100+ people; on weekends there's
+always a wait, and leaving the room risks losing your turn. The app lets
+people join a queue for a specific machine, see where they stand, and know
+when it's their turn — without chatting, friending, or creating an account.
+Shared state does the coordinating; talking stays optional.
+
+This satisfies the final project's three fixed requirements: **multi-user**
+(anyone looking at a machine's line is a different, queue-tracked person),
+**real-time** (queue position and machine status update live), and
+**persists** (your place in line, and every machine's state, survives
+reloads, restarts and redeploys).
+
+**Our definition of "good"** (see `README.md`): fair and seen to be fair;
+the queue decides, not the people in it; talking is optional; honest about
+real-time limits; keeps only what the queue needs (no profile, no history);
+and stays scoped to one laundry room rather than becoming a generic
+booking product.
+
+See [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md) for why
+this app over the alternatives considered.
 
 ## What this crit requires (from the spec)
 
