@@ -20,6 +20,7 @@ other share a scarce resource fairly, without needing to talk.
 - **Fair, and seen to be fair.** Everyone looking at the queue sees the same
   line, in the same order. No one's turn depends on who they know or who
   shouts loudest — the queue decides, not the people in it.
+- 人性化：以保证用户方柏霓
 - **Advancing early is offered, never forced.** If an earlier machine opens
   up, you're asked — declining costs you nothing, and you keep your place.
 - **Talking is optional, not required.** You shouldn't need to message
@@ -66,7 +67,9 @@ above comes from the laundry room itself, not from the reading.
 - **Enforced** (see `spec/`): a machine never has two active claims at
   once; a queue position only moves forward, except through the documented
   miss-your-window rule; identity must be a room number in `roomXXX` format
-  — anything else is rejected.
+  — anything else is rejected; a room holds at most 2 active reservations
+  per machine type at a time — enough to wash darks and lights separately,
+  not enough to tie up every washer.
 - **Judged**: whether the queue alone is actually enough to coordinate
   without anyone needing to talk — talking is optional by design, not
   banned, so this is read by using the app, not an automated test; whether
