@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { claim, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
+import { claim, cleanupReservation, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
 
 // Crit 8 Stage 1 contract: plans/crit-8.md. Uses machine 1 — kept separate
 // from queue-order.test.ts's machine so the two files can't interfere with
@@ -24,4 +24,7 @@ it("never lets a machine have two active (claimed/running) reservations at once"
   const ours = new Set([aliceReservation, bobReservation]);
   const activeOfOurs = rows.filter((r) => ours.has(r.reservationId) && (r.status === "claimed" || r.status === "running"));
   expect(activeOfOurs.length, "two reservations we just created both ended up active").toBeLessThanOrEqual(1);
+
+  await cleanupReservation(baseUrl, alice, aliceReservation);
+  await cleanupReservation(baseUrl, bob, bobReservation);
 });

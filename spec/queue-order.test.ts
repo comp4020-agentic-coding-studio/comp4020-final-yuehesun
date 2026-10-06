@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { cancel, identityCookie, join, state, uniqueRoom, type ReservationState } from "./support/queue-client.ts";
+import { cancel, cleanupReservation, identityCookie, join, state, uniqueRoom, type ReservationState } from "./support/queue-client.ts";
 
 // Crit 8 Stage 1 contract: plans/crit-8.md. Uses machine 2 — kept separate
 // from queue-fairness.test.ts's machine. Compares positions before/after
@@ -32,4 +32,7 @@ it("keeps queue position in join order, and bumps everyone up one when the front
   const after = await state(baseUrl, MACHINE_ID);
   expect(positionOf(after, bobReservation)).toBe(positionOf(before, bobReservation) - 1);
   expect(positionOf(after, carolReservation)).toBe(positionOf(before, carolReservation) - 1);
+
+  await cleanupReservation(baseUrl, bob, bobReservation);
+  await cleanupReservation(baseUrl, carol, carolReservation);
 });
