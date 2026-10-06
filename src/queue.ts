@@ -3,6 +3,9 @@ import { db } from "./db.ts";
 import { type Reservation, reservations } from "./schema.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
+// A claimed-but-never-started machine would otherwise sit blocked forever —
+// the same forfeit the fairness rule already applies to an unclaimed turn.
+export const START_WINDOW_MS = 5 * 60 * 1000;
 
 const ACTIVE_STATUSES = ["waiting", "claimed", "running"] as const;
 
@@ -34,7 +37,13 @@ export function settleMachine(machineId: number, now: number = Date.now()): void
       return;
     }
 
-    if (front.status === "claimed") return; // waiting on their separate "start" tap; no timeout in crit 8's scope
+    if (front.status === "claimed") {
+      if (now - front.claimedAt! >= START_WINDOW_MS) {
+        db.update(reservations).set({ status: "missed" }).where(eq(reservations.id, front.id)).run();
+        continue; // next person in line becomes the new front
+      }
+      return;
+    }
 
     // front.status === "waiting": the machine is free for them. Mark when
     // their claim window started, the first time we notice this.
