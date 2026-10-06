@@ -98,7 +98,11 @@ JSON purely for `spec/` and debugging):**
 **Logic:** position and estimated/fixed time are computed from the chain
 of reservations ahead (per `plan.md`'s rule — no extra stored field for the
 estimate). At the front of the queue with the machine free: 3-minute claim
-window; miss it, status becomes `missed`, next person's up.
+window; miss it, status becomes `missed`, next person's up. Same idea once
+claimed: claiming without ever starting would otherwise block the machine
+forever, so a claimed-but-not-started reservation also forfeits after 5
+minutes — found after live testing showed a stuck machine and a stale
+schedule chain producing a nonsense "now" for an overdue time.
 
 **Wire contract spec/ relies on** (so Stage 1 and the tests agree):
 - `POST /machines/:id/reservations` on success: redirects (3xx) with a
