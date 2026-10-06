@@ -36,13 +36,26 @@ to [small, single-tenant software](https://benhoyt.com/writings/the-small-web-is
 being easier to get right than something built to grow. But the standard
 above comes from the laundry room itself, not from the reading.
 
+## What we chose not to build
+
+- **No chat, messages, friending, or comments, anywhere.** The queue is the
+  only channel between people. This isn't "not yet" — it's the point.
+- **No accounts or login.** Just enough identity to tell people apart in a
+  queue, nothing more (how exactly is still being decided — see `plan.md`).
+- **No generalizing into a booking product for any shared resource.** This
+  is one laundry room's app, on purpose.
+- Plenty of real features from the fuller design (a second machine type,
+  the app picking your machine for you, offers when an earlier machine
+  frees up, handling clothes left behind) aren't built yet — those are
+  roadmap, not exclusions. The full list is in `plan.md`.
+
 ## What's enforced vs. judged
 
-- **Enforced** (see `spec/`): one person holds a machine at a time; the queue
-  only moves forward; no accounts, profiles, or messages exist anywhere in
-  the app.
-- **Judged**: whether the fairness rule actually feels fair to residents, and
-  whether the "your turn" notification arrives soon enough to be useful.
+- **Enforced** (see `spec/`): a machine never has two active claims at
+  once; a queue position only moves forward, except through the documented
+  miss-your-window rule; no messaging/chat exists anywhere in the app.
+- **Judged**: whether the fairness rule actually feels fair to residents,
+  and whether the "it's your turn" moment arrives soon enough to be useful.
 
 ## Sources consulted
 
