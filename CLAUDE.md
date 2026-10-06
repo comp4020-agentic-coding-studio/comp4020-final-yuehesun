@@ -90,9 +90,11 @@ instead.
 
 - No chat, direct message, comment, or friend/follow feature anywhere in
   the app. The queue is the only channel between people.
-- No accounts or login. Identity is a self-declared name or room number,
-  typed once and remembered per browser — nothing verifies it's true, and
-  nothing more is stored about a person (see `docs/adr/0002-identity.md`).
+- No accounts or login, and no names. Identity is a room number only, as
+  `roomXXX` (e.g. `room304`), remembered per browser — nothing verifies
+  it's true, and nothing more is stored about a person. Anything that
+  doesn't match the format is rejected (see
+  `docs/adr/0004-identity-format.md`).
 - The documented fairness rule is the only thing that decides turn order.
   No feature may change someone's position except through it.
 - No feature exists purely to grow usage (invites, sharing prompts,
