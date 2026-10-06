@@ -1,4 +1,4 @@
-# Plan — Laundry Queue
+# Plan — Laundry Queue (overall vision)
 
 ## Read first
 
@@ -7,12 +7,16 @@
 - Crit 8 "It's alive!" (week 9):
   https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/08-its-alive/
 - Crit 9 "All at once" (week 10) and crit 10 "Fly by instruments" (week 11)
-  specs on the course site describe what later stages need to satisfy.
+  specs on the course site describe what later crits need to satisfy.
 - `spec/README.md` in this repo (the two fixed invariants, and that
   `spec/*.test.ts` is ours to extend).
-- `CLAUDE.md` in this repo for the working rules (plan/verify/commit/process
-  discipline).
+- `CLAUDE.md` in this repo for the working rules.
 - `docs/adr/` for decisions already locked in.
+
+This file is the **whole-project vision** — it doesn't get rewritten, only
+grown. Each crit has its own plan file under `plans/` (e.g.
+`plans/crit-8.md`) with that crit's stage-by-stage detail; those files link
+back here for background instead of repeating it.
 
 ## Background
 
@@ -29,159 +33,123 @@ This satisfies the final project's three fixed requirements: **multi-user**
 **persists** (your place in line, and every machine's state, survives
 reloads, restarts and redeploys).
 
-**Our definition of "good"** (see `README.md`): fair and seen to be fair; the
-queue decides, not the people in it; talking is optional; honest about
+**Our definition of "good"** (see `README.md`): fair and seen to be fair;
+the queue decides, not the people in it; talking is optional; honest about
 real-time limits; keeps only what the queue needs (no profile, no history);
 and stays scoped to one laundry room rather than becoming a generic
 booking product.
 
-**Key decisions so far:**
-- [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md) — why the
-  laundry queue over the alternatives considered.
-- Fairness rule, crit 8 version: plain first-come-first-served; miss your
-  claim window and you lose your spot (full rule below).
+See [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md) for why
+this app over the alternatives considered.
 
 ## Current state
 
-- Crit 8, in progress. `README.md` has a first-pass "good" argument.
-  `docs/adr/0001-app-concept.md` is written. The full mechanism (below) is
-  designed and reviewed for consistency, but **no code exists yet** —
-  `Dockerfile`/`placeholder/` are still the starter template.
-- **Open, blocking Stage 1:** how we tell people apart with no accounts
-  (identity), and the tech stack (framework, persistence, real-time
-  transport). Both need an answer before Stage 1's schema is final — see
-  "Open decisions" below.
-- Not yet committed: this plan, the README rewrite, and the ADR. Each gets
-  its own commit once reviewed.
+- Crit 8, in progress. `README.md` has a "good" argument grounded in the
+  real mechanism. `docs/adr/0001-app-concept.md` is written. This plan was
+  just split into this overall file plus `plans/crit-8.md`.
+- Still open, blocking Stage 1 of crit 8: **identity** and **tech stack**
+  (see Open decisions, below).
+- No code exists yet.
 
-## The full vision (all crits — not all of this ships this week)
+## The feature list
 
-This section is the complete mechanism as designed, so later stages know
-where they're going. Only "Crit 8 stages" below is built now; everything
-else is marked for a later crit.
+Every idea discussed so far, with where it currently stands. "Core" means
+it's load-bearing for the app to work at all; "crit N" means it's scheduled
+there; "gap" means nobody's claimed it yet.
 
-**Machines and types.** Machines belong to a type (washer, dryer, shoe
-washer). Each machine has its own short queue/line.
+1. **Fairness rule** — core. Crit 8: miss your 3-minute claim window, lose
+   your spot, full stop. Crit 9: upgrade to the two-tier-reminder + offer
+   system (see #12) as the crit's one documented multi-user decision, with
+   crit 8's blunt version as the rejected-for-now alternative.
+2. **The "it's your turn" notification** — crit 8 ships on-page live update
+   only. A push notification (so you don't need the tab open) is a nice-to-
+   have, not required by the real-time spec, and isn't scheduled anywhere
+   yet.
+3. **Identity, with no accounts** — open decision, blocking Stage 1.
+4. **Scope discipline** — standing constraint, not a deliverable: stays one
+   laundry room, resists becoming a generic multi-building booking product.
+5. **Washer-then-dryer sequencing** — tentatively crit 9, "if time allows."
+   Needs a second machine type (dryers) to exist first. Not guaranteed.
+6. **Finished but not collected** (remove clothes, basket/shelf, notify
+   owner) — **gap**, no crit assigned.
+7. **Peak times from logs** ("when to go") — crit 10, but as a bonus on top
+   of the required logging, not the deliverable itself. First thing to cut
+   if crit 10 runs short on time.
+8. **Wrong taps / stale state** — the crit 8 fairness rule's "lose your
+   spot" already self-corrects a missed/wrong tap. The richer version
+   ("people on site can correct someone else's claim") is **gap**, no crit
+   assigned — also a candidate for crit 9's one documented decision, as an
+   alternative to #12.
+9. **Coming back** (what a returning user sees) — crit 8 covers the minimal
+   version (your trace/position is still there). A richer, justified
+   version is a candidate for crit 9's one documented decision.
+10. **Three machine types** (washer, dryer, shoe washer) — crit 8 ships one
+    type only. Dryers join in crit 9 (needed for #5). Shoe washers are
+    **gap**, no crit assigned.
+11. **Auto-assign** (app picks whichever machine of a type would start
+    earliest, instead of you choosing) — **gap**. Currently crit 8's plan
+    has people manually picking a machine.
+12. **Cross-machine "earlier machine" offer** (if another machine of your
+    type frees up early and nobody's queued for it, the longest-waiting
+    eligible person gets first refusal) — **gap**, no crit assigned. A
+    candidate for crit 9's one documented decision, alongside #1 and #8.
+13. **Estimated vs. fixed time** — core, crit 8. Estimate = scheduled slot
+    assuming no delay; becomes fixed once the person ahead actually starts.
+14. **Claim vs. start as separate actions** — core, crit 8. Scanning claims
+    a machine ("it's mine"); starting is a separate tap that just records
+    the real start time (duration was already chosen at reservation time).
+15. **Cancelling moves the line up by one** — core, crit 8, simple to add.
 
-**Making a reservation** (three ways): the app auto-assigns you to whichever
-machine (of a type) would start earliest; you pick a specific machine
-yourself; or you walk up and scan an unreserved machine on site, which
-creates and gives you that reservation directly. Scanning an *already
-reserved* machine instead opens that machine's queue/status page.
+## Gap tasks — no crit assigned yet
 
-**Choosing a wash.** When you reserve, you pick a washing type, which fixes
-its duration up front. Nothing about duration is decided later — "starting"
-a machine later on is just a timestamp, not another choice.
+- Finished-but-not-collected handling (#6)
+- Shoe washers as a third machine type (#10)
+- Auto-assign (#11)
+- Cross-machine "earlier machine" offers (#12)
+- Push notifications for "it's your turn" (#2), if wanted beyond the spec
+  minimum
 
-**Estimated vs. fixed time.** Your place in line has a scheduled start: the
-end of whoever's ahead of you. If they haven't actually started yet, that
-end time is an *estimate* (assumes they start on schedule, run their known
-duration). Once they tap "start" on site, their end time becomes *fixed*
-(their real start time + their known duration), and that fixes your
-estimate's basis too. The only real uncertainty is when someone actually
-gets around to starting — never how long they'll run, since that's fixed at
-reservation time.
+**Reminder: revisit this list when crit 9 planning starts.** Each item
+needs either a crit slot or a conscious decision to drop it — don't let
+them sit here past crit 9.
 
-**Claiming and starting.** Claiming (scanning the machine's code on site)
-means "I've arrived, this machine is mine." Starting is a separate tap after
-you've loaded clothes/detergent — it just records the real start time.
+## Mapping onto crits (summary — full detail in each crit's own plan file)
 
-**Your turn, and missing it.** Normal case: you're reminded once when one
-person is ahead of you (time to head down), and again when it's actually
-your turn. From that point you have 3 minutes to claim on site, or you lose
-your spot and the next person gets it.
+- **Crit 8** (`plans/crit-8.md`): one machine type, manual reservation
+  (pick or scan), simple fairness, estimated/fixed time, persistence. The
+  smallest version that's genuinely alive.
+- **Crit 9** ("all at once"): real, working real-time sync (<1s, no
+  reload); one documented multi-user decision — likely #1's offer system,
+  possibly #8 or #9 instead or alongside, time permitting.
+- **Crit 10** ("fly by instruments"): server-side logging of every queue
+  action; a live "what's happening now" view for a logs-only demo; #7 as a
+  bonus if time allows.
 
-**The offer mechanism** (unifies two cases: someone ahead missing their turn
-early, and another machine of your type freeing up with nobody queued for
-it). Instead of a sudden 3-minute deadline with no warning, an early chance
-is sent as an offer: accept → 10 minutes to come down and claim; decline, or
-no response within 2 minutes → offer passes on, you keep your original
-place; accept but don't show within 10 minutes → counts as a missed turn
-(you move back one place, not all the way to the back).
+## Open decisions (blocking crit 8 Stage 1)
 
-Cross-machine offers treat all lines of one type as a single queue ordered
-by join time; the offer goes to the earliest-joined person for whom
-switching would actually be earlier (skipping anyone already about to start
-where it wouldn't be).
-
-**Cancelling** moves everyone behind you up one.
-
-**Finished but not collected.** If the machine's done but the previous
-person's clothes are still in it, the next person can remove them (basket or
-numbered shelf), mark it in the app, and the owner is notified. Claiming a
-machine with uncollected clothes in it prompts a "removed and confirmed"
-step before you can start.
-
-**Peak times (crit 10).** The server-side activity log (required for crit
-10 anyway) can drive a "when to go" view showing the week's busiest times —
-a bonus built on top of the logging, not the logging requirement itself.
-
-## Mapping the vision onto crits
-
-- **Crit 8 (this one):** one machine type only; reserve by picking a
-  specific machine or scanning on site; simple fairness (miss your 3-minute
-  window, lose your spot, full stop — no offers, no two-tier reminders yet);
-  no cross-machine logic. This is the smallest version that's genuinely
-  "alive."
-- **Crit 9 ("all at once"):** the two-tier reminder + unified offer system
-  becomes *the* one documented multi-user decision the crit asks for — crit
-  8's instant-forfeit rule is the rejected alternative, with a clear reason
-  (not enough warning time in practice). Second machine type (dryers) and
-  washer-then-dryer sequencing can land alongside it as ordinary features,
-  without being the headline decision.
-- **Crit 10 ("fly by instruments"):** server-side logging of every queue
-  action, a live "who's doing what now" view for the blind demo, and the
-  peak-times feature as a bonus on top.
-- **Not yet scheduled:** uncollected-clothes handling and cross-machine
-  offers may land in crit 9 or slide to crit 10 depending on time —
-  revisit when crit 9 starts.
-
-## Open decisions (must resolve before Stage 1 is final)
-
-1. **Identity** — how we tell people apart with no accounts. Candidates:
-   anonymous/short-lived browser id, vs. self-declared name or room number
-   remembered per browser. *Pending.*
+1. **Identity** — anonymous/short-lived browser id, vs. self-declared name
+   or room number remembered per browser. *Pending.*
 2. **Tech stack** — framework/runtime, persistence (the Fly volume at
-   `/data` is the only thing that survives a redeploy), and real-time
-   transport. Being discussed one decision at a time, each locked in as its
-   own ADR. *Pending.*
+   `/data` is the only thing that survives a redeploy), real-time
+   transport. Being discussed one decision at a time, each its own ADR.
+   *Pending.*
 
-## Crit 8 stages
+## The "good" harness — status
 
-### Stage 1 — schema and the core queue loop
+Per the brief: `README.md` is the argument, `CLAUDE.md` (and what it
+references) is the enforceable rules, `spec/` is the automated checks —
+and the strongest version says plainly which claims are enforced vs.
+judged.
 
-Scope: one machine type, a handful of machines, each with its own line.
-
-- Data: a machine (id, status), a reservation (machine, person, washing
-  type → duration, joined-at, claimed-at, started-at, status:
-  waiting/current-turn/claimed/running/done/cancelled).
-- Join a queue: pick a specific machine, or scan an unreserved machine
-  on-site (creates + fulfils the reservation in one step).
-- See your position and an estimated/fixed time (per the estimate rule
-  above — no extra stored field needed, computed from the chain).
-- When you're at the front and the machine's free: 3-minute claim window;
-  miss it, you lose your spot, next person's up.
-- Claim (scan) → mark claimed. Start (separate tap) → record actual start,
-  fixes your end time for whoever's behind you.
-- Cancelling moves the line up by one.
-- Depends on: identity decision (who a reservation belongs to), tech stack
-  decision (what this is built with, how it's stored).
-
-### Stage 2 — make it alive, deployed, and documented
-
-- Replace the placeholder `Dockerfile`/app with the real one; wire up
-  `/data` for persistence across restarts/redeploys.
-- Confirm the crit 8 "alive" check by hand: a stranger joins a queue, closes
-  the tab, comes back, their place is still there.
-- Add `spec/*.test.ts` checks for the invariants that matter here (e.g. no
-  double-claim on a machine, queue position only moves forward except on a
-  miss).
-- Finish `README.md`, `PROCESS.md` (stack/workflow ADR already feeds this),
-  and `reflections/crit-8.md`.
-- `pnpm check` and `pnpm check:evidence` green, repo flipped public, `/ship`.
+- `README.md`: updated with the real mechanism (enforced/judged split,
+  what we chose not to build).
+- `CLAUDE.md`: app-specific rules proposed, pending confirmation before
+  they're added.
+- `spec/`: concrete checks aren't written yet (no tech stack chosen), but
+  what they need to cover is listed in `plans/crit-8.md`'s Stage 2.
 
 ## Process notes
 
-- Forks/overrides get logged in `process-notes.md` per `CLAUDE.md`, pointing
-  at the relevant ADR instead of re-telling the story.
+- Forks/overrides get logged in `process-notes.md` per `CLAUDE.md`,
+  pointing at the relevant ADR instead of re-telling the story.
 - ADRs live in `docs/adr/`, one file per decision, numbered.
