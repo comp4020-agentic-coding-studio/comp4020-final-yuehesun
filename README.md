@@ -23,9 +23,10 @@ other share a scarce resource fairly, without needing to talk.
 - **Honest about real-time limits.** "Your turn" only matters if you find out
   in time to act on it. If a notification can't reach someone fast enough,
   that's a real limit worth admitting here, not hiding.
-- **Keeps only what the queue needs.** It remembers your place in line and
-  whether a machine is free — not who you are, what you wash, or how often
-  you do laundry. No profile, no history beyond the current line.
+- **Keeps only what the queue needs.** Just enough to tell you apart (a
+  name or room number you type in) and your place in line — not what you
+  wash or how often you do laundry. No profile, no history beyond the
+  current line.
 - **Stays one laundry room's app.** It's built for this room and its
   machines, not a general booking tool for any shared resource. Growing into
   that would be a different app with a different idea of "good."
