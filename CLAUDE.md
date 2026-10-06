@@ -99,3 +99,7 @@ instead.
   re-engagement notifications).
 - Every "enforced" line in `README.md` needs a matching `spec/` check
   before it counts as shipped.
+- Schema changes go through `drizzle-kit generate`; the migration files it
+  writes are committed, and `migrate()` runs at server boot. Never run
+  `drizzle-kit push`, and never apply migrations via Fly's
+  `release_command` — see `docs/adr/0003-tech-stack.md` for why.
