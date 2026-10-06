@@ -1,8 +1,13 @@
 import { int, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+// `type` is all "washer" today (crit 8 ships one machine type), but it's a
+// real column rather than assumed, because the per-room reservation cap
+// (plan.md) is scoped per type — "two washers at once, two dryers later"
+// — and crit 9 adds a second type.
 export const machines = sqliteTable("machines", {
   id: int("id").primaryKey({ autoIncrement: true }),
   label: text("label").notNull(),
+  type: text("type").notNull().default("washer"),
 });
 
 // A reservation's status moves waiting -> claimed -> running -> done, or

@@ -1,0 +1,1 @@
+ALTER TABLE `machines` ADD `type` text DEFAULT 'washer' NOT NULL;
