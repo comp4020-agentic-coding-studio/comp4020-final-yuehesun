@@ -130,10 +130,10 @@ them sit here past crit 9.
 1. ~~**Identity**~~ — **decided**: self-declared name or room number,
    remembered per browser, no account. See
    [`docs/adr/0002-identity.md`](docs/adr/0002-identity.md).
-2. **Tech stack** — framework/runtime, persistence (the Fly volume at
-   `/data` is the only thing that survives a redeploy), real-time
-   transport. Being discussed one decision at a time, each its own ADR.
-   *Pending.*
+2. ~~**Tech stack**~~ — **decided**: Hono, TypeScript/Node 24, Drizzle +
+   `better-sqlite3` with migrations applied at boot, htmx (+ SSE for crit 9)
+   for the pages. See
+   [`docs/adr/0003-tech-stack.md`](docs/adr/0003-tech-stack.md).
 
 ## The "good" harness — status
 

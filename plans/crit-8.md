@@ -87,5 +87,6 @@ are either later-crit or gap items — see `plan.md`.
 
 1. ~~**Identity**~~ — **decided**: self-declared name or room number,
    remembered per browser. See `docs/adr/0002-identity.md`.
-2. **Tech stack** — framework/runtime, persistence, real-time transport.
-   *Pending.*
+2. ~~**Tech stack**~~ — **decided**: Hono, TypeScript/Node 24, Drizzle +
+   `better-sqlite3`, migrations at boot, htmx (+ SSE later). See
+   `docs/adr/0003-tech-stack.md`.
