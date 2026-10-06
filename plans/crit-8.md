@@ -130,6 +130,53 @@ window; miss it, status becomes `missed`, next person's up.
   `PROCESS.md` (stack/workflow ADRs feed this), and `reflections/crit-8.md`.
 - `pnpm check` and `pnpm check:evidence` green, repo flipped public, `/ship`.
 
+## UI design
+
+Stage 1's pages work but look like a wireframe — no colour, no visual
+hierarchy, times buried in sentences. Real laundry-queue and queue-ticket
+apps (campus laundry apps like LaundryView/CSCGo, ride-share arrival-time
+chips, deli/pharmacy ticket boards, flight-status boards) share a pattern
+worth copying: the one number someone's actually scanning for — a time, a
+position, a status — is never left inline in a sentence. It's pulled out
+into its own big, colour-coded block, and everything else stays quiet
+around it.
+
+**Status colours** — one meaning per colour, used consistently everywhere:
+- **Green** — free, nobody queued.
+- **Blue** — running (a wash is in progress).
+- **Amber** — free but unclaimed (the urgent "claim window ticking" state —
+  already started as `.unclaimed` in Stage 1's CSS; sharpen, don't replace).
+- **Indigo accent** — "this one's yours", applied anywhere your own
+  reservation shows up.
+
+**Time chips.** Every time shown (starts at, free at, claim deadline) gets
+its own rounded pill instead of sitting inline in a sentence — larger, bold
+numerals, a short label above or below. The estimated-vs-fixed distinction
+README argues for becomes a *visual* difference, not just a "~": a fixed
+time is a solid-filled chip; an estimated time is the same shape but
+outlined and lighter, so the uncertainty is visible before you even read
+the label.
+
+**Queue position badges.** Each row in a machine's line gets a small round
+numbered badge instead of plain "#2" text — scannable at a glance, the
+same pattern as a deli-counter ticket number.
+
+**Machine cards.** One card per machine, single column at phone width —
+plan.md's user story has people checking from their room on a phone, not a
+desktop. Card border/background follows the status colours above. A
+ticking claim window shows an actual countdown, not static "3 minutes
+left" text, so the urgency doesn't require doing math.
+
+**Buttons.** The one action that matters right now (Claim, Start, Reserve)
+is visually the loudest thing on the card — bigger, filled, colour-matched
+to urgency (amber for "claim now"). Cancel stays small and quiet so it's
+not pressed by accident.
+
+**Staying small.** No icon library, no image assets, no CSS framework —
+plain CSS custom properties for the palette and a handful of reusable
+classes (chip, badge, card). Consistent with ADR 0003's minimalism and the
+256MB budget; this is styling, not new dependencies.
+
 ## Decisions behind this stage
 
 1. **Identity** — self-declared name or room number, remembered per
