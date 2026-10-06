@@ -88,8 +88,10 @@ The enforceable rules behind `README.md`'s "good" argument. `spec/` checks
 whatever here is checkable; `PROCESS.md` says when something's judged
 instead.
 
-- No chat, direct message, comment, or friend/follow feature anywhere in
-  the app. The queue is the only channel between people.
+- Talking is optional, never required: no feature may make chat, a direct
+  message, a comment, or any other person-to-person channel necessary to
+  know your status or claim your turn. The queue alone must always be
+  enough. (Not a ban on messaging existing — a ban on it being load-bearing.)
 - No accounts or login, and no names. Identity is a room number only, as
   `roomXXX` (e.g. `room304`), remembered per browser — nothing verifies
   it's true, and nothing more is stored about a person. Anything that
