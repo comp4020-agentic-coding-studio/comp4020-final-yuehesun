@@ -53,9 +53,13 @@ above comes from the laundry room itself, not from the reading.
 
 - **Enforced** (see `spec/`): a machine never has two active claims at
   once; a queue position only moves forward, except through the documented
-  miss-your-window rule; no messaging/chat exists anywhere in the app.
-- **Judged**: whether the fairness rule actually feels fair to residents,
-  and whether the "it's your turn" moment arrives soon enough to be useful.
+  miss-your-window rule.
+- **Judged**: no messaging/chat exists anywhere in the app — checked by
+  reading the code against `CLAUDE.md`'s rule, not by an automated test,
+  since you can't prove a feature's absence by testing a finite set of
+  guessed routes; whether the fairness rule actually feels fair to
+  residents; whether the "it's your turn" moment arrives soon enough to be
+  useful.
 
 ## Sources consulted
 
