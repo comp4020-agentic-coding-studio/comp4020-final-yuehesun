@@ -143,8 +143,8 @@ judged.
 
 - `README.md`: updated with the real mechanism (enforced/judged split,
   what we chose not to build).
-- `CLAUDE.md`: app-specific rules proposed, pending confirmation before
-  they're added.
+- `CLAUDE.md`: app-specific rules drafted, held back deliberately until
+  identity is decided (one rule depends on it).
 - `spec/`: concrete checks aren't written yet (no tech stack chosen), but
   what they need to cover is listed in `plans/crit-8.md`'s Stage 2.
 
