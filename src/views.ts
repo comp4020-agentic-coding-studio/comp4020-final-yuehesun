@@ -258,20 +258,10 @@ export function identityPage(): Html {
       automated from start to finish, making sharing with strangers easy
       and keeping communication and waiting costs as low as possible.</p>
 
-      <p>This app has three features: <strong>multi-user</strong> (anyone
-      looking at a machine's line is a different, queue-tracked person),
-      <strong>real-time</strong> (queue position and machine status update
-      live), and <strong>persists</strong> (your place in line, and every
-      machine's state, survives reloads, restarts and redeploys).</p>
-
-      <p><strong>Our principles:</strong> fair and seen to be fair — the
-      queue decides, not the people in it; talking is optional; reasonable
-      estimates, aiming to give you more accurate timing despite
-      real-world uncertainty; stays scoped to one laundry room rather than
-      becoming a generic booking product.</p>
-
       <p class="coming-next">Reminders, finding a freed-up machine faster,
       and live updates aren't built yet — coming next.</p>
+      <p><a href="/readme/">Read the full argument for what "good" means
+      here →</a></p>
     </div>
       <p>Enter your room number — that's how the queue tells you apart. Just
       the number is fine (e.g. <strong>304</strong>). No account, nothing
@@ -348,7 +338,11 @@ export function homePage(
 
   return page(
     "Machines",
-    html`<p>Signed in as <strong>${identity}</strong>.</p>
+    html`<p>Signed in as <strong>${identity}</strong>.
+      <form method="post" action="/identity/clear" style="display:inline">
+        <button class="btn-quiet" type="submit">Switch room</button>
+      </form>
+      · <a href="/readme/">What "good" means here →</a></p>
       ${myStatusBlock(mine, now)}
       <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
   );
