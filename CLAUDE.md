@@ -99,6 +99,9 @@ instead.
   `docs/adr/0004-identity-format.md`).
 - The documented fairness rule is the only thing that decides turn order.
   No feature may change someone's position except through it.
+- A room holds at most 2 active (waiting/claimed/running) reservations per
+  machine type at once. Enough to wash darks and lights separately; not
+  enough to tie up every washer.
 - No feature exists purely to grow usage (invites, sharing prompts,
   re-engagement notifications).
 - Every "enforced" line in `README.md` needs a matching `spec/` check
