@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded by [0004](0004-identity-format.md) — a name turned out not to be
+unique enough. Kept here as the historical record; the decision below is no
+longer in effect.
 
 ## Context
 
