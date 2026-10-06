@@ -115,13 +115,23 @@ and the offer moves to the next person instead.
 
 ## Current state
 
-- Crit 8, in progress. `README.md` has a "good" argument grounded in the
-  real mechanism, with an honest enforced/judged split. `CLAUDE.md` has the
-  app rules. Three ADRs are locked in: app concept (0001), identity (0002),
-  tech stack (0003). `plans/crit-8.md` has Stage 1's concrete schema and
-  route contract.
-- Nothing blocking Stage 1 anymore — next step is writing the code.
-- No code exists yet; `spec/` still only has the two base invariant checks.
+- Crit 8, both stages built. `README.md` has a "good" argument grounded in
+  the real mechanism, an honest enforced/judged split, and what's excluded
+  on purpose vs. just not built yet. `CLAUDE.md` has the app rules. Four
+  ADRs are locked in: app concept (0001), identity (0002, superseded),
+  tech stack (0003), identity format (0004).
+- Stage 1 (schema, routes, queue logic) and the UI design pass are both
+  built and committed; `spec/queue-fairness.test.ts`,
+  `spec/queue-order.test.ts`, and `spec/identity-format.test.ts` all pass.
+- Stage 2: the real Dockerfile replaces the placeholder (Node 24 runs
+  TypeScript directly, no build step), `fly.toml` points `DATABASE_PATH`
+  at the volume, and `/readme/` renders `README.md` via `marked`. `pnpm
+  check` is green (6/6) against a locally-run instance — Docker itself
+  isn't available in this dev environment, so the exact `docker build` CI
+  runs hasn't been verified locally; that's CI's job on push.
+  `PROCESS.md` is written (246 words).
+- Still needed before shipping: `reflections/crit-8.md` (the user's own —
+  not drafted by the agent), then flipping the repo public and deploying.
 
 ## The feature list
 

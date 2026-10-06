@@ -116,19 +116,27 @@ window; miss it, status becomes `missed`, next person's up.
 
 ### Stage 2 — make it alive, deployed, and documented
 
-- Replace the placeholder `Dockerfile`/app with the real one; wire up
-  `/data` for persistence across restarts/redeploys.
-- Confirm the "alive" check by hand: a stranger joins a queue, closes the
-  tab, comes back, their place is still there.
-- `spec/`: `queue-fairness.test.ts` (no machine has two simultaneous active
-  claims) and `queue-order.test.ts` (position only moves forward, except
-  through the documented miss-window rule) check what's enforced this crit
-  against the route contract above. (The no-messaging claim is judged by
-  review, not a test — see `README.md`. The base `invariants.test.ts`
-  headings/200 checks already ship.)
-- Finish `README.md` (enforced/judged split, what we chose not to build),
-  `PROCESS.md` (stack/workflow ADRs feed this), and `reflections/crit-8.md`.
-- `pnpm check` and `pnpm check:evidence` green, repo flipped public, `/ship`.
+- **Done.** Replaced the placeholder `Dockerfile`/app with the real one
+  (multi-stage `node:24-slim`, no build step — Node 24 runs TypeScript
+  directly); `fly.toml`'s `DATABASE_PATH` points at `/data` for persistence
+  across restarts/redeploys.
+- **Done, locally.** Confirmed the "alive" check by hand: joined a queue,
+  killed and restarted the process against the same database file, the
+  reservation was still there. The exact containerized build CI runs
+  (`docker build` + `docker run --tmpfs /data`) hasn't been verified in
+  this dev environment — Docker isn't available here — so CI's first run
+  on push is the real check of that path.
+- **Done.** `spec/queue-fairness.test.ts`, `spec/queue-order.test.ts`, and
+  `spec/identity-format.test.ts` check what's enforced this crit against
+  the route contract above. (The no-messaging claim is judged by review,
+  not a test — see `README.md`. The base `invariants.test.ts`
+  headings/200 checks pass against the real app now too, via `/readme/`.)
+- **Done.** `README.md` (enforced/judged split, what we chose not to
+  build) and `PROCESS.md` (246 words, stack/workflow ADRs + the
+  identity-format fork). `reflections/crit-8.md` is still needed — that's
+  the user's own, not the agent's.
+- `pnpm check` is green (6/6) locally. Still to do: `pnpm check:evidence`
+  (blocked only on the reflection), repo flipped public, `/ship`.
 
 ## UI design
 
