@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { cancel, identityCookie, join, state, type ReservationState } from "./support/queue-client.ts";
+import { cancel, identityCookie, join, state, uniqueRoom, type ReservationState } from "./support/queue-client.ts";
 
 // Crit 8 Stage 1 contract: plans/crit-8.md. Uses machine 2 — kept separate
 // from queue-fairness.test.ts's machine. Compares positions before/after
@@ -15,9 +15,9 @@ function positionOf(rows: ReservationState[], reservationId: number): number {
 }
 
 it("keeps queue position in join order, and bumps everyone up one when the front cancels", async () => {
-  const alice = await identityCookie(baseUrl, `alice-${Date.now()}`);
-  const bob = await identityCookie(baseUrl, `bob-${Date.now()}`);
-  const carol = await identityCookie(baseUrl, `carol-${Date.now()}`);
+  const alice = await identityCookie(baseUrl, uniqueRoom());
+  const bob = await identityCookie(baseUrl, uniqueRoom());
+  const carol = await identityCookie(baseUrl, uniqueRoom());
 
   const aliceReservation = await join(baseUrl, alice, MACHINE_ID);
   const bobReservation = await join(baseUrl, bob, MACHINE_ID);

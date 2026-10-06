@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { claim, identityCookie, join, state } from "./support/queue-client.ts";
+import { claim, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
 
 // Crit 8 Stage 1 contract: plans/crit-8.md. Uses machine 1 — kept separate
 // from queue-order.test.ts's machine so the two files can't interfere with
@@ -8,8 +8,8 @@ const baseUrl = inject("baseUrl");
 const MACHINE_ID = 1;
 
 it("never lets a machine have two active (claimed/running) reservations at once", async () => {
-  const alice = await identityCookie(baseUrl, `alice-${Date.now()}`);
-  const bob = await identityCookie(baseUrl, `bob-${Date.now()}`);
+  const alice = await identityCookie(baseUrl, uniqueRoom());
+  const bob = await identityCookie(baseUrl, uniqueRoom());
 
   const aliceReservation = await join(baseUrl, alice, MACHINE_ID);
   const bobReservation = await join(baseUrl, bob, MACHINE_ID);

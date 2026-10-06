@@ -10,15 +10,23 @@ export interface ReservationState {
   position: number;
 }
 
-export async function identityCookie(baseUrl: string, name: string): Promise<string> {
+// ADR 0004: identity is a room number only, as roomXXX.
+let roomCounter = 0;
+
+export function uniqueRoom(): string {
+  roomCounter += 1;
+  return `room${Date.now()}${roomCounter}`;
+}
+
+export async function identityCookie(baseUrl: string, room: string): Promise<string> {
   const res = await fetch(new URL("/identity", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: `name=${encodeURIComponent(name)}`,
+    body: `room=${encodeURIComponent(room)}`,
     redirect: "manual",
   });
   const cookie = res.headers.get("set-cookie");
-  if (!cookie) throw new Error(`POST /identity didn't set a cookie for "${name}"`);
+  if (!cookie) throw new Error(`POST /identity didn't set a cookie for "${room}"`);
   return cookie.split(";")[0];
 }
 
