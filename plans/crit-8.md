@@ -151,21 +151,47 @@ around it.
 
 **Time chips.** Every time shown (starts at, free at, claim deadline) gets
 its own rounded pill instead of sitting inline in a sentence — larger, bold
-numerals, a short label above or below. The estimated-vs-fixed distinction
-README argues for becomes a *visual* difference, not just a "~": a fixed
-time is a solid-filled chip; an estimated time is the same shape but
-outlined and lighter, so the uncertainty is visible before you even read
-the label.
+numerals, a short label above or below. Every chip shows **both** forms
+together: the clock time ("2:45 PM") and the relative time ("in 12 min") —
+different people scan for different ones, so show both rather than
+picking. The estimated-vs-fixed distinction README argues for becomes a
+*visual* difference too, not just a "~": a fixed time is a solid-filled
+chip; an estimated time is the same shape but outlined and lighter, so the
+uncertainty is visible before you even read the label.
 
 **Queue position badges.** Each row in a machine's line gets a small round
 numbered badge instead of plain "#2" text — scannable at a glance, the
 same pattern as a deli-counter ticket number.
 
-**Machine cards.** One card per machine, single column at phone width —
-plan.md's user story has people checking from their room on a phone, not a
-desktop. Card border/background follows the status colours above. A
-ticking claim window shows an actual countdown, not static "3 minutes
-left" text, so the urgency doesn't require doing math.
+**Machine icons.** Each card gets a small icon next to the machine's
+number — a plain inline SVG shape per machine type, not an icon library or
+image asset. Crit 8 only has one type (washers), so the icon does nothing
+useful yet on its own, but it's the hook crit 9's second type (dryers)
+needs: once two shapes exist, people tell machines apart by glancing at the
+icon before reading the label. Intuitive-first means building this now,
+not bolting it on later when it'd mean restyling every card.
+
+**Machine cards.** One card per machine. Layout responds to the two
+viewport sizes the crit is marked at: a single column at phone width
+(plan.md's user story has people checking from their room on a phone), and
+a multi-column grid on a wide screen — CSS Grid with `auto-fill`/`minmax`
+so it reflows with no JS and no hard breakpoint to maintain. Card
+border/background follows the status colours above. A ticking claim window
+shows an actual countdown, not static "3 minutes left" text, so the
+urgency doesn't require doing math.
+
+**Your status, pinned.** If you have an active reservation anywhere, a
+small block at the very top of the page — above the machine grid — always
+shows it: which machine, your position, and when it's your turn (same dual
+clock/relative time format as everywhere else). You shouldn't have to find
+your own card in a grid of ten to answer "am I up yet?". Nothing shown here
+if you have no active reservation.
+
+**Accessibility.** Colour never carries meaning alone — every status chip
+or badge also has a text label ("Running", "Free", "Your turn"), and every
+icon has an accessible text equivalent. Every control is a real `<button>`
+or link, never a styled `<div>`, so everything works from the keyboard with
+a visible focus state.
 
 **Buttons.** The one action that matters right now (Claim, Start, Reserve)
 is visually the loudest thing on the card — bigger, filled, colour-matched
