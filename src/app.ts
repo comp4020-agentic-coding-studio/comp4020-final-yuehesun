@@ -16,9 +16,10 @@ app.get("/", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(identityPage());
 
+  const now = Date.now();
   const allMachines = db.select().from(machines).all();
-  const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id)]));
-  return c.html(homePage(identity, allMachines, rowsByMachine));
+  const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
+  return c.html(homePage(identity, allMachines, rowsByMachine, now));
 });
 
 app.post("/identity", async (c) => {
@@ -63,7 +64,7 @@ app.get("/reservations/:id", (c) => {
   const row = findRow(machine.id, id);
   if (!row) return c.html(errorPage("that reservation has ended", 404), 404);
 
-  return c.html(reservationPage(machine, row, identity));
+  return c.html(reservationPage(machine, row, identity, Date.now()));
 });
 
 function actionRoute(path: string, act: (id: number, identity: string) => queue.ActionResult) {
