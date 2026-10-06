@@ -45,11 +45,12 @@ this app over the alternatives considered.
 ## Current state
 
 - Crit 8, in progress. `README.md` has a "good" argument grounded in the
-  real mechanism. `docs/adr/0001-app-concept.md` is written. This plan was
-  just split into this overall file plus `plans/crit-8.md`.
-- Still open, blocking Stage 1 of crit 8: **identity** and **tech stack**
-  (see Open decisions, below).
-- No code exists yet.
+  real mechanism, with an honest enforced/judged split. `CLAUDE.md` has the
+  app rules. Three ADRs are locked in: app concept (0001), identity (0002),
+  tech stack (0003). `plans/crit-8.md` has Stage 1's concrete schema and
+  route contract.
+- Nothing blocking Stage 1 anymore — next step is writing the code.
+- No code exists yet; `spec/` still only has the two base invariant checks.
 
 ## The feature list
 
@@ -125,15 +126,16 @@ them sit here past crit 9.
   action; a live "what's happening now" view for a logs-only demo; #7 as a
   bonus if time allows.
 
-## Open decisions (blocking crit 8 Stage 1)
+## Decisions locked in for crit 8 Stage 1
 
-1. ~~**Identity**~~ — **decided**: self-declared name or room number,
-   remembered per browser, no account. See
+1. **Identity** — self-declared name or room number, remembered per
+   browser, no account. See
    [`docs/adr/0002-identity.md`](docs/adr/0002-identity.md).
-2. ~~**Tech stack**~~ — **decided**: Hono, TypeScript/Node 24, Drizzle +
-   `better-sqlite3` with migrations applied at boot, htmx (+ SSE for crit 9)
-   for the pages. See
-   [`docs/adr/0003-tech-stack.md`](docs/adr/0003-tech-stack.md).
+2. **Tech stack** — Hono, TypeScript/Node 24, Drizzle + `better-sqlite3`
+   with migrations applied at boot, htmx (+ SSE for crit 9) for the pages.
+   See [`docs/adr/0003-tech-stack.md`](docs/adr/0003-tech-stack.md).
+
+Nothing left blocking Stage 1.
 
 ## The "good" harness — status
 
@@ -145,8 +147,9 @@ judged.
 - `README.md`: updated with the real mechanism (enforced/judged split,
   what we chose not to build).
 - `CLAUDE.md`: app-specific rules added, now that identity is decided.
-- `spec/`: concrete checks aren't written yet (no tech stack chosen), but
-  what they need to cover is listed in `plans/crit-8.md`'s Stage 2.
+- `spec/`: `queue-fairness.test.ts` and `queue-order.test.ts` now check the
+  two enforced invariants, against the wire contract in `plans/crit-8.md`.
+  They'll fail until Stage 1 exists to satisfy them — expected for now.
 
 ## Process notes
 
