@@ -47,8 +47,10 @@ const STYLES = `
   button, .btn {
     font: inherit; border-radius: 0.5rem; padding: 0.55rem 1rem;
     border: 1px solid var(--border); cursor: pointer;
+    display: inline-block; text-decoration: none;
   }
   .btn-primary { background: var(--warning); border-color: var(--warning); color: #241a00; font-weight: 700; }
+  .btn-mine { background: var(--mine); border-color: var(--mine); color: white; font-weight: 700; }
   .btn-quiet { background: transparent; color: var(--ink-muted); font-size: 0.875rem; padding: 0.3rem 0.6rem; }
   button:focus-visible, a:focus-visible, input:focus-visible {
     outline: 3px solid var(--mine); outline-offset: 2px;
@@ -300,7 +302,7 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
           ${rows.map((r) => reservationLine(r, identity, now))}
         </ol>`}
     ${mine
-      ? html`<p><a href="/reservations/${mine.reservationId}">Manage your reservation →</a></p>`
+      ? html`<p><a class="btn btn-mine" href="/reservations/${mine.reservationId}">Manage your reservation →</a></p>`
       : html`<form method="post" action="/machines/${machine.id}/reservations">
           <select name="washingType">${washingTypeOptions()}</select>
           <button class="btn-primary" type="submit">Reserve</button>
