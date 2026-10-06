@@ -31,10 +31,9 @@ other share a scarce resource fairly, without needing to talk.
 - **Honest about uncertainty, not just speed.** A time shown before it's
   confirmed is marked as an estimate, not presented as fact, and you're
   told when it changes.
-- **Keeps only what the queue needs.** Just enough to tell you apart (a
-  name or room number you type in) and your place in line — not what you
-  wash or how often you do laundry. No profile, no history beyond the
-  current line.
+- **Keeps only what the queue needs.** Just enough to tell you apart (the
+  room number you type in) and your place in line — not what you wash or
+  how often you do laundry. No profile, no history beyond the current line.
 - **Stays one laundry room's app.** It's built for this room and its
   machines, not a general booking tool for any shared resource. Growing into
   that would be a different app with a different idea of "good."
@@ -49,8 +48,10 @@ above comes from the laundry room itself, not from the reading.
 
 - **No chat, messages, friending, or comments, anywhere.** The queue is the
   only channel between people. This isn't "not yet" — it's the point.
-- **No accounts or login.** Just enough identity to tell people apart in a
-  queue, nothing more (how exactly is still being decided — see `plan.md`).
+- **No accounts or login, and no names either.** Identity is your room
+  number only, as `roomXXX` (e.g. `room304`) — not a name, since two
+  residents could type the same name and the queue depends on telling
+  people apart reliably.
 - **No generalizing into a booking product for any shared resource.** This
   is one laundry room's app, on purpose.
 - Plenty of real features from the fuller design (a second machine type,
@@ -62,7 +63,8 @@ above comes from the laundry room itself, not from the reading.
 
 - **Enforced** (see `spec/`): a machine never has two active claims at
   once; a queue position only moves forward, except through the documented
-  miss-your-window rule.
+  miss-your-window rule; identity must be a room number in `roomXXX` format
+  — anything else is rejected.
 - **Judged**: no messaging/chat exists anywhere in the app — checked by
   reading the code against `CLAUDE.md`'s rule, not by an automated test,
   since you can't prove a feature's absence by testing a finite set of
