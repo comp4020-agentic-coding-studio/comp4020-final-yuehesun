@@ -42,6 +42,77 @@ booking product.
 See [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md) for why
 this app over the alternatives considered.
 
+## User story
+
+In the real world, scanning a machine's QR code is tied to payment and
+starting the cycle in one motion — machine status naturally comes from
+that scan, not from someone remembering to log it by hand. We don't have
+real washing machines to scan, so `README.md` explains that starting a
+machine is simulated as an on-page interface: in testing, you click the
+machine on the page and choose a washing type (which sets the time)
+instead of scanning a real code.
+
+A resident checks their phone from their room and sees every machine's
+status: which are running, when each will be free, and whether the person
+ahead of them in a line has actually scanned in yet.
+
+To do laundry, they make a reservation one of three ways: let the app
+assign whichever machine would start soonest, pick a specific machine
+themselves, or walk up and scan a machine's code on site — which opens
+that machine's reservation directly. If they scan a machine that's already
+reserved, the page switches to that machine's reservation/status page
+instead of claiming it.
+
+Their reservation gets a time: an estimate until the person ahead of them
+scans in, then fixed. The estimate is based on the washing type they chose
+when they reserved (type fixes the duration up front) — the only real
+uncertainty is whether the person ahead comes late or dawdles before
+starting, not how long their wash runs. They're notified when their time
+becomes fixed, or changes.
+
+A machine that's reserved but still sitting idle counts as occupied —
+scanning it on site can't start it until that reservation lapses.
+
+As their turn approaches, they get two reminders: one when there's a
+single person ahead of them (time to start heading down), and one when
+it's actually their turn. From the moment it's officially their turn, they
+have 3 minutes to scan the machine — this is how they claim it. Claiming
+means the machine is theirs because they've arrived; actually starting the
+wash is a separate tap afterward, since they need a moment to load clothes
+and detergent. Miss the 3-minute window, and they move back one place
+rather than losing their spot outright. In between — after the previous
+person's cycle ends but before the next person has scanned in — the
+machine shows as "free but unclaimed," visible to everyone, so people can
+see the next person might be running late and a chance to move up could be
+coming.
+
+If they decide not to do laundry after all, cancelling moves everyone
+behind them up by one.
+
+Sometimes a chance comes up earlier than expected — either because the
+person ahead of them missed their turn, or because a different machine of
+the same type freed up with nobody queued for it. Both cases are handled
+the same way, as an offer: accept, and they have 10 minutes to come down
+and scan; decline, or don't respond within 2 minutes, and the offer passes
+to the next eligible person while they keep their original place; accept
+but then don't show up within 10 minutes, and it counts as a missed turn
+(move back one place, not to the back of the line).
+
+If the previous person's clothes are still in the machine when it's done,
+the next person can take them out, put them in a basket or numbered shelf,
+mark that in the app, and the owner is told.
+
+Underneath, each machine has its own short line — used both for ordinary
+reservations and for someone moving up a place after a missed turn. The
+app's auto-assign option puts a new reservation into whichever machine's
+line would actually start earliest (by estimated start time, not by how
+many people are in each line). For earlier-machine offers specifically,
+all the lines for one machine type are treated as a single queue ordered
+by when people joined, and the offer goes to whoever's been waiting
+longest among those for whom switching would genuinely be earlier —
+someone who's already about to start on their own machine gets skipped,
+and the offer moves to the next person instead.
+
 ## Current state
 
 - Crit 8, in progress. `README.md` has a "good" argument grounded in the
