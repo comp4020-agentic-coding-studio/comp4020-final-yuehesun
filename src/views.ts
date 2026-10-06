@@ -48,10 +48,11 @@ function washingTypeOptions(): Html {
 
 export function identityPage(): Html {
   return page(
-    "Who's this",
-    html`<p>Tell us who you are — a name or room number is enough. No account, nothing else is stored.</p>
+    "Room number",
+    html`<p>Enter your room number — that's how the queue tells you apart.
+      No account, nothing else is stored, no name.</p>
       <form method="post" action="/identity">
-        <input name="name" placeholder="e.g. Room 4B" required maxlength="40" />
+        <input name="room" placeholder="e.g. room304" pattern="room[0-9]+" required maxlength="12" />
         <button type="submit">Continue</button>
       </form>`,
   );

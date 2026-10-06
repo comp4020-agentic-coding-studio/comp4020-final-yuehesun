@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { db } from "./db.ts";
+import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
 import { machines, reservations } from "./schema.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
@@ -22,10 +23,10 @@ app.get("/", (c) => {
 
 app.post("/identity", async (c) => {
   const body = await c.req.parseBody();
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) return c.html(errorPage("a name or room number is required", 400), 400);
+  const room = normalizeRoom(typeof body.room === "string" ? body.room : "");
+  if (!room) return c.html(errorPage("enter your room number as roomXXX, e.g. room304", 400), 400);
 
-  setCookie(c, IDENTITY_COOKIE, name, { path: "/", httpOnly: true, sameSite: "Lax" });
+  setCookie(c, IDENTITY_COOKIE, room, { path: "/", httpOnly: true, sameSite: "Lax" });
   return c.redirect("/", 303);
 });
 
