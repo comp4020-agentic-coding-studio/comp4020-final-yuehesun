@@ -120,6 +120,15 @@ const STYLES = `
   .queue-row.mine { font-weight: 600; }
 
   .error { color: #8a1f1f; background: #fdeceb; border: 1px solid #e0a9a4; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; }
+
+  /* README.md, rendered in full at /readme/ */
+  .prose { line-height: 1.6; }
+  .prose h1 { font-size: 1.5rem; }
+  .prose h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+  .prose h3 { font-size: 1.05rem; margin-top: 1.25rem; }
+  .prose p, .prose ul, .prose ol { margin: 0.75rem 0; }
+  .prose li { margin: 0.25rem 0; }
+  .prose code { background: #eeede9; border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
 `;
 
 function page(title: string, body: Html): Html {
@@ -327,4 +336,10 @@ export function reservationPage(machine: Machine, row: QueueRow, identity: strin
 
 export function errorPage(message: string, status: number): Html {
   return page("Error", html`<p class="error">${message} (${status})</p><p><a href="/">← All machines</a></p>`);
+}
+
+// README.md, rendered to HTML (src/readme.ts) and published in full here —
+// `raw` because marked already escaped/produced the HTML, not user input.
+export function readmePage(renderedHtml: string): Html {
+  return page("README", html`<div class="prose">${raw(renderedHtml)}</div>`);
 }

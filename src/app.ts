@@ -4,13 +4,16 @@ import { getCookie, setCookie } from "hono/cookie";
 import { db } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
+import { renderReadme } from "./readme.ts";
 import { machines, reservations } from "./schema.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { errorPage, homePage, identityPage, reservationPage } from "./views.ts";
+import { errorPage, homePage, identityPage, readmePage, reservationPage } from "./views.ts";
 
 const IDENTITY_COOKIE = "person";
 
 export const app = new Hono();
+
+app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
 
 app.get("/", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
