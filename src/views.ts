@@ -87,8 +87,8 @@ const STYLES = `
   .chip-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.02em; color: var(--ink-faint); }
   .chip-time { font-weight: 700; font-size: 1.05rem; line-height: 1.2; }
   .chip-relative { font-size: 0.78rem; color: var(--ink-muted); }
-  .chip-compact { flex-direction: row; gap: 0.35rem; align-items: baseline; padding: 0.1rem 0.5rem; }
-  .chip-compact .chip-label { display: none; }
+  .chip-compact { flex-direction: row; gap: 0.3rem; align-items: baseline; padding: 0.1rem 0.5rem; }
+  .chip-compact .chip-label { font-size: 0.68rem; }
   .chip-compact .chip-time { font-size: 0.85rem; }
 
   /* pinned "my status" block: answers "am I up yet?" without hunting a grid */
@@ -121,6 +121,11 @@ const STYLES = `
 
   .error { color: #8a1f1f; background: #fdeceb; border: 1px solid #e0a9a4; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; }
 
+  /* the landing page's app introduction */
+  .intro { line-height: 1.6; margin-bottom: 1.25rem; }
+  .intro p { margin: 0.6rem 0; }
+  .intro .coming-next { color: var(--ink-muted); font-size: 0.9rem; font-style: italic; }
+
   /* README.md, rendered in full at /readme/ */
   .prose { line-height: 1.6; }
   .prose h1 { font-size: 1.5rem; }
@@ -151,7 +156,7 @@ function page(title: string, body: Html): Html {
 // --- small building blocks ----------------------------------------------
 
 function clockTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: "Australia/Sydney" });
 }
 
 // Always shown alongside the clock time (plans/crit-8.md: both formats,
@@ -241,10 +246,38 @@ function actionButtons(row: QueueRow): Html {
 export function identityPage(): Html {
   return page(
     "Room number",
-    html`<p>Enter your room number — that's how the queue tells you apart.
-      No account, nothing else is stored, no name.</p>
+    html`<div class="intro">
+      <p>A shared queue for a laundry room's washers and dryers. When a
+      whole residence shares one laundry room, it's always packed on
+      weekends. People often carry their clothes downstairs only to find
+      no free machine; they want to go back up but worry someone else will
+      take the machine when it frees up, so they end up wasting time
+      waiting in the laundry room. This app helps you reserve and queue
+      for laundry online, reminds you of your upcoming reservation, and
+      helps you find a freed-up machine as fast as possible. It's
+      automated from start to finish, making sharing with strangers easy
+      and keeping communication and waiting costs as low as possible.</p>
+
+      <p>This app has three features: <strong>multi-user</strong> (anyone
+      looking at a machine's line is a different, queue-tracked person),
+      <strong>real-time</strong> (queue position and machine status update
+      live), and <strong>persists</strong> (your place in line, and every
+      machine's state, survives reloads, restarts and redeploys).</p>
+
+      <p><strong>Our principles:</strong> fair and seen to be fair — the
+      queue decides, not the people in it; talking is optional; reasonable
+      estimates, aiming to give you more accurate timing despite
+      real-world uncertainty; stays scoped to one laundry room rather than
+      becoming a generic booking product.</p>
+
+      <p class="coming-next">Reminders, finding a freed-up machine faster,
+      and live updates aren't built yet — coming next.</p>
+    </div>
+      <p>Enter your room number — that's how the queue tells you apart. Just
+      the number is fine (e.g. <strong>304</strong>). No account, nothing
+      else is stored, no name.</p>
       <form method="post" action="/identity">
-        <input type="text" name="room" placeholder="e.g. room304" pattern="room[0-9]+" required maxlength="12" />
+        <input type="text" name="room" placeholder="e.g. 304 or room304" inputmode="numeric" required maxlength="12" />
         <button class="btn-primary" type="submit">Continue</button>
       </form>`,
   );
