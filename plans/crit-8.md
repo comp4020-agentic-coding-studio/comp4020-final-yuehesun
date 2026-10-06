@@ -85,7 +85,7 @@ are either later-crit or gap items — see `plan.md`.
 
 ## Open decisions blocking Stage 1
 
-1. **Identity** — anonymous/short-lived browser id vs. self-declared
-   name/room number. *Pending.*
+1. ~~**Identity**~~ — **decided**: self-declared name or room number,
+   remembered per browser. See `docs/adr/0002-identity.md`.
 2. **Tech stack** — framework/runtime, persistence, real-time transport.
    *Pending.*

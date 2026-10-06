@@ -127,8 +127,9 @@ them sit here past crit 9.
 
 ## Open decisions (blocking crit 8 Stage 1)
 
-1. **Identity** — anonymous/short-lived browser id, vs. self-declared name
-   or room number remembered per browser. *Pending.*
+1. ~~**Identity**~~ — **decided**: self-declared name or room number,
+   remembered per browser, no account. See
+   [`docs/adr/0002-identity.md`](docs/adr/0002-identity.md).
 2. **Tech stack** — framework/runtime, persistence (the Fly volume at
    `/data` is the only thing that survives a redeploy), real-time
    transport. Being discussed one decision at a time, each its own ADR.
@@ -143,8 +144,7 @@ judged.
 
 - `README.md`: updated with the real mechanism (enforced/judged split,
   what we chose not to build).
-- `CLAUDE.md`: app-specific rules drafted, held back deliberately until
-  identity is decided (one rule depends on it).
+- `CLAUDE.md`: app-specific rules added, now that identity is decided.
 - `spec/`: concrete checks aren't written yet (no tech stack chosen), but
   what they need to cover is listed in `plans/crit-8.md`'s Stage 2.
 
