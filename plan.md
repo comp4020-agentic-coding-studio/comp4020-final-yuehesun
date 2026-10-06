@@ -4,9 +4,10 @@
 
 - The final project brief and spec:
   https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/assessments/final-project/
-- This crit's spec on the course site (crit 8 "It's alive!", week 9); crit 9
-  "All at once" (week 10) and crit 10 "Fly by instruments" (week 11) specs
-  describe what later stages need to satisfy.
+- Crit 8 "It's alive!" (week 9):
+  https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/08-its-alive/
+- Crit 9 "All at once" (week 10) and crit 10 "Fly by instruments" (week 11)
+  specs on the course site describe what later stages need to satisfy.
 - `spec/README.md` in this repo (the two fixed invariants, and that
   `spec/*.test.ts` is ours to extend).
 - `CLAUDE.md` in this repo for the working rules (plan/verify/commit/process
