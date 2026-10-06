@@ -33,7 +33,9 @@ other share a scarce resource fairly, without needing to talk.
   told when it changes.
 - **Keeps only what the queue needs.** Just enough to tell you apart (the
   room number you type in) and your place in line — not what you wash or
-  how often you do laundry. No profile, no history beyond the current line.
+  how often you do laundry. No profile, no personal history. (Crit 10's
+  planned activity log, for the peak-times view, is aggregate timing data
+  — not a record of what any one person did.)
 - **Stays one laundry room's app.** It's built for this room and its
   machines, not a general booking tool for any shared resource. Growing into
   that would be a different app with a different idea of "good."
@@ -46,18 +48,18 @@ above comes from the laundry room itself, not from the reading.
 
 ## What we chose not to build
 
-- **No chat, messages, friending, or comments, anywhere.** The queue is the
-  only channel between people. This isn't "not yet" — it's the point.
 - **No accounts or login, and no names either.** Identity is your room
   number only, as `roomXXX` (e.g. `room304`) — not a name, since two
   residents could type the same name and the queue depends on telling
   people apart reliably.
 - **No generalizing into a booking product for any shared resource.** This
   is one laundry room's app, on purpose.
-- Plenty of real features from the fuller design (a second machine type,
+- Plenty of real features from the fuller design — a second machine type,
   the app picking your machine for you, offers when an earlier machine
-  frees up, handling clothes left behind) aren't built yet — those are
-  roadmap, not exclusions. The full list is in `plan.md`.
+  frees up, handling clothes left behind, and messaging, if it's ever
+  worth adding — aren't built yet. These are roadmap, not exclusions: the
+  goal is that you shouldn't *need* to talk to use the queue, not that
+  talking is banned. The full list is in `plan.md`.
 
 ## What's enforced vs. judged
 
@@ -65,12 +67,11 @@ above comes from the laundry room itself, not from the reading.
   once; a queue position only moves forward, except through the documented
   miss-your-window rule; identity must be a room number in `roomXXX` format
   — anything else is rejected.
-- **Judged**: no messaging/chat exists anywhere in the app — checked by
-  reading the code against `CLAUDE.md`'s rule, not by an automated test,
-  since you can't prove a feature's absence by testing a finite set of
-  guessed routes; whether the fairness rule actually feels fair to
-  residents; whether the "it's your turn" moment arrives soon enough to be
-  useful.
+- **Judged**: whether the queue alone is actually enough to coordinate
+  without anyone needing to talk — talking is optional by design, not
+  banned, so this is read by using the app, not an automated test; whether
+  the fairness rule actually feels fair to residents; whether the "it's
+  your turn" moment arrives soon enough to be useful.
 
 ## Sources consulted
 
