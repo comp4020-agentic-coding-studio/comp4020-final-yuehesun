@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { db } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
@@ -34,20 +34,26 @@ app.post("/identity", async (c) => {
   return c.redirect("/", 303);
 });
 
+// Lets a visitor get back to the room-number prompt — there was otherwise
+// no way back to it, including to switch rooms while testing.
+app.post("/identity/clear", (c) => {
+  deleteCookie(c, IDENTITY_COOKIE, { path: "/" });
+  return c.redirect("/", 303);
+});
+
 app.post("/machines/:id/reservations", async (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(errorPage("sign in first", 400), 400);
 
   const machineId = Number(c.req.param("id"));
-  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
-  if (!machine) return c.html(errorPage("no such machine", 404), 404);
-
   const body = await c.req.parseBody();
   const washingType = typeof body.washingType === "string" ? body.washingType : "";
   if (!isWashingType(washingType)) return c.html(errorPage("pick a washing type", 400), 400);
 
-  const reservationId = queue.join(machineId, identity, washingType, durationFor(washingType));
-  c.header("Location", `/reservations/${reservationId}`);
+  const result = queue.join(machineId, identity, washingType, durationFor(washingType));
+  if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
+
+  c.header("Location", `/reservations/${result.reservationId}`);
   return c.body(null, 303);
 });
 

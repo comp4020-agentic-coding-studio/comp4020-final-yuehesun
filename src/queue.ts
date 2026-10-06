@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "./db.ts";
-import { type Reservation, reservations } from "./schema.ts";
+import { machines, type Reservation, reservations } from "./schema.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
 // A claimed-but-never-started machine would otherwise sit blocked forever —
@@ -116,8 +116,38 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
 }
 
 export type ActionResult = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string };
+export type JoinResult = { ok: true; reservationId: number } | { ok: false; status: 400 | 404 | 409; message: string };
 
-export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): number {
+// A room can hold at most this many active reservations per machine type at
+// once — enough to wash darks and lights at the same time, not enough to
+// tie up every washer (plan.md). "Active" is the same waiting/claimed/
+// running set the fairness rule already uses.
+export const MAX_ACTIVE_PER_TYPE = 2;
+
+export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): JoinResult {
+  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
+  if (!machine) return { ok: false, status: 404, message: "no such machine" };
+
+  const activeOfType = db
+    .select({ id: reservations.id })
+    .from(reservations)
+    .innerJoin(machines, eq(reservations.machineId, machines.id))
+    .where(
+      and(
+        eq(reservations.personName, personName),
+        eq(machines.type, machine.type),
+        inArray(reservations.status, ACTIVE_STATUSES),
+      ),
+    )
+    .all().length;
+  if (activeOfType >= MAX_ACTIVE_PER_TYPE) {
+    return {
+      ok: false,
+      status: 409,
+      message: `${personName} already has ${MAX_ACTIVE_PER_TYPE} active ${machine.type} reservations`,
+    };
+  }
+
   const now = Date.now();
   const { id } = db
     .insert(reservations)
@@ -125,7 +155,7 @@ export function join(machineId: number, personName: string, washingType: string,
     .returning({ id: reservations.id })
     .get();
   settleMachine(machineId, now); // if the machine's free, this starts their claim window immediately
-  return id;
+  return { ok: true, reservationId: id };
 }
 
 function loadOwned(reservationId: number, personName: string): Reservation | ActionResult {
