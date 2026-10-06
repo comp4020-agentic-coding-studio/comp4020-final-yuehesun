@@ -14,15 +14,23 @@ having to sit in the laundry room or message anyone.
 This app is good if it does one thing: it lets people who don't know each
 other share a scarce resource fairly, without needing to talk.
 
+- **Grounded in what you actually do, not what you say.** Machine status
+  comes from scanning it, not from someone remembering to log it — the app
+  believes actions, not reports.
 - **Fair, and seen to be fair.** Everyone looking at the queue sees the same
   line, in the same order. No one's turn depends on who they know or who
   shouts loudest — the queue decides, not the people in it.
+- **Advancing early is offered, never forced.** If an earlier machine opens
+  up, you're asked — declining costs you nothing, and you keep your place.
 - **Talking is optional, not required.** You shouldn't need to message
   anyone, ask around, or make an account just to find out when it's your
   turn. The queue carries the coordination that used to take a conversation.
 - **Honest about real-time limits.** "Your turn" only matters if you find out
   in time to act on it. If a notification can't reach someone fast enough,
   that's a real limit worth admitting here, not hiding.
+- **Honest about uncertainty, not just speed.** A time shown before it's
+  confirmed is marked as an estimate, not presented as fact, and you're
+  told when it changes.
 - **Keeps only what the queue needs.** Just enough to tell you apart (a
   name or room number you type in) and your place in line — not what you
   wash or how often you do laundry. No profile, no history beyond the
