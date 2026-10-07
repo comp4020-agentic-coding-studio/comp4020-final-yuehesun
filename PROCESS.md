@@ -3,7 +3,15 @@
 This crit's app is a shared laundry-room queue — see
 [`README.md`](README.md) for the full argument.
 
-**App concept.** Rejected three agent-suggested generic directions and a
+**App concept - What the agent is for, and what I'm for.** 
+An agent can help build
+specific features, but only once there's an actual idea to build — it
+doesn't originate a good one. At the start I asked the agent what we
+could build, and it suggested three median ideas
+([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)):
+reasonable, but obviously uninteresting, because none of them came from a
+real problem.
+Rejected three agent-suggested generic directions and a
 rejected co-op-game idea
 ([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
 The final idea's inspiration came from crit 7: after reworking an ANU
@@ -11,14 +19,6 @@ system, I became more inclined to think about problems from the user's
 own point of view, and to solve a real problem I'd actually run into
 myself. Full decision process:
 [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md).
-
-**What the agent is for, and what I'm for.** An agent can help build
-specific features, but only once there's an actual idea to build — it
-doesn't originate a good one. At the start I asked the agent what we
-could build, and it suggested three median ideas
-([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)):
-reasonable, but obviously uninteresting, because none of them came from a
-real problem.
 
 **Needs-driven, design-first.** Even once I had a vague laundry-room idea
 of my own, talking through the details stayed bumpy — until I'd worked out
