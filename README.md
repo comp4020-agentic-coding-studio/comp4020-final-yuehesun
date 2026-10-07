@@ -15,12 +15,18 @@ This app is good if it does one thing: it lets people who don't know each
 other share a scarce resource fairly, without needing to talk.
 
 - **Grounded in what you actually do, not what you say.** Machine status
-  comes from scanning it, not from someone remembering to log it — the app
-  believes actions, not reports.
+  comes from scanning it, not from someone remembering to log it — this
+  rules out manual mistakes and means you don't have to submit anything
+  yourself. (There's no real washing machine behind this, so these actions
+  are plain web interfaces for now, triggered by a click; the same
+  interfaces could later connect to a real machine.)
 - **Fair, and seen to be fair.** Everyone looking at the queue sees the same
   line, in the same order. No one's turn depends on who they know or who
   shouts loudest — the queue decides, not the people in it.
-- 人性化：以保证用户方柏霓
+- **Humane, not just efficient.** Convenience and accommodating different
+  people's needs come first — like letting one room hold two machines at
+  once, for washing darks and lights separately, rather than optimizing
+  purely for throughput.
 - **Advancing early is offered, never forced.** If an earlier machine opens
   up, you're asked — declining costs you nothing, and you keep your place.
 - **Talking is optional, not required.** You shouldn't need to message
@@ -62,14 +68,33 @@ above comes from the laundry room itself, not from the reading.
   goal is that you shouldn't *need* to talk to use the queue, not that
   talking is banned. The full list is in `plan.md`.
 
+## What crit 8 has built
+
+A room (identified by a room number, `roomXXX`) can join any machine's
+queue, see its position and an estimated or fixed time, claim its turn
+within a 3-minute window once the machine's free, start the wash, and
+cancel. A room can hold at most 2 active reservations per machine type at
+once. None of this needs real-time push — the page just reflects the
+current state whenever you load it. Exact scope: `plans/crit-8.md`.
+
+## What's next
+
+Crit 9 ("all at once") adds real, working real-time sync across open
+browser tabs, plus one documented decision about multi-user behaviour —
+most likely the two-tier reminder and offer system described in
+`plan.md`, replacing this crit's blunt "miss your window, lose your spot"
+rule. Crit 10 ("fly by instruments") adds server-side logging of every
+queue action and a live view of what's happening right now. The full
+feature list, including what's still an open gap (a second machine type,
+auto-assign, cross-machine offers, handling clothes left behind), is in
+[`plan.md`](plan.md).
+
 ## What's enforced vs. judged
 
 - **Enforced** (see `spec/`): a machine never has two active claims at
   once; a queue position only moves forward, except through the documented
   miss-your-window rule; identity must be a room number in `roomXXX` format
-  — anything else is rejected; a room holds at most 2 active reservations
-  per machine type at a time — enough to wash darks and lights separately,
-  not enough to tie up every washer.
+  — anything else is rejected.
 - **Judged**: whether the queue alone is actually enough to coordinate
   without anyone needing to talk — talking is optional by design, not
   banned, so this is read by using the app, not an automated test; whether
