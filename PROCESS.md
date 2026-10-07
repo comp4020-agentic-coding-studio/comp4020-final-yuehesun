@@ -1,10 +1,37 @@
 # Process overview
 
-This crit's app is a shared laundry-room queue, chosen over three
-agent-suggested generic directions and a rejected co-op-game idea
-([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
+This crit's app is a shared laundry-room queue — see
+[`README.md`](README.md) for the full argument.
 
-**Stack.** Hono + TypeScript on Node 24, SQLite via Drizzle/`better-sqlite3`,
+**App concept.** Rejected three agent-suggested generic directions and a
+rejected co-op-game idea
+([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
+The final idea's inspiration came from crit 7: after reworking an ANU
+system, I became more inclined to think about problems from the user's
+own point of view, and to solve a real problem I'd actually run into
+myself. Full decision process:
+[`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md).
+
+**What the agent is for, and what I'm for.** An agent can help build
+specific features, but only once there's an actual idea to build — it
+doesn't originate a good one. At the start I asked the agent what we
+could build, and it suggested three median ideas
+([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)):
+reasonable, but obviously uninteresting, because none of them came from a
+real problem.
+
+**Needs-driven, design-first.** Even once I had a vague laundry-room idea
+of my own, talking through the details stayed bumpy — until I'd worked out
+for myself exactly what the system in my head looked like, and explained
+it back step by step as a real situation: a specific person, in a specific
+room, doing a specific thing
+([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
+[plan.md's "User story"](plan.md#user-story)). Only then did the plans the
+agent wrote start matching what I actually meant.
+
+**Stack choice.** Full decision process:
+[`docs/adr/0003-tech-stack.md`](docs/adr/0003-tech-stack.md).
+Hono + TypeScript on Node 24, SQLite via Drizzle/`better-sqlite3`,
 migrations applied at server boot rather than Fly's `release_command`, since
 no separate machine can see the volume
 ([`ff403af`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/ff403af)).
@@ -16,22 +43,6 @@ and
 deployed with a real Dockerfile at
 [`d073088`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/d073088).
 
-**Agent 与人类的分工.** An agent can help build specific features, but only
-once there's an actual idea to build — it doesn't originate a good one. At
-the start I asked the agent what we could build, and it suggested three
-median ideas
-([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)):
-reasonable, but obviously uninteresting, because none of them came from a
-real problem.
-
-**需求导向，设计第一.** Even once I had a vague laundry-room idea of my own,
-talking through the details stayed bumpy — until I'd worked out for myself
-exactly what the system in my head looked like, and explained it back step
-by step as a real situation: a specific person, in a specific room, doing a
-specific thing
-([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
-plan.md's "User story"). Only then did the plans the agent wrote start
-matching what I actually meant.
 
 **Overall first, then the parts.** Once that full vision was worked out, a
 single `plan.md` got big enough to scatter attention across stages instead
@@ -41,7 +52,6 @@ per-crit plan with that crit's concrete scope
 [`f4c9edc`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f4c9edc)).
 
 **Corrections landing in the harness, not just code.**
-
 - Identity started as a self-declared name or room number
   ([`312321a`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/312321a)).
   Building Stage 1 showed a name isn't unique, and both the fairness rule's
