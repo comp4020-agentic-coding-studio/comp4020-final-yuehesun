@@ -1,14 +1,16 @@
-# Process overview
+# What I built
 
 This crit's app is a shared laundry-room queue — see
-[`README.md`](README.md) for the full argument.
+[`README.md`](README.md) for the full argument, and
+[plan.md's "User story"](plan.md#user-story) for exactly what it does.
+
+# Process overview
 
 **App concept - What the agent is for, and what I'm for.** 
 An agent can help build
 specific features, but only once there's an actual idea to build — it
 doesn't originate a good one. At the start I asked the agent what we
-could build, and it suggested three median ideas
-([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)):
+could build, and it suggested three median ideas:
 reasonable, but obviously uninteresting, because none of them came from a
 real problem.
 Rejected three agent-suggested generic directions and a
@@ -43,7 +45,6 @@ and
 deployed with a real Dockerfile at
 [`d073088`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/d073088).
 
-
 **Overall first, then the parts.** Once that full vision was worked out, a
 single `plan.md` got big enough to scatter attention across stages instead
 of focusing it, so it was split into the whole-project vision plus a
@@ -64,16 +65,10 @@ per-crit plan with that crit's concrete scope
   ([`849202c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/849202c)),
   logged at
   ([`6a8a778`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/6a8a778)).
-- Testing the *deployed* app surfaced three more: a 14-digit test identity
-  had reached the live site, fixed by tightening the format and making
-  tests clean up their own reservations
-  ([`6db64ac`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/6db64ac),
-  [`73cf5e8`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/73cf5e8));
+- Testing the *deployed* app surfaced another bug: 
   a claimed-but-never-started machine blocked forever, fixed with the same
   forfeit the fairness rule already applied elsewhere
-  ([`b70faed`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b70faed));
-  and times were rendering in the server's UTC instead of Canberra's
-  ([`937e7ff`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/937e7ff)).
+  ([`b70faed`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b70faed)).
 - README and `CLAUDE.md` had overstated "no messaging" as a permanent ban;
   the actual position was always that talking is optional, not forbidden —
   corrected in both
