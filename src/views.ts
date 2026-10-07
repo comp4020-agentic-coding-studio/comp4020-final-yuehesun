@@ -38,10 +38,12 @@ const STYLES = `
     max-width: 48rem; margin: 0 auto; padding: 1rem 1rem 3rem;
     background: var(--page); color: var(--ink);
   }
-  h1 { font-size: 1.25rem; }
+  h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
   h1 a { color: inherit; text-decoration: none; }
   h2 { font-size: 1rem; margin: 0 0 0.5rem; }
   a { color: var(--info); }
+  .topnav { display: flex; gap: 1rem; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  .topnav a { text-decoration: none; font-weight: 600; }
 
   /* buttons: the live action is loud, Cancel stays quiet (plans/crit-8.md) */
   button, .btn {
@@ -150,6 +152,10 @@ function page(title: string, body: Html): Html {
       </head>
       <body>
         <h1><a href="/">Laundry Queue</a></h1>
+        <nav class="topnav">
+          <a href="/">Machines</a>
+          <a href="/readme/">README</a>
+        </nav>
         ${body}
       </body>
     </html>`;
@@ -262,8 +268,6 @@ export function identityPage(): Html {
 
       <p class="coming-next">Reminders, finding a freed-up machine faster,
       and live updates aren't built yet — coming next.</p>
-      <p><a href="/readme/">Read the full argument for what "good" means
-      here →</a></p>
     </div>
       <p>Enter your room number — that's how the queue tells you apart. Just
       the number is fine (e.g. <strong>304</strong>). No account, nothing
@@ -343,8 +347,7 @@ export function homePage(
     html`<p>Signed in as <strong>${identity}</strong>.
       <form method="post" action="/identity/clear" style="display:inline">
         <button class="btn-quiet" type="submit">Switch room</button>
-      </form>
-      · <a href="/readme/">What "good" means here →</a></p>
+      </form></p>
       ${myStatusBlock(mine, now)}
       <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
   );
