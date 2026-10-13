@@ -379,44 +379,205 @@ machine just reads as plain "Free."
 - New `spec/` tests: the move-back-one swap, and an offer's accept/decline
   outcome — both against the wire contract these stages define.
 
-### Stage 5 — stretch: dryers (only if Stages 1–4 are done and verified)
+### Stage 5 — superseded
 
-Second machine type (`type: "dryer"` already supported by the schema's
-`machines.type` column from crit 8). First thing cut if time is short.
-If attempted: seed dryers in `seedMachinesIfEmpty`, a second machine icon
-shape (the hook crit 8's UI design pass already built for this), and
-confirm the per-type active-reservation cap and cross-machine offers
-correctly scope by type rather than merging washers and dryers into one
-queue.
+Originally a stretch slot for dryers, not attempted during Stages 1–4.
+Per discussion, dryers are now explicitly scheduled — see Stage 8, done
+after Stage 6's visual pass so the new illustrated machine icon style
+only needs to be drawn once, for both machine types together.
 
-### Stage 6 — visual design pass (blocked on the user, do last)
+### Stage 6 — visual design pass
 
 The current UI is still crit 8's first-pass styling — functional, but not
-visually refined. Explicitly deferred until every functional stage above
-(1–5) is built, verified, and the app behaves correctly — a redesign on
-top of unfinished or unverified logic would mean re-doing visual work
-twice. **Blocked on the user**: they'll provide reference UI examples and
-image/icon assets to work from, rather than the agent picking a visual
-direction unprompted. Remind the user of this stage once Stages 1–5 are
-done, since this is the natural point to ask for those references.
+visually refined. Deliberately deferred until every functional stage
+above (1–5) was built and verified, so this redesign sits on top of
+settled behavior, not something still changing underneath it.
 
-Scope, once unblocked: restyle the existing structure (machine cards,
-chips, badges, the pinned "your status" block, the new notice banners
-from Stage 2, the offer UI from Stage 3) against the user's references —
-not a rebuild of the page structure or routes, which stay as this crit's
-functional stages leave them. Re-verify accessibility (colour-plus-text,
+**References gathered** (`research/ui-references.md`, `research/1.png`):
+the openHAB community washing-machine widget (fetched and verified
+directly), CSC GO's real marketing/app-store pages (verified; the user's
+own UMN link 403'd and isn't relied on directly), the user's own
+descriptions of LaundryView/MIT/campus-laundry UI patterns and
+queueing-system UX (Appointedd, vQueue, Qwaiting), and a style reference
+image the user saved directly into `research/` (a package-delivery
+tracking app's "order status" screens) — this one the agent *did* view
+directly, unlike the earlier unreachable Instagram link it stood in for.
+
+**What the reference image actually shows** (`research/1.png`): pale-cyan
+page background, white rounded cards, a row of 4 step-dots connected by a
+thin line (filled teal circle + checkmark for done, hollow outline for
+upcoming) — a genuinely linear, one-directional sequence (order placed →
+processing → cleaned → delivered). A large hand-drawn-style illustration
+(a washing machine with detergent and a basket; a cleaned bag) sits below
+the dots, then a bold status heading, one line of supporting text, a
+single pill-shaped primary button ("CALL AGENT"), and a quiet text link
+below a divider for a secondary action ("ORDER DETAILS").
+
+**What's adopted, what's not, and why** — judged against `README.md`'s
+calm-technology argument and this app's own mechanics, not copied
+wholesale:
+
+- **A status-dot sequence (waiting → claimed → running → done), adopted
+  — but scoped to one reservation's own lifecycle, not queue position.**
+  The reference material's step-dot pattern (filled = done, hollow =
+  upcoming) reads naturally as a *linear, one-directional* progress
+  indicator. Queue *position* in this app is not linear in that sense —
+  the move-back-one escalation can send someone backward, which a
+  classic progress-dot UI has no honest way to represent. Position stays
+  expressed as the existing "#N in line" text. The dot sequence is used
+  only for a single reservation's own state machine (waiting → claimed →
+  running → done), which genuinely is linear, so it's an honest use of
+  the pattern there. It sits next to the existing text badge, not instead
+  of it (colour/shape is never the only cue, per `plans/crit-8.md`'s
+  accessibility rule).
+- **Washer/dryer colour coding (light blue / orange), noted but not
+  implemented this stage.** Clean pattern, directly reusable once a
+  second machine type exists (crit 9 Stage 5's dryers weren't attempted,
+  so there's only one type to colour right now) — recorded here so the
+  palette is designed with that extension in mind (one more accent colour
+  reserved, not retrofitted later), not built for a type that doesn't
+  exist yet.
+- **"Done but not collected," not added.** MIT's own team removed this
+  exact state after finding it confused users — and `plan.md`'s own gap
+  list already has this feature (#6) unscheduled. Independent confirmation
+  that skipping it for now, rather than designing speculative UI for an
+  unbuilt feature, is the right call.
+- **Position + estimated wait + a clear turn alert, kept as the already-
+  implemented core — this stage makes them visually louder, not new.**
+  The reference queueing systems (Appointedd, vQueue, Qwaiting) converge
+  on exactly these three things mattering most; this app already has all
+  three (`positionLine`, `rowTimeChip`'s "Est. ready at"/"Claim by", the
+  notice banner) — the redesign's job is visual hierarchy, making the one
+  number someone's actually scanning for the loudest thing on the card,
+  not inventing new mechanics.
+- **No manual "defer my turn" button.** Appointedd's deferral button is
+  close to this app's move-back-one escalation, but deliberately
+  different in kind: that's a user-initiated action, this app's rule is
+  system-enforced when a window is missed, specifically because
+  `README.md`'s argument is that the queue should watch the clock so the
+  resident doesn't have to. Adding a manual defer button would be asking
+  the user to do the remembering the whole app exists to remove.
+- **Colour palette: shift toward the reference's pale-cyan page
+  background and white rounded cards, within the existing semantic
+  colours.** `--good`/`--warning`/`--info`/`--mine` keep their current
+  *meanings* (free/urgent/running-or-claimed/yours) — this is a palette
+  refresh, not a re-mapping of what each colour means, since `spec/`'s
+  and the accessibility rule's guarantees don't depend on the exact hex
+  values. `--page` moves from its current near-white to a pale cyan;
+  cards (`--surface`) stay white with more generous corner-rounding to
+  match the reference.
+- **Hand-drawn-style illustrated SVG icons, not flat line icons —
+  decided over keeping the current minimal style.** The reference's
+  machine/package illustration is noticeably more detailed than this
+  app's current plain-line machine icon (a circle in a rectangle). Still
+  hand-authored inline SVG, not an external image asset or icon library
+  (ADR 0003's "no image assets, no icon library" constraint is about
+  *files*, not about how detailed a `<svg>`'s own paths are) — but a
+  real increase in SVG complexity and a new maintenance cost worth naming
+  up front: a second machine type (dryers, Stage 8) needs its own
+  illustration drawn in the same style, not a copy-paste recolour.
+
+**Scope:** restyle the existing structure (machine cards, chips, badges,
+the pinned "your status" block, the notice banners from Stage 2, the
+offer cards from Stage 3) against the reference image — not a rebuild of
+the page structure, routes, or any behavior, which stay exactly as the
+functional stages left them. Re-verify accessibility (colour-plus-text,
 keyboard focus, real `<button>`/`<a>` elements) holds after restyling,
 per `plans/crit-8.md`'s existing accessibility rules.
 
-### Stage 7 — wrap-up
+**Build order:** palette/card shape first (lowest risk, every page
+benefits immediately), then the status-dot sequence on the pinned "your
+status" block and reservation rows, then the illustrated machine icon
+last (the most time-consuming piece, and the one later stages — dryers —
+will need a second version of anyway).
+
+### Stage 8 — dryers, plus an auto-queued dryer reservation
+
+Two machines, not ten: convert 2 of the existing 10 seeded washers to
+dryers (no new machine rows) and add a feature the user asked for —
+reserving a washer offers to also queue you for a dryer, timed so you
+don't lose it before your wash is even done. `plan.md`'s calm-technology
+argument extends naturally here: the same cost (standing around to not
+lose a slot) exists at the dryer step too, not just at the washer step.
+
+**Converting 2 machines, in production, not just the seed.** `db.ts`'s
+`seedMachinesIfEmpty` only runs against an empty table — crit 8's
+deployment already seeded 10 washers, so editing that function does
+nothing on the live database. A one-time, idempotent migration-time
+step is needed: on boot, if machines 9 and 10 are still labelled/typed as
+washers, rename and re-type them (`"Washer 9"` → `"Dryer 1"`, `type:
+"washer"` → `"dryer"`) and leave the other 8 untouched. Idempotent so it
+only acts once, and safe to leave in place rather than deleting after
+the first successful boot — simpler than a one-shot migration script
+with no real cost to keeping it.
+
+**Dryer-specific duration options.** A separate `DRYING_TYPES` lookup
+(same shape as `WASHING_TYPES`), not a reuse of the washing durations —
+drying genuinely runs longer in practice, and the two should be free to
+diverge (e.g. Quick dry 20 min / Normal dry 40 min / Heavy dry 60 min;
+exact numbers aren't load-bearing, just distinct from the wash durations
+so the two aren't secretly the same lookup table wearing two names).
+
+**The real problem: a naive "pick the soonest dryer" would reserve a slot
+you can't actually use yet.** If a dryer is sitting idle right now, the
+app's existing rule starts a 3-minute claim window immediately — but the
+resident is still at the washer, not standing at the dryer. By the time
+their wash finishes, that window would already have expired, costing
+them a move-back-one penalty for a window they were never actually able
+to use. The fix:
+
+- New nullable column on `reservations`: `notBeforeReservationId` (FK to
+  another reservation). When set, `settleMachine()`'s "front of queue,
+  waiting" branch does not start `turnStartedAt` (and so the claim window
+  does not begin) until the referenced reservation's status is `done`.
+  Everything else about queue position is unaffected — the dryer
+  reservation still holds a real place in that dryer's queue, in join
+  order, from the moment it's created; only its *claim clock* waits.
+- **Dryer selection, corrected per the user's catch:** not "whichever
+  dryer is empty right now," but for each of the 2 dryers, compute
+  `max(washEndMs, thatDryerQueue'sOwnEstimatedStartForANewArrival)` —
+  the later of (a) when the wash actually finishes and (b) when that
+  dryer would actually be free for a new arrival — and pick whichever
+  dryer gives the *earlier* of those two maximums. This is the same
+  "would switching genuinely be earlier" reasoning Stage 3's offer
+  eligibility already uses, applied here at reservation time instead of
+  via a tick-driven offer.
+- **Offered, not automatic** — same reasoning as Stage 3's offers: only
+  the resident knows whether they actually want a dryer slot held for
+  them. Surfaced as a dismissible prompt in the pinned "your status"
+  block right after a washer reservation succeeds ("Want to queue a
+  dryer for after this wash? It'll be ready when you are — unclaimed
+  slots don't start their countdown until your wash is done."), not a
+  checkbox buried in the reservation form itself.
+- **Cancelling the washer reservation cancels the dependent dryer
+  reservation too** (if not yet claimed) — there's no reason to hold a
+  dryer slot for a wash that isn't happening.
+
+**Scope check against existing rules:** `MAX_ACTIVE_PER_TYPE` (2 per
+type) still applies per machine type independently — queuing a dryer
+reservation counts against the dryer cap, not the washer cap, so this
+doesn't let one resident monopolize more washers than the existing rule
+already allows.
+
+Verify: convert machines 9/10 on a fresh boot, confirm they show as
+dryers with the new icon and duration options; reserve a washer with the
+dryer prompt accepted, confirm the dryer reservation's claim window does
+not start until the washer reservation reaches `done`; cancel a washer
+reservation with a pending dependent dryer reservation and confirm the
+dryer reservation is also cancelled; confirm the dryer-selection choice
+matches the later-of-two-maximums reasoning above with a real multi-
+dryer scenario.
+
+### Stage 9 — wrap-up
 
 - Grow `plan.md`: update the feature list's status for #1, #12 (now
-  shipped), current-state section, crit 9 row in "Mapping onto crits."
-- `PROCESS.md` rewritten in full (900–1100 words, per `CLAUDE.md`'s
-  updated numbers) — not appended to. Must explain the stack/workflow
-  choices and trade-offs, not just this crit's new work.
+  shipped), current-state section, crit 9 row in "Mapping onto crits," and
+  #5/#10 once Stage 8's dryers land.
+- `PROCESS.md` rewritten in full again (900–1100 words, per `CLAUDE.md`'s
+  updated numbers) — not appended to — covering Stages 6 and 8 as well as
+  the already-documented Stages 1–4.
 - Remind the user to write `reflections/crit-9.md` (their own, not
-  drafted by the agent).
+  drafted by the agent) if not already done.
 - Redeploy, confirm `pnpm check` green, and do a real two-browser check
   against the live app (not just local) before calling this crit done.
 

@@ -26,12 +26,12 @@ type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 // accessibility rule — colour never carries meaning alone.
 const STYLES = `
   :root {
-    --surface: #fcfcfb;
-    --page: #f9f9f7;
+    --surface: #ffffff;
+    --page: #e3f4f7;
     --ink: #0b0b0b;
     --ink-muted: #52514e;
     --ink-faint: #898781;
-    --border: rgba(11,11,11,0.14);
+    --border: rgba(11,11,11,0.1);
     --good: #0ca30c;
     --good-tint: #e9f7e9;
     --warning: #c98500;
@@ -40,8 +40,17 @@ const STYLES = `
     --info-tint: #e8f1fb;
     --mine: #4a3aa7;
     --mine-tint: #efecfa;
+    --card-radius: 1.25rem;
   }
   * { box-sizing: border-box; }
+  /* visually hidden but still read by a screen reader — used by the
+     status-dot sequence, where the dots' colour/fill is a visual shortcut,
+     not the only way the current step is conveyed (plans/crit-8.md: colour
+     or shape is never the only cue) */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     max-width: 48rem; margin: 0 auto; padding: 1rem 1rem 3rem;
@@ -51,8 +60,11 @@ const STYLES = `
   h1 a { color: inherit; text-decoration: none; }
   h2 { font-size: 1rem; margin: 0 0 0.5rem; }
   a { color: var(--info); }
+  /* the pale-cyan page background sits close to --info's hue, so the nav
+     — which lives directly on that background, not on a white card —
+     needs a darker, higher-contrast shade to actually stand out */
   .topnav { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-  .topnav a { text-decoration: none; font-weight: 600; }
+  .topnav a { color: #0f4c81; text-decoration: none; font-weight: 600; }
 
   /* buttons: the live action is loud, Cancel stays quiet (plans/crit-8.md) */
   button, .btn {
@@ -120,10 +132,29 @@ const STYLES = `
   /* pinned "my status" block: answers "am I up yet?" without hunting a grid */
   .my-status {
     background: var(--mine-tint); border: 1px solid var(--mine);
-    border-radius: 0.75rem; padding: 0.9rem 1rem; margin-bottom: 1.25rem;
+    border-radius: var(--card-radius); padding: 0.9rem 1rem; margin-bottom: 1.25rem;
   }
   .my-status h2 { color: var(--mine); }
   .my-status-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
+  /* status-dot sequence: one reservation's own waiting -> claimed ->
+     running -> done lifecycle, which is genuinely linear (unlike queue
+     *position*, which moves back one place on a missed window — that
+     stays the existing "#N in line" text, never this). A filled dot with
+     a check mark means done; the current step is filled but hollow-ringed
+     to stand out; upcoming steps are a plain hollow ring. Colour/fill is
+     a shortcut, not the only signal — each dot also has visually-hidden
+     text a screen reader announces (plans/crit-8.md's accessibility rule). */
+  .status-dots { display: flex; align-items: center; margin: 0.5rem 0; }
+  .status-dots .dot {
+    width: 1.1rem; height: 1.1rem; border-radius: 50%; flex: none;
+    border: 2px solid var(--mine); display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 700; color: var(--mine); background: var(--surface);
+  }
+  .status-dots .dot-line { flex: 1; height: 2px; background: var(--border); min-width: 0.75rem; }
+  .status-dots .dot-done { background: var(--mine); color: white; }
+  .status-dots .dot-done + .dot-line { background: var(--mine); }
+  .status-dots .dot-current { outline: 3px solid var(--mine-tint); }
 
   /* machine cards: single column on phone, grid on a wide screen (no JS) */
   .machines {
@@ -131,8 +162,9 @@ const STYLES = `
     gap: 1rem;
   }
   .machine {
-    border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem;
+    border: 1px solid var(--border); border-radius: var(--card-radius); padding: 1rem;
     background: var(--surface); border-left-width: 6px;
+    box-shadow: 0 1px 3px rgba(11,11,11,0.06);
   }
   .machine-free { border-left-color: var(--good); }
   .machine-running { border-left-color: var(--info); }
@@ -234,20 +266,29 @@ function relativeTime(ms: number, now: number): string {
   return `in ${diffMin} min`;
 }
 
-// The machine's number sits inside the drum, like a real machine's own
-// number sticker — so the icon alone (shape = type, number = which one) is
-// enough to tell machines apart at a glance, before reading any text.
-// Decorative for screen readers (the adjacent "Washer N" text is the real
+// Crit 9 Stage 6: redrawn in the reference image's illustrated style
+// (research/1.png) — a rounded machine body, two control dots and a
+// display strip up top, a filled accent-colour drum instead of a plain
+// outline. The reference's extra scene props (detergent bottle, basket)
+// are left out: those read fine in a large standalone illustration, but
+// this icon sits small, inline next to a machine number — adding more
+// line work at that size would blur together rather than read clearly.
+// The machine's number still sits inside the drum, like a real machine's
+// number sticker, so the icon alone (shape = type, number = which one)
+// is enough to tell machines apart before reading any text. Decorative
+// for screen readers (the adjacent "Washer N" text is the real
 // accessible name). One shape today; a second shape is the hook crit 9's
-// dryers need (plans/crit-8.md).
+// dryers need (plans/crit-8.md, and now plans/crit-9.md Stage 8).
 function machineIcon(number: number): Html {
   return raw(
-    `<svg class="machine-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-      <rect x="3" y="2" width="18" height="20" rx="2"/>
-      <circle cx="12" cy="13" r="7"/>
-      <text x="12" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="8" font-weight="700" stroke="none" fill="currentColor">${number}</text>
-      <line x1="6.5" y1="5" x2="8" y2="5" stroke-linecap="round"/>
-      <line x1="10" y1="5" x2="11.5" y2="5" stroke-linecap="round"/>
+    `<svg class="machine-icon" width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2" width="19" height="20" rx="3" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="4.3" width="7" height="1.6" rx="0.8" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="16.3" cy="5.1" r="0.9" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="19" cy="5.1" r="0.9" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="12" cy="14.5" r="6.8" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="12" cy="14.5" r="5.4" fill="var(--mine)" stroke="currentColor" stroke-width="1"/>
+      <text x="12" y="15" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" stroke="none" fill="white">${number}</text>
     </svg>`,
   );
 }
@@ -326,6 +367,41 @@ function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "running") return timeChip("Finish at", row.endMs, now, true, compact);
   if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
   return timeChip(row.fixed ? "Ready at" : "Est. ready at", row.scheduledStartMs, now, row.fixed, compact);
+}
+
+// Crit 9 (plans/crit-9.md Stage 6): a reservation's own lifecycle really
+// is linear — waiting, then claimed, then running, then done — unlike
+// queue *position*, which the move-back-one rule can send backward (that
+// stays the existing "#N in line" text, never a step sequence). Dots
+// aren't shown for cancelled/missed, since those exit the sequence
+// sideways rather than completing it; the plain text badge already
+// covers that case.
+const STATUS_STEPS = [
+  { key: "waiting", label: "Waiting" },
+  { key: "claimed", label: "Claimed" },
+  { key: "running", label: "Washing" },
+  { key: "done", label: "Done" },
+] as const;
+
+function statusDots(status: QueueRow["status"]): Html {
+  const stepIndex = STATUS_STEPS.findIndex((s) => s.key === status);
+  if (stepIndex === -1) return raw(""); // cancelled/missed: no sequence to show
+
+  return html`<div class="status-dots" role="list" aria-label="Reservation progress">
+    ${STATUS_STEPS.map((step, i) => {
+      const done = i < stepIndex;
+      const current = i === stepIndex;
+      const dot = html`<span
+        class="dot ${done ? "dot-done" : ""} ${current ? "dot-current" : ""}"
+        role="listitem"
+      >
+        <span aria-hidden="true">${done ? "✓" : ""}</span>
+        <span class="sr-only">${step.label}${done ? " (done)" : current ? " (current step)" : ""}</span>
+      </span>`;
+      const line = i < STATUS_STEPS.length - 1 ? html`<span class="dot-line" aria-hidden="true"></span>` : raw("");
+      return html`${dot}${line}`;
+    })}
+  </div>`;
 }
 
 // Crit 9 (plans/crit-9.md Stage 2): a silent swap is worse than crit 8's
@@ -488,6 +564,7 @@ export function myStatusBlock(
     ${mine.map(
       ({ machine, row }) => html`<div class="my-status-row-wrap">
         ${noticeBanner(row)}
+        ${statusDots(row.status)}
         <div class="my-status-row">
           ${machineIcon(machine.id)}
           <strong>${machine.label}</strong>
