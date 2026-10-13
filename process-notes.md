@@ -97,3 +97,37 @@ not a one-off I should have to keep catching by hand.
 **Backed by:**
 - `CLAUDE.md`'s Workflow section (pending: not yet committed — lands with
   this crit's next commit)
+
+## Dropping the reservation detail page
+
+**What happened:** crit 8's plan called for a separate reservation detail
+page (`GET /reservations/:id`) on purpose. But actually using
+the app in crit 9, I found it was a pointless extra click: the home page
+already showed the claim/start/cancel buttons for my reservation, so
+"Manage your reservation →" just led to a second page with the same
+buttons on it.
+
+**The obvious alternative:** leave it as crit 8 built it — nothing about
+the page was broken.
+
+**What I decided instead:** cut the page. The buttons already on the home
+page are the only way to use them now.
+
+**Why it helped:** `README.md` argues the queue should stay out of your
+way and only interrupt you when it actually needs to — a button already
+on the page you land on shouldn't need a second page just to press it.
+Cutting it also broke something: the "Reserve" button's redirect pointed
+at that page, so removing it caused a real 404 the first time I clicked
+Reserve for real. Fixed by keeping the route but pointing it at the home
+page instead of deleting it outright.
+
+**The real lesson:** this page looked fine on paper in crit 8's plan.
+Only using the actual app surfaced that it was dead weight — and only
+clicking the actual button surfaced the 404 the removal caused. Planning
+ahead of time catches design mistakes; it doesn't catch everything. Some
+things only show up once a working version exists to click on.
+
+**Backed by:**
+- [`4cae99e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/4cae99e) (page removed, "end the wash" added)
+- [`b04d236`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b04d236) (the redirect bug the removal caused, fixed)
+- `plans/crit-9.md`'s Stage 1.5
