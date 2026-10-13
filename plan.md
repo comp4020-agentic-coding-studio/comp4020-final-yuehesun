@@ -132,6 +132,27 @@ and the offer moves to the next person instead.
   `PROCESS.md` is written (246 words).
 - Still needed before shipping: `reflections/crit-8.md` (the user's own —
   not drafted by the agent), then flipping the repo public and deploying.
+- **Crit 9, all stages 1-4 and 7 done; shipped.** Real-time sync over SSE
+  (a server tick, not just write-triggered broadcasts, catches passive
+  expiries — a claim window running out with nobody making a request —
+  within ~1s). The documented multi-user decision: #1's fairness rule
+  upgraded from crit 8's blunt "ejected outright" to "move back one
+  place," plus #12's cross-machine "earlier machine" offer, both decided
+  together since the offer mechanism only exists because the move-back
+  rule creates the slack it responds to — see
+  [`docs/adr/0005-fairness-escalation.md`](docs/adr/0005-fairness-escalation.md).
+  Along the way, also dropped the reservation detail page (redundant once
+  every action was already on the home page) and added "end the wash"
+  (ends a running wash early, the same end state a normal finish already
+  produces). `spec/offer.test.ts` covers the offer's accept/decline paths;
+  the move-back-one swap stays manually verified (same as the rest of
+  crit 8's timing-dependent behavior — nothing automates waiting out a
+  real window). `README.md`'s "Several people at once" now describes the
+  real mechanism. `PROCESS.md` rewritten in full (948 words, per the
+  final-project brief's 900-1100 target). Stage 5 (dryers, a stretch) not
+  attempted. Stage 6 (visual design pass) is blocked on the user
+  providing reference UI and image assets — reminder still open.
+  `reflections/crit-9.md` still needed (the user's own).
 
 ## The feature list
 
@@ -140,9 +161,10 @@ it's load-bearing for the app to work at all; "crit N" means it's scheduled
 there; "gap" means nobody's claimed it yet.
 
 1. **Fairness rule** — core. Crit 8: miss your 3-minute claim window, lose
-   your spot, full stop. Crit 9: upgrade to the two-tier-reminder + offer
-   system (see #12) as the crit's one documented multi-user decision, with
-   crit 8's blunt version as the rejected-for-now alternative.
+   your spot, full stop. **Done, crit 9**: move back one place instead,
+   swapped with whoever's next, both sides told why — crit 8's blunt rule
+   is the documented rejected alternative. See
+   [`docs/adr/0005-fairness-escalation.md`](docs/adr/0005-fairness-escalation.md).
 2. **The "it's your turn" notification** — crit 8 ships on-page live update
    only. A push notification (so you don't need the tab open) is a nice-to-
    have, not required by the real-time spec, and isn't scheduled anywhere
@@ -173,8 +195,9 @@ there; "gap" means nobody's claimed it yet.
     has people manually picking a machine.
 12. **Cross-machine "earlier machine" offer** (if another machine of your
     type frees up early and nobody's queued for it, the longest-waiting
-    eligible person gets first refusal) — **gap**, no crit assigned. A
-    candidate for crit 9's one documented decision, alongside #1 and #8.
+    eligible person gets first refusal) — **done, crit 9**, alongside #1,
+    as the same documented decision. See
+    [`docs/adr/0005-fairness-escalation.md`](docs/adr/0005-fairness-escalation.md).
 13. **Estimated vs. fixed time** — core, crit 8. Estimate = scheduled slot
     assuming no delay; becomes fixed once the person ahead actually starts.
 14. **Claim vs. start as separate actions** — core, crit 8. Scanning claims
@@ -187,22 +210,22 @@ there; "gap" means nobody's claimed it yet.
 - Finished-but-not-collected handling (#6)
 - Shoe washers as a third machine type (#10)
 - Auto-assign (#11)
-- Cross-machine "earlier machine" offers (#12)
 - Push notifications for "it's your turn" (#2), if wanted beyond the spec
   minimum
 
-**Reminder: revisit this list when crit 9 planning starts.** Each item
-needs either a crit slot or a conscious decision to drop it — don't let
-them sit here past crit 9.
+(#12, cross-machine "earlier machine" offers, shipped in crit 9 — see the
+feature list above.)
 
 ## Mapping onto crits (summary — full detail in each crit's own plan file)
 
 - **Crit 8** (`plans/crit-8.md`): one machine type, manual reservation
   (pick or scan), simple fairness, estimated/fixed time, persistence. The
   smallest version that's genuinely alive.
-- **Crit 9** ("all at once"): real, working real-time sync (<1s, no
-  reload); one documented multi-user decision — likely #1's offer system,
-  possibly #8 or #9 instead or alongside, time permitting.
+- **Crit 9** ("all at once"): **done** — real-time sync over SSE (<1s, no
+  reload, including passive expiries via a server tick); one documented
+  multi-user decision, #1's fairness escalation plus #12's cross-machine
+  offer together (`docs/adr/0005-fairness-escalation.md`). Dryers (#5)
+  not attempted. Visual design pass blocked on the user.
 - **Crit 10** ("fly by instruments"): server-side logging of every queue
   action; a live "what's happening now" view for a logs-only demo; #7 as a
   bonus if time allows.
