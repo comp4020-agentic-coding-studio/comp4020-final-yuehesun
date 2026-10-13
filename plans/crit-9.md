@@ -58,6 +58,11 @@ From `plan.md`'s feature list:
 - **Stretch, Stage 4 only**: dryers (#5), a second machine type —
   attempted only after Stages 1–3 are built and verified, first thing cut
   if time runs short. Not required by crit 9's spec.
+- **Visual design pass (Stage 6), last, blocked on the user**: the current
+  UI is still crit 8's first-pass styling. The user flagged it as "too
+  ugly" but wants function finished first — they'll bring reference UI
+  examples and image/icon assets once the functional stages are done,
+  rather than the agent picking a direction unprompted.
 
 Explicitly **not** this crit, staying in `plan.md`'s gap list: finished-
 but-not-collected handling (#6), shoe washers (#10), push notifications
@@ -132,6 +137,69 @@ script tag and `hx-ext`/`sse-connect`/`hx-trigger` attributes to the page
 shell and the relevant elements). `src/queue.ts` and `src/schema.ts`
 untouched this stage.
 
+### Stage 1.5 — drop the reservation detail page; add "end the wash"
+
+Two usability problems the user found by actually using the app, both
+settled before Stage 2 since Stage 2's notice plan below depends on where
+actions live:
+
+**1. The reservation detail page is redundant and adds a pointless hop.**
+`myStatusBlock` (pinned at the top of the home page) already renders
+`actionButtons(row)` — claim, start, cancel are already right there. The
+only thing `GET /reservations/:id` adds is an extra click via "Manage
+your reservation →" to reach a page that shows the same actions again.
+This also cuts against `README.md`'s own argument (calm technology: the
+queue should take care of itself, not make you hunt for the controls) —
+an action already surfaced on the page you land on shouldn't need a
+second page to actually use.
+
+- Remove the "Manage your reservation →" link and the `reservationPage`
+  function; `machineCard` renders `actionButtons(row)` directly for the
+  viewer's own row, the same as `myStatusBlock` already does.
+- Remove `GET /reservations/:id` entirely — `spec/` never depends on it
+  (every test drives `join`/`claim`/`cancel`/`state`, never this page), so
+  nothing to update there. The action routes themselves
+  (`/reservations/:id/claim` etc.) are untouched; only the page that
+  linked to them goes.
+- Nothing shared with anyone outside the app depends on this URL (no
+  sharing/bookmarking use case exists in `plan.md`'s user story), so
+  there's no deprecation concern.
+
+**2. `running` has no way out.** `queue.cancel()` only accepts `waiting`
+or `claimed` — once a wash is `running`, nothing lets it end early. Real
+laundry sometimes needs to stop early (an emergency, a mistake); this is
+also the one thing that makes crit 9's manual real-time verification slow
+to repeat, since otherwise ending a run means waiting out its real
+duration or hand-editing the database.
+
+- **Add "end the wash"** (not "pause"): a `running` reservation can be
+  marked `done` early, same end state `settleMachine()` already produces
+  for a wash that finished normally — no new status, no change to
+  `queueFor`'s logic.
+- **No "pause."** Rejected: this app never actually controls a machine
+  (`README.md` is explicit that "start" just records a timestamp) — a
+  pause would mean inventing a frozen-duration concept purely in software,
+  complicating every downstream estimate (`queueFor`'s whole chain assumes
+  a fixed duration) for a real-world event (stepping out mid-wash to add
+  a sock) that doesn't actually change when the machine frees up for the
+  next person. The queue only cares when a machine is free again, not
+  whether someone opened the door in between.
+- **Confirmation required**: the form's own `onsubmit="return confirm(...)"`
+  (plain browser-native `confirm()`, not htmx's `hx-confirm` — this form
+  is a normal POST with a 303 redirect like every other action here, and
+  `hx-confirm` only intercepts htmx-issued requests) blocks submission
+  unless the user accepts, since this ends something irreversible and the
+  person clicking it might be the next queue position's neighbor acting
+  by mistake, not just the machine's own owner.
+- New route: `POST /reservations/:id/finish` (parallel shape to the
+  existing `claim`/`start`/`cancel` action routes, owner-only via the same
+  `loadOwned` check `queue.ts` already uses).
+
+Verify: claim, start, then end a wash early — confirm the machine becomes
+free/unclaimed-for-the-next-person immediately rather than waiting out
+the original duration, and the confirm step actually blocks a single
+accidental click.
+
 ### Stage 2 — fairness escalation (same-queue case)
 
 Benchmark this against `README.md`'s "good" argument before writing code,
@@ -160,8 +228,9 @@ least "ejected" was visible (your reservation just disappeared), where a
 silent swap means someone's position changed for a reason they were never
 shown. Per discussion, both sides of the swap get a one-line notice in
 the one place they already look to check their own status — the pinned
-"your status" block and the reservation detail page (`reservationPage`,
-`myStatusBlock`) — not a separate notification system or a toast.
+"your status" block (`myStatusBlock`), now the only place a reservation's
+own controls live after Stage 1.5 — not a separate notification system or
+a toast.
 
 - **The person who moved back:** a neutral, factual line, not a scolding
   one — "Your claim window passed, so you moved back one place." (not
@@ -262,7 +331,26 @@ confirm the per-type active-reservation cap and cross-machine offers
 correctly scope by type rather than merging washers and dryers into one
 queue.
 
-### Stage 6 — wrap-up
+### Stage 6 — visual design pass (blocked on the user, do last)
+
+The current UI is still crit 8's first-pass styling — functional, but not
+visually refined. Explicitly deferred until every functional stage above
+(1–5) is built, verified, and the app behaves correctly — a redesign on
+top of unfinished or unverified logic would mean re-doing visual work
+twice. **Blocked on the user**: they'll provide reference UI examples and
+image/icon assets to work from, rather than the agent picking a visual
+direction unprompted. Remind the user of this stage once Stages 1–5 are
+done, since this is the natural point to ask for those references.
+
+Scope, once unblocked: restyle the existing structure (machine cards,
+chips, badges, the pinned "your status" block, the new notice banners
+from Stage 2, the offer UI from Stage 3) against the user's references —
+not a rebuild of the page structure or routes, which stay as this crit's
+functional stages leave them. Re-verify accessibility (colour-plus-text,
+keyboard focus, real `<button>`/`<a>` elements) holds after restyling,
+per `plans/crit-8.md`'s existing accessibility rules.
+
+### Stage 7 — wrap-up
 
 - Grow `plan.md`: update the feature list's status for #1, #12 (now
   shipped), current-state section, crit 9 row in "Mapping onto crits."

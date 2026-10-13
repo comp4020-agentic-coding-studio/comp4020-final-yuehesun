@@ -199,3 +199,20 @@ export function cancel(reservationId: number, personName: string): ActionResult 
   settleMachine(row.machineId); // the next person may now be free to claim
   return { ok: true };
 }
+
+// Crit 9 (plans/crit-9.md Stage 1.5): the app never actually controls a
+// machine — "start" only ever recorded a timestamp — so ending a wash
+// early just means the same "done" a normal finish already produces
+// (settleMachine's own running-timer-elapsed branch), not a new status.
+// No "pause": a frozen duration is a concept this app would have to
+// invent purely in software, and the queue only cares when the machine
+// frees up for the next person, not whether its owner stepped out.
+export function finish(reservationId: number, personName: string): ActionResult {
+  const row = loadOwned(reservationId, personName);
+  if ("ok" in row) return row;
+  if (row.status !== "running") return { ok: false, status: 409, message: "this wash isn't running" };
+
+  db.update(reservations).set({ status: "done" }).where(eq(reservations.id, row.id)).run();
+  settleMachine(row.machineId); // the next person may now be free to claim
+  return { ok: true };
+}

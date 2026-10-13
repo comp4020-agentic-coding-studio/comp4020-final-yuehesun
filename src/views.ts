@@ -299,6 +299,13 @@ function washingTypeOptions(): Html {
   )}`;
 }
 
+// "End the wash" uses a plain onsubmit confirm rather than converting
+// this one form to an htmx-handled request (hx-confirm only intercepts
+// htmx-issued requests) — every action here is a normal form POST with a
+// 303 redirect, and ending a running wash early should submit the same
+// way as every other action, just with a confirmation step first since
+// it's irreversible and not necessarily the machine's owner clicking it
+// by mistake (plans/crit-9.md Stage 1.5).
 function actionButtons(row: QueueRow): Html {
   return html`${row.status === "waiting" && row.position === 1
       ? html`<form method="post" action="/reservations/${row.reservationId}/claim"><button class="btn-primary" type="submit">Claim (scan)</button></form>`
@@ -308,6 +315,13 @@ function actionButtons(row: QueueRow): Html {
       : raw("")}
     ${row.status === "waiting" || row.status === "claimed"
       ? html`<form method="post" action="/reservations/${row.reservationId}/cancel"><button class="btn-quiet" type="submit">Cancel</button></form>`
+      : raw("")}
+    ${row.status === "running"
+      ? html`<form
+          method="post"
+          action="/reservations/${row.reservationId}/finish"
+          onsubmit="return confirm('End this wash now? This can\\'t be undone.')"
+        ><button class="btn-quiet" type="submit">End the wash</button></form>`
       : raw("")}`;
 }
 
@@ -378,7 +392,7 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
           ${rows.map((r) => reservationLine(r, identity, now))}
         </ol>`}
     ${mine
-      ? html`<p><a class="btn btn-mine" href="/reservations/${mine.reservationId}">Manage your reservation →</a></p>`
+      ? html`<p>${actionButtons(mine)}</p>`
       : html`<form method="post" action="/machines/${machine.id}/reservations">
           <select name="washingType">${washingTypeOptions()}</select>
           <button class="btn-primary" type="submit">Reserve</button>
@@ -424,28 +438,6 @@ export function homePage(
         ${myStatusBlock(mine, now)}
       </div>
       <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
-  );
-}
-
-export function reservationPage(machine: Machine, row: QueueRow, identity: string, now: number): Html {
-  const owner = row.person === identity;
-
-  return page(
-    machine.label,
-    html`<div
-      id="reservation-body"
-      hx-trigger="sse:machine-${machine.id}"
-      hx-get="/reservations/${row.reservationId}"
-      hx-select="#reservation-body"
-      hx-target="this"
-      hx-swap="outerHTML"
-    >
-      <div class="machine-head">${machineIcon(machine.id)}<h2>${machine.label}</h2></div>
-      <p>${positionLine(row.position)} ${rowBadge(row, owner)}</p>
-      ${rowTimeChip(row, now)}
-      ${owner ? html`<p>${actionButtons(row)}</p>` : html`<p>This isn't your reservation.</p>`}
-      <p><a href="/">← All machines</a></p>
-    </div>`,
   );
 }
 

@@ -7,9 +7,9 @@ import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
 import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
-import { machines, reservations } from "./schema.ts";
+import { machines } from "./schema.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, reservationPage } from "./views.ts";
+import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage } from "./views.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -94,29 +94,17 @@ app.post("/machines/:id/reservations", async (c) => {
   const result = queue.join(machineId, identity, washingType, durationFor(washingType));
   if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
 
+  // spec/'s join() client reads this id out of the Location header's path
+  // (plans/crit-8.md's wire contract) — the string shape has to stay even
+  // though nothing now serves GET /reservations/:id (plans/crit-9.md Stage
+  // 1.5: the page was a redundant hop, since the home page's pinned "your
+  // status" block already renders every action directly).
   c.header("Location", `/reservations/${result.reservationId}`);
   return c.body(null, 303);
 });
 
-function findRow(machineId: number, reservationId: number) {
-  return queue.queueFor(machineId).find((r) => r.reservationId === reservationId);
-}
-
-app.get("/reservations/:id", (c) => {
-  const identity = getCookie(c, IDENTITY_COOKIE);
-  if (!identity) return c.redirect("/", 303);
-
-  const id = Number(c.req.param("id"));
-  const reservation = db.select().from(reservations).where(eq(reservations.id, id)).get();
-  if (!reservation) return c.html(errorPage("no such reservation", 404), 404);
-
-  const machine = db.select().from(machines).where(eq(machines.id, reservation.machineId)).get()!;
-  const row = findRow(machine.id, id);
-  if (!row) return c.html(errorPage("that reservation has ended", 404), 404);
-
-  return c.html(reservationPage(machine, row, identity, Date.now()));
-});
-
+// Crit 9 (plans/crit-9.md Stage 1.5): actions redirect to the home page,
+// not a reservation detail page — there isn't one anymore.
 function actionRoute(path: string, act: (id: number, identity: string) => queue.ActionResult) {
   app.post(path, (c) => {
     const identity = getCookie(c, IDENTITY_COOKIE);
@@ -126,22 +114,14 @@ function actionRoute(path: string, act: (id: number, identity: string) => queue.
     const result = act(id, identity);
     if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
 
-    return c.redirect(`/reservations/${id}`, 303);
+    return c.redirect("/", 303);
   });
 }
 
 actionRoute("/reservations/:id/claim", queue.claim);
 actionRoute("/reservations/:id/start", queue.start);
-app.post("/reservations/:id/cancel", (c) => {
-  const identity = getCookie(c, IDENTITY_COOKIE);
-  if (!identity) return c.html(errorPage("sign in first", 400), 400);
-
-  const id = Number(c.req.param("id"));
-  const result = queue.cancel(id, identity);
-  if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
-
-  return c.redirect("/", 303);
-});
+actionRoute("/reservations/:id/cancel", queue.cancel);
+actionRoute("/reservations/:id/finish", queue.finish);
 
 // JSON queue state — not a page a visitor sees, just how spec/ and
 // debugging inspect invariants without parsing HTML (plans/crit-8.md).
