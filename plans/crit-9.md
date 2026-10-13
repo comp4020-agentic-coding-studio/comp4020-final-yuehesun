@@ -154,10 +154,48 @@ changes.
 outright on a miss. Named explicitly as what we had and chose to move
 away from, with the reasoning above.
 
+**Both people affected have to be told, not just repositioned.** A rule
+that silently moves people around is worse than crit 8's blunt one: at
+least "ejected" was visible (your reservation just disappeared), where a
+silent swap means someone's position changed for a reason they were never
+shown. Per discussion, both sides of the swap get a one-line notice in
+the one place they already look to check their own status — the pinned
+"your status" block and the reservation detail page (`reservationPage`,
+`myStatusBlock`) — not a separate notification system or a toast.
+
+- **The person who moved back:** a neutral, factual line, not a scolding
+  one — "Your claim window passed, so you moved back one place." (not
+  "You missed your turn.")
+- **The person who moved up because of it:** says why it happened, not
+  just that it did — "The person ahead of you missed their window — it's
+  your turn now."
+- **Scope:** only this same-queue case. Stage 3's offers already require
+  an explicit accept/decline click, which is itself the confirmation —
+  no separate notice is layered on top of an offer.
+- **Storage:** one nullable column on `reservations` (e.g. `notice: text`,
+  values `"moved_back"` / `"moved_up"`, or `null`) rather than a separate
+  notices table — a reservation only ever has one outstanding notice at a
+  time, so there's nothing to list. `settleMachine()`'s swap sets it on
+  both rows it just swapped.
+- **Dismissal:** a small inline "Got it" button clears the column
+  (`POST /reservations/:id/dismiss-notice` or folded into the existing
+  action routes) — doesn't auto-expire on a timer, since the whole point
+  is confirming the person actually saw it, not that enough time passed.
+- **If a new notice arrives before the old one's dismissed:** the new one
+  replaces it (one column, one value) rather than stacking a history —
+  this reports current truth, not a log; a log of past notices isn't
+  something either `README.md`'s argument or the fairness decision needs.
+- **No `spec/` test planned for this** — same as the rest of crit 8's
+  timing-dependent behavior (nothing currently automates "wait out a real
+  3-minute window"), verified by hand instead: two sessions, one actually
+  left to time out, confirm both notices appear with the right wording and
+  clear on their own "Got it" independently.
+
 Verify alone, before Stage 3: two people in one machine's queue, the
 front misses their window, confirm they're now second rather than gone,
-and the real-time push carries the swap to both browsers within a
-second.
+both notices appear with the text above, dismissing one doesn't clear the
+other, and the real-time push carries the swap (and the notice) to both
+browsers within a second.
 
 ### Stage 3 — offer system (early-opening case)
 

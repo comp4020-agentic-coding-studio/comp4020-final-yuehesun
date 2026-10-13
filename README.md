@@ -1,73 +1,70 @@
 # Laundry Queue
 
-<!-- DRAFT — crit 8, first pass. -->
+<!-- DRAFT — crit 9 pass. -->
 
 ## What this is
 
-A shared queue for a laundry room's washers and dryers. My dorm has about 10
-machines for 100+ people — on weekends there's always a wait. This app lets
-you see the line, hold your place, and know when it's your turn, without
-having to sit in the laundry room or message anyone.
+A shared queue for a laundry room's washers and dryers. Student residences often share several washing machines between 100+ people — on weekends there's always a wait. Leave to study or eat, and someone else takes the machine you were counting on.
+This app cuts down waiting time and the communicating cost of using a shared facility. The system registers information and coordinates the
+queue status of multiple users, resolving conflicts like a user being
+late or not collecting their clothes, and helps you find a newly freed machine. All a user needs is a phone to queue, making doing laundry lighter and dorm management easier.
 
-## What "good" means for this app
+## What good means here
 
-This app is good if it does one thing: it lets people who don't know each
-other share a scarce resource fairly, without needing to talk.
+The real cost is that leaving costs you your
+turn, so you don't leave. [David Maister's classic paper on
+waiting](https://www.columbia.edu/~ww2040/4615S13/Psychology_of_Waiting_Lines.pdf)
+opens with the finding behind this: occupied time feels shorter than
+unoccupied time, and an uncertain wait is worse than a long one with a
+known end. Standing in a laundry room with nothing to do, not knowing
+which machine or when, is close to the worst shape of waiting Maister
+describes. [Disney's original
+FastPass](https://en.wikipedia.org/wiki/Virtual_queue_systems_at_Disney_Parks)
+solved exactly this on a bigger stage: instead of a physical line, a
+guest got back a scheduled time window and was free to go ride something
+else until it came. That's the precedent this app's claim window comes
+from directly — reserve, then leave, and come back for a slot, not a
+line.
 
-- **Grounded in what you actually do, not what you say.** Machine status
-  comes from scanning it, not from someone remembering to log it — this
-  rules out manual mistakes and means you don't have to submit anything
-  yourself. (There's no real washing machine behind this, so these actions
-  are plain web interfaces for now, triggered by a click; the same
-  interfaces could later connect to a real machine.)
-- **Fair, and seen to be fair.** Everyone looking at the queue sees the same
-  line, in the same order. No one's turn depends on who they know or who
-  shouts loudest — the queue decides, not the people in it.
-- **Humane, not just efficient.** Convenience and accommodating different
-  people's needs come first — like letting one room hold two machines at
-  once, for washing darks and lights separately, rather than optimizing
-  purely for throughput.
-- **Advancing early is offered, never forced.** If an earlier machine opens
-  up, you're asked — declining costs you nothing, and you keep your place.
-- **Talking is optional, not required.** You shouldn't need to message
-  anyone, ask around, or make an account just to find out when it's your
-  turn. The queue carries the coordination that used to take a conversation.
-- **Honest about real-time limits.** "Your turn" only matters if you find out
-  in time to act on it. If a notification can't reach someone fast enough,
-  that's a real limit worth admitting here, not hiding.
-- **Honest about uncertainty, not just speed.** A time shown before it's
-  confirmed is marked as an estimate, not presented as fact, and you're
-  told when it changes.
-- **Keeps only what the queue needs.** Just enough to tell you apart (the
-  room number you type in) and your place in line — not what you wash or
-  how often you do laundry. No profile, no personal history. (Crit 10's
-  planned activity log, for the peak-times view, is aggregate timing data
-  — not a record of what any one person did.)
-- **Stays one laundry room's app.** It's built for this room and its
-  machines, not a general booking tool for any shared resource. Growing into
-  that would be a different app with a different idea of "good."
+What makes it safe to actually leave is Weiser and Brown's [idea of calm
+technology](https://calmtech.com/papers/coming-age-calm-technology): good
+technology sits at the edge of attention and only calls you to the
+center when something genuinely needs you. That's the queue's job once
+you've reserved — watching the room so you don't have to, and pulling
+you back in at exactly two moments (one person ahead of you; your turn),
+never before.
 
-This isn't a new idea — it's close to [situated software](http://shirky.com/essays/situated-software/),
-software built for one group's real situation instead of generic scale, and
-to [small, single-tenant software](https://benhoyt.com/writings/the-small-web-is-beautiful/)
-being easier to get right than something built to grow. But the standard
-above comes from the laundry room itself, not from the reading.
+## What I chose not to build
 
-## What's enforced vs. judged
+No accounts, no names, no chat. Calm technology's whole point is letting
+the room recede to the edge of your attention; a feature that asks you
+to check messages or keep a profile pulls you back to the center for no
+reason the laundry itself gives. A room number is the one thing the
+queue needs to tell people apart — nothing else is asked for, and
+nothing else is kept.
 
-- **Enforced** (see `spec/`): a machine never has two active claims at
-  once; a queue position only moves forward, except through the documented
-  miss-your-window rule; identity must be a room number in `roomXXX` format
-  — anything else is rejected; a room holds at most 2 active reservations
-  per machine type at a time — enough to wash darks and lights separately,
-  not enough to tie up every washer.
-- **Judged**: whether the queue alone is actually enough to coordinate
-  without anyone needing to talk — talking is optional by design, not
-  banned, so this is read by using the app, not an automated test; whether
-  the fairness rule actually feels fair to residents; whether the "it's
-  your turn" moment arrives soon enough to be useful.
+## Several people at once
+
+*(Written once crit 9's real-time sync and fairness escalation are built
+and verified — this section will describe exactly what reaches every
+open page within a second, what happens when a claim window is missed,
+and how an early opening is offered, the way the mechanism actually
+behaves, not how it's meant to.)*
+
+## What's enforced, what's judged
+
+`spec/` checks what can be checked mechanically: a machine never has two
+active claims at once; a queue position only moves forward except
+through the documented miss-your-window rule; identity has to be a bare
+room number, anything else rejected; a room holds at most two active
+reservations per machine type at a time. Whether standing in the room
+with nothing to do is actually the thing residents feel relieved of, and
+whether the claim window is long enough to be fair without being long
+enough to sit idle, aren't things a test can check — that's for whoever
+actually uses the room to judge.
 
 ## Sources consulted
 
-- Clay Shirky, [Situated Software](http://shirky.com/essays/situated-software/) (2004)
-- Ben Hoyt, [The small web is beautiful](https://benhoyt.com/writings/the-small-web-is-beautiful/)
+- David Maister, [The Psychology of Waiting Lines](https://www.columbia.edu/~ww2040/4615S13/Psychology_of_Waiting_Lines.pdf) (1985)
+- [Virtual queue systems at Disney Parks](https://en.wikipedia.org/wiki/Virtual_queue_systems_at_Disney_Parks) — FastPass, 1999
+- Mark Weiser & John Seely Brown, [The Coming Age of Calm Technology](https://calmtech.com/papers/coming-age-calm-technology) (1996)
