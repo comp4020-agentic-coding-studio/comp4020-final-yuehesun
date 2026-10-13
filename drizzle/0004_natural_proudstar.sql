@@ -1,0 +1,1 @@
+ALTER TABLE `reservations` ADD `not_before_reservation_id` integer REFERENCES reservations(id);

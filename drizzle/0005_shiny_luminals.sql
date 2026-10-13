@@ -1,0 +1,1 @@
+ALTER TABLE `reservations` ADD `dryer_prompt_dismissed` integer DEFAULT 0 NOT NULL;

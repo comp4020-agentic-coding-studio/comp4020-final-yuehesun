@@ -4,14 +4,16 @@ import { acceptOffer, claimAndStart, declineOffer, finish, waitForOffer } from "
 
 // Crit 9 Stage 3 (plans/crit-9.md): the "earlier machine" offer. The
 // eligibility algorithm looks across *every* machine of the same type
-// (plan.md's User story), so every machine except the two this test
+// (plan.md's User story), so every *washer* except the two this test
 // actually uses has to be kept occupied for the whole test — otherwise an
-// unrelated idle machine (left over from another spec file, or just the
+// unrelated idle one (left over from another spec file, or just the
 // seeded default) could win the offer instead of the one this test means
-// to test, non-deterministically.
+// to test, non-deterministically. Dryers (machines 9-10, crit 9 Stage 8)
+// aren't washers, so the eligibility algorithm never considers them here
+// — nothing to occupy on their account.
 const baseUrl = inject("baseUrl");
 const [HOLDER_MACHINE, IDLE_MACHINE] = [7, 8];
-const OTHER_MACHINES = [1, 2, 3, 4, 5, 6, 9, 10];
+const OTHER_MACHINES = [1, 2, 3, 4, 5, 6];
 
 async function occupyOthers(): Promise<{ cookie: string; reservationId: number }[]> {
   const fillers: { cookie: string; reservationId: number }[] = [];

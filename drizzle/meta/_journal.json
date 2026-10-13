@@ -29,6 +29,20 @@
       "when": 1791915806729,
       "tag": "0003_perpetual_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791933026992,
+      "tag": "0004_natural_proudstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791934220734,
+      "tag": "0005_shiny_luminals",
+      "breakpoints": true
     }
   ]
 }

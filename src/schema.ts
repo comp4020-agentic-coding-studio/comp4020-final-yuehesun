@@ -68,6 +68,21 @@ export const reservations = sqliteTable("reservations", {
   // window instead of the normal 3 minutes once it's the front of its
   // (new, idle) machine's queue.
   offerId: int("offer_id").references(() => offers.id),
+  // Crit 9 (plans/crit-9.md Stage 8): set on a dryer reservation queued
+  // alongside a washer reservation. Holds a real place in the dryer's
+  // queue from the moment it's created, but settleMachine() won't start
+  // its claim window (turnStartedAt) until the referenced reservation
+  // reaches "done" — otherwise the claim window could run out before the
+  // resident's wash even finishes, since they can't be at the dryer yet.
+  notBeforeReservationId: int("not_before_reservation_id").references(
+    (): AnySQLiteColumn => reservations.id,
+  ),
+  // Crit 9 (plans/crit-9.md Stage 8): set once the resident dismisses the
+  // "want to queue a dryer?" prompt for this washer reservation — stops
+  // it reappearing on every reload. Stored as 0/1 (SQLite has no real
+  // boolean); a dryer reservation already queued for this one also hides
+  // the prompt, so this column only matters for "no, don't ask again."
+  dryerPromptDismissed: int("dryer_prompt_dismissed").notNull().default(0),
 });
 
 export type Machine = typeof machines.$inferSelect;

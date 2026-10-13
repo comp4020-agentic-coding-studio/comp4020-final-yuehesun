@@ -76,6 +76,19 @@ export function settleMachine(machineId: number, now: number = Date.now()): void
     // front.status === "waiting": the machine is free for them. Mark when
     // their claim window started, the first time we notice this.
     if (front.turnStartedAt == null) {
+      // Crit 9 (plans/crit-9.md Stage 8): a dryer reservation queued
+      // alongside a still-running wash holds its place, but its claim
+      // window must not start until the referenced reservation is done —
+      // otherwise the window could run out before the resident can
+      // possibly be standing at the dryer.
+      if (front.notBeforeReservationId != null) {
+        const blocker = db
+          .select({ status: reservations.status })
+          .from(reservations)
+          .where(eq(reservations.id, front.notBeforeReservationId))
+          .get();
+        if (blocker && blocker.status !== "done") return;
+      }
       db.update(reservations).set({ turnStartedAt: now }).where(eq(reservations.id, front.id)).run();
       return;
     }
@@ -126,8 +139,35 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
     let fixed: boolean;
 
     if (i === 0) {
-      scheduledStartMs = r.status === "running" ? r.startedAt! : (r.turnStartedAt ?? now);
-      fixed = r.status === "running";
+      if (r.status === "running") {
+        scheduledStartMs = r.startedAt!;
+        fixed = true;
+      } else if (r.turnStartedAt != null) {
+        scheduledStartMs = r.turnStartedAt;
+        fixed = false;
+      } else if (r.notBeforeReservationId != null) {
+        // Crit 9 Stage 8: a dryer reservation still waiting on its
+        // blocking wash to finish — its own claim window hasn't started
+        // yet, so show when the blocker is expected to end, not "now"
+        // (which would wrongly read as "ready immediately").
+        const blocker = db.select().from(reservations).where(eq(reservations.id, r.notBeforeReservationId)).get();
+        if (blocker?.status === "running") {
+          scheduledStartMs = blocker.startedAt! + blocker.durationMinutes * 60_000;
+          fixed = true;
+        } else if (blocker) {
+          // Still waiting/claimed itself: a rough estimate, not chased
+          // through its own full queue chain — good enough for display,
+          // and it corrects itself every tick once the blocker starts.
+          scheduledStartMs = now + blocker.durationMinutes * 60_000;
+          fixed = false;
+        } else {
+          scheduledStartMs = now;
+          fixed = false;
+        }
+      } else {
+        scheduledStartMs = now;
+        fixed = false;
+      }
     } else {
       scheduledStartMs = previousEnd;
       fixed = previousFixed;
@@ -155,7 +195,7 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
 }
 
 export type ActionResult = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string };
-export type JoinResult = { ok: true; reservationId: number } | { ok: false; status: 400 | 404 | 409; message: string };
+export type JoinResult = { ok: true; reservationId: number } | { ok: false; status: 400 | 403 | 404 | 409; message: string };
 
 // A room can hold at most this many active reservations per machine type at
 // once — enough to wash darks and lights at the same time, not enough to
@@ -163,23 +203,26 @@ export type JoinResult = { ok: true; reservationId: number } | { ok: false; stat
 // running set the fairness rule already uses.
 export const MAX_ACTIVE_PER_TYPE = 2;
 
-export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): JoinResult {
-  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
-  if (!machine) return { ok: false, status: 404, message: "no such machine" };
-
-  const activeOfType = db
+function activeOfTypeCount(personName: string, machineType: string): number {
+  return db
     .select({ id: reservations.id })
     .from(reservations)
     .innerJoin(machines, eq(reservations.machineId, machines.id))
     .where(
       and(
         eq(reservations.personName, personName),
-        eq(machines.type, machine.type),
+        eq(machines.type, machineType),
         inArray(reservations.status, ACTIVE_STATUSES),
       ),
     )
     .all().length;
-  if (activeOfType >= MAX_ACTIVE_PER_TYPE) {
+}
+
+export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): JoinResult {
+  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
+  if (!machine) return { ok: false, status: 404, message: "no such machine" };
+
+  if (activeOfTypeCount(personName, machine.type) >= MAX_ACTIVE_PER_TYPE) {
     return {
       ok: false,
       status: 409,
@@ -235,6 +278,7 @@ export function cancel(reservationId: number, personName: string): ActionResult 
   }
 
   db.update(reservations).set({ status: "cancelled" }).where(eq(reservations.id, row.id)).run();
+  cancelDependentDryer(row.id); // Crit 9 Stage 8: no reason to hold a dryer slot for a wash that isn't happening
   settleMachine(row.machineId); // the next person may now be free to claim
   return { ok: true };
 }
@@ -398,6 +442,140 @@ export function declineOffer(offerId: number, personName: string): ActionResult 
   if ("ok" in loaded) return loaded;
   db.update(offers).set({ status: "declined" }).where(eq(offers.id, loaded.offer.id)).run();
   return { ok: true };
+}
+
+// --- crit 9 Stage 8: queuing a dryer alongside a washer reservation ----
+
+// When a new arrival would join this machine's queue right now, when
+// would *they* actually start? Mirrors queueFor's own chain, but for a
+// reservation that doesn't exist yet — used only to compare dryers
+// against each other, not shown directly to anyone.
+function estimatedStartForNewArrival(machineId: number, now: number): number {
+  const rows = queueFor(machineId, now);
+  const last = rows[rows.length - 1];
+  return last ? last.endMs : now;
+}
+
+export interface DryerOption {
+  machineId: number;
+  label: string;
+}
+
+// Crit 9 (plans/crit-9.md Stage 8): picks between the 2 dryers by the
+// later of (a) when the resident's own wash actually finishes and (b)
+// when that dryer would actually be free for a new arrival — not
+// "whichever dryer is idle right now," which could reserve a slot whose
+// claim window starts before the resident can possibly reach it. Returns
+// undefined if there are no dryers at all (shouldn't happen once Stage 8
+// ships, but this function shouldn't assume it).
+function pickDryer(washEndMs: number, now: number): DryerOption | undefined {
+  const dryers = db.select().from(machines).where(eq(machines.type, "dryer")).all();
+  if (dryers.length === 0) return undefined;
+
+  let best: { machine: Machine; readyAt: number } | undefined;
+  for (const dryer of dryers) {
+    const readyAt = Math.max(washEndMs, estimatedStartForNewArrival(dryer.id, now));
+    if (!best || readyAt < best.readyAt) best = { machine: dryer, readyAt };
+  }
+  return best && { machineId: best.machine.id, label: best.machine.label };
+}
+
+function hasQueuedDryer(washReservationId: number): boolean {
+  return (
+    db
+      .select({ id: reservations.id })
+      .from(reservations)
+      .where(
+        and(eq(reservations.notBeforeReservationId, washReservationId), inArray(reservations.status, ACTIVE_STATUSES)),
+      )
+      .get() != null
+  );
+}
+
+// Surfaced as a dismissible prompt once a washer reservation succeeds —
+// never automatic, since only the resident knows whether holding a dryer
+// slot is actually worth it to them (same reasoning as Stage 3's offers).
+// undefined means "don't show the prompt": no such reservation, it's not
+// a washer reservation still in progress, it was already dismissed, a
+// dryer is already queued for it, or no dryer exists to suggest.
+export function suggestedDryer(washReservationId: number): DryerOption | undefined {
+  const wash = db.select().from(reservations).where(eq(reservations.id, washReservationId)).get();
+  if (!wash) return undefined;
+  if (wash.status !== "waiting" && wash.status !== "claimed" && wash.status !== "running") return undefined;
+  if (wash.dryerPromptDismissed) return undefined;
+  if (hasQueuedDryer(washReservationId)) return undefined;
+
+  const machine = db.select().from(machines).where(eq(machines.id, wash.machineId)).get();
+  if (!machine || machine.type !== "washer") return undefined;
+
+  const now = Date.now();
+  const washRow = queueFor(wash.machineId, now).find((r) => r.reservationId === washReservationId);
+  if (!washRow) return undefined;
+  return pickDryer(washRow.endMs, now);
+}
+
+// Crit 9 (plans/crit-9.md Stage 8): "no thanks" on the dryer prompt —
+// permanent, not just hidden for this page load, so it doesn't keep
+// reappearing on every reload.
+export function dismissDryerPrompt(washReservationId: number, personName: string): ActionResult {
+  const row = loadOwned(washReservationId, personName);
+  if ("ok" in row) return row;
+  db.update(reservations).set({ dryerPromptDismissed: 1 }).where(eq(reservations.id, row.id)).run();
+  return { ok: true };
+}
+
+// Queues the dryer reservation with notBeforeReservationId set to the
+// washer reservation — settleMachine() won't start its claim window
+// until that washer reservation reaches "done". Per-type active-
+// reservation cap still applies to the dryer type independently (plan.md
+// — this doesn't let one resident monopolize more washers than before).
+export function queueDryer(washReservationId: number, personName: string, dryingType: string, durationMinutes: number): JoinResult {
+  const wash = db.select().from(reservations).where(eq(reservations.id, washReservationId)).get();
+  if (!wash || wash.personName !== personName) return { ok: false, status: 403, message: "not your reservation" };
+  if (wash.status !== "waiting" && wash.status !== "claimed" && wash.status !== "running") {
+    return { ok: false, status: 409, message: "that wash isn't active" };
+  }
+
+  const option = suggestedDryer(washReservationId);
+  if (!option) return { ok: false, status: 404, message: "no dryer available" };
+
+  if (activeOfTypeCount(personName, "dryer") >= MAX_ACTIVE_PER_TYPE) {
+    return { ok: false, status: 409, message: `${personName} already has ${MAX_ACTIVE_PER_TYPE} active dryer reservations` };
+  }
+
+  const now = Date.now();
+  const { id } = db
+    .insert(reservations)
+    .values({
+      machineId: option.machineId,
+      personName,
+      washingType: dryingType,
+      durationMinutes,
+      joinedAt: now,
+      status: "waiting",
+      notBeforeReservationId: washReservationId,
+    })
+    .returning({ id: reservations.id })
+    .get();
+  return { ok: true, reservationId: id };
+}
+
+// Crit 9 (plans/crit-9.md Stage 8): cancelling the washer reservation
+// cancels its dependent, not-yet-claimed dryer reservation too — there's
+// no reason to hold a dryer slot for a wash that isn't happening. Already-
+// claimed/running dryer reservations are left alone: the resident is
+// already there, cancelling out from under them would be worse than
+// leaving it be.
+function cancelDependentDryer(washReservationId: number): void {
+  const dependent = db
+    .select()
+    .from(reservations)
+    .where(and(eq(reservations.notBeforeReservationId, washReservationId), eq(reservations.status, "waiting")))
+    .get();
+  if (dependent) {
+    db.update(reservations).set({ status: "cancelled" }).where(eq(reservations.id, dependent.id)).run();
+    settleMachine(dependent.machineId);
+  }
 }
 
 // Crit 9 (plans/crit-9.md Stage 1.5): the app never actually controls a

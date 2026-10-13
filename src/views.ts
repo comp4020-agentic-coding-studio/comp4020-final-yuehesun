@@ -1,8 +1,9 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 import type { Machine, Offer, Reservation } from "./schema.ts";
+import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
-import type { QueueRow } from "./queue.ts";
+import type { DryerOption, QueueRow } from "./queue.ts";
 
 // Crit 9 Stage 3: one row for a pending offer the viewer could accept or
 // decline, joined up for display — not a QueueRow, since a pending offer
@@ -187,6 +188,9 @@ const STYLES = `
      buttons) rather than one to acknowledge — border marks it as
      something to act on, not just read */
   .offer-card { border: 1px solid var(--mine); flex-wrap: wrap; }
+  /* dryer prompt: same shape as the offer card (a decision, not just an
+     acknowledgement) — crit 9 Stage 8 */
+  .dryer-prompt { border: 1px solid var(--mine); flex-wrap: wrap; margin-top: 0.6rem; }
 
   /* the landing page's app introduction */
   .intro { line-height: 1.6; margin-bottom: 1.25rem; }
@@ -429,6 +433,15 @@ function washingTypeOptions(): Html {
   )}`;
 }
 
+// Crit 9 (plans/crit-9.md Stage 8): a dryer's reservation form offers
+// DRYING_TYPES instead — the same reason the server-side route checks the
+// machine's own type rather than trusting whatever the form sends.
+function dryingTypeOptions(): Html {
+  return html`${Object.entries(DRYING_TYPES).map(
+    ([value, type]) => html`<option value="${value}">${type.label} (${type.minutes} min)</option>`,
+  )}`;
+}
+
 // "End the wash" uses a plain onsubmit confirm rather than converting
 // this one form to an htmx-handled request (hx-confirm only intercepts
 // htmx-issued requests) — every action here is a normal form POST with a
@@ -524,7 +537,7 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
     ${mine
       ? html`<p>${actionButtons(mine)}</p>`
       : html`<form method="post" action="/machines/${machine.id}/reservations">
-          <select name="washingType">${washingTypeOptions()}</select>
+          <select name="washingType">${machine.type === "dryer" ? dryingTypeOptions() : washingTypeOptions()}</select>
           <button class="btn-primary" type="submit">Reserve</button>
         </form>`}
   </div>`;
@@ -552,8 +565,28 @@ function offerCard(row: OfferRow, now: number): Html {
   </div>`;
 }
 
+// Crit 9 (plans/crit-9.md Stage 8): offered, not automatic, same
+// reasoning as the earlier-machine offer — only the resident knows
+// whether holding a dryer slot is worth it. The claim window on the
+// resulting reservation doesn't start until this wash is done, so
+// there's no rush here the way there is with an offer's own countdown.
+function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Html {
+  return html`<div class="notice dryer-prompt">
+    <span>Want to queue <strong>${suggestion.label}</strong> for after this wash? It'll be ready when you are — the countdown doesn't start until your wash is done.</span>
+    <div>
+      <form method="post" action="/reservations/${washReservationId}/queue-dryer" style="display:inline">
+        <select name="dryingType">${dryingTypeOptions()}</select>
+        <button class="btn-primary" type="submit">Queue it</button>
+      </form>
+      <form method="post" action="/reservations/${washReservationId}/dismiss-dryer-prompt" style="display:inline">
+        <button class="btn-quiet" type="submit">No thanks</button>
+      </form>
+    </div>
+  </div>`;
+}
+
 export function myStatusBlock(
-  mine: { machine: Machine; row: QueueRow }[],
+  mine: { machine: Machine; row: QueueRow; dryerSuggestion?: DryerOption }[],
   myOffers: OfferRow[],
   now: number,
 ): Html {
@@ -562,7 +595,7 @@ export function myStatusBlock(
     <h2>Your status</h2>
     ${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(
-      ({ machine, row }) => html`<div class="my-status-row-wrap">
+      ({ machine, row, dryerSuggestion }) => html`<div class="my-status-row-wrap">
         ${noticeBanner(row)}
         ${statusDots(row.status)}
         <div class="my-status-row">
@@ -573,6 +606,7 @@ export function myStatusBlock(
           ${rowTimeChip(row, now)}
           ${actionButtons(row)}
         </div>
+        ${dryerSuggestion ? dryerPromptCard(row.reservationId, dryerSuggestion) : raw("")}
       </div>`,
     )}
   </div>`;
@@ -584,10 +618,11 @@ export function homePage(
   rowsByMachine: Map<number, QueueRow[]>,
   myOffers: OfferRow[],
   now: number,
+  getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
 ): Html {
   const mine = machines.flatMap((m) => {
     const row = (rowsByMachine.get(m.id) ?? []).find((r) => r.person === identity);
-    return row ? [{ machine: m, row }] : [];
+    return row ? [{ machine: m, row, dryerSuggestion: getDryerSuggestion(row.reservationId) }] : [];
   });
 
   return page(
