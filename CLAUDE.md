@@ -53,11 +53,16 @@ what the agent needs to carry from any of it is your call.
 - Run `pnpm check` and make it green before showing the user anything.
 - When starting a server for your own verification (not the user's
   `pnpm dev`), never use port 8080 — that's reserved for the user's dev
-  server. Use a distinct port instead. After cleanup, confirm the port is
-  actually free (`ss -tlnp` or equivalent) rather than trusting a `kill`
-  command's exit code alone — a stray process left listening on 8080 is
-  what the user ends up testing against, silently, with no error telling
-  either of you it's stale.
+  server. Use a distinct port instead. The moment that verification is
+  done — pass or fail, before moving to the next thing — kill it and
+  confirm the port is actually free (`ss -tlnp` or equivalent) rather
+  than trusting a `kill` command's exit code alone. Don't defer this
+  "until later" or "after this batch of checks": a server left running
+  from one verification is exactly what collides with the user's own
+  `pnpm dev`, or with the next verification server, later in the same
+  session — a stray process left listening is what the user ends up
+  testing against, silently, with no error telling either of you it's
+  stale.
 
 ## Process
 
@@ -121,3 +126,16 @@ instead.
   writes are committed, and `migrate()` runs at server boot. Never run
   `drizzle-kit push`, and never apply migrations via Fly's
   `release_command` — see `docs/adr/0003-tech-stack.md` for why.
+- Never delete or regenerate an already-generated migration file to fix a
+  schema mistake (e.g. a type error in `schema.ts` found right after
+  `db:generate`), even if it was never committed. Any local dev database
+  (`.data/`, or one started for your own verification) may have already
+  run it — deleting the file and re-generating a new one with a different
+  name means that database's migration-tracking table no longer matches
+  any file on disk, and the next boot tries to re-run a `CREATE TABLE` for
+  a table that already exists, crashing outright with no clear signal why
+  to whoever hits it next. Fix the schema file, then run `db:generate`
+  again to produce a *new, additional* migration that corrects it — the
+  same way you'd fix any other already-applied migration — and delete
+  `.data/` yourself (it's gitignored, never real data) if a local database
+  is left in a state that won't reconcile.

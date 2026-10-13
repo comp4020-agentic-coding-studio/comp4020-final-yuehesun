@@ -1,8 +1,17 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
-import type { Machine } from "./schema.ts";
+import type { Machine, Offer, Reservation } from "./schema.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
 import type { QueueRow } from "./queue.ts";
+
+// Crit 9 Stage 3: one row for a pending offer the viewer could accept or
+// decline, joined up for display — not a QueueRow, since a pending offer
+// lives on the candidate's own reservation/machine, not the idle one.
+export interface OfferRow {
+  offer: Offer;
+  reservation: Reservation;
+  machine: Machine;
+}
 
 // `html` template results can resolve async (if an interpolated value does),
 // so every view function's return type needs to allow for that.
@@ -137,6 +146,15 @@ const STYLES = `
   .queue-row.mine { font-weight: 600; }
 
   .error { color: #8a1f1f; background: #fdeceb; border: 1px solid #e0a9a4; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; }
+
+  /* crit 9: tells both sides of a move-back-one swap what happened and
+     why — stays until dismissed, not a toast that fades on its own */
+  .notice { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: var(--info-tint); color: #184f95; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0.4rem 0; font-size: 0.9rem; }
+  .notice form { margin: 0; }
+  /* offer card: the same notice banner, but with a decision to make (two
+     buttons) rather than one to acknowledge — border marks it as
+     something to act on, not just read */
+  .offer-card { border: 1px solid var(--mine); flex-wrap: wrap; }
 
   /* the landing page's app introduction */
   .intro { line-height: 1.6; margin-bottom: 1.25rem; }
@@ -310,6 +328,25 @@ function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   return timeChip(row.fixed ? "Ready at" : "Est. ready at", row.scheduledStartMs, now, row.fixed, compact);
 }
 
+// Crit 9 (plans/crit-9.md Stage 2): a silent swap is worse than crit 8's
+// blunt "ejected outright" rule — at least that was visible. Both sides
+// of a move-back-one swap get told here, plainly and without blame on the
+// person who moved back, with a "Got it" that clears it on confirmed
+// read rather than fading on a timer.
+function noticeBanner(row: QueueRow): Html {
+  if (row.notice == null) return raw("");
+  const text =
+    row.notice === "moved_back"
+      ? "Your claim window passed, so you moved back one place."
+      : "The person ahead of you missed their window — it's your turn now.";
+  return html`<div class="notice">
+    <span>${text}</span>
+    <form method="post" action="/reservations/${row.reservationId}/dismiss-notice">
+      <button class="btn-quiet" type="submit">Got it</button>
+    </form>
+  </div>`;
+}
+
 function washingTypeOptions(): Html {
   return html`${Object.entries(WASHING_TYPES).map(
     ([value, type]) => html`<option value="${value}">${type.label} (${type.minutes} min)</option>`,
@@ -417,18 +454,48 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
   </div>`;
 }
 
-export function myStatusBlock(mine: { machine: Machine; row: QueueRow }[], now: number): Html {
-  if (mine.length === 0) return raw("");
+// Crit 9 (plans/crit-9.md Stage 3): "earlier machine" offer — accept
+// vacates the original reservation and claims the new machine directly;
+// decline leaves the original place untouched and hands it to the next
+// eligible person on the next tick. The countdown reuses the same
+// client-side ticking chip as a claim window, just against respondBy.
+function offerCard(row: OfferRow, now: number): Html {
+  return html`<div class="notice offer-card">
+    <div>
+      <span>An earlier machine opened up: <strong>${row.machine.label}</strong>.</span>
+      ${timeChip("Respond by", row.offer.respondBy, now, false, true, true)}
+    </div>
+    <div>
+      <form method="post" action="/offers/${row.offer.id}/accept" style="display:inline">
+        <button class="btn-primary" type="submit">Switch now</button>
+      </form>
+      <form method="post" action="/offers/${row.offer.id}/decline" style="display:inline">
+        <button class="btn-quiet" type="submit">Stay put</button>
+      </form>
+    </div>
+  </div>`;
+}
+
+export function myStatusBlock(
+  mine: { machine: Machine; row: QueueRow }[],
+  myOffers: OfferRow[],
+  now: number,
+): Html {
+  if (mine.length === 0 && myOffers.length === 0) return raw("");
   return html`<div class="my-status">
     <h2>Your status</h2>
+    ${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(
-      ({ machine, row }) => html`<div class="my-status-row">
-        ${machineIcon(machine.id)}
-        <strong>${machine.label}</strong>
-        ${positionLine(row.position)}
-        ${rowBadge(row, true)}
-        ${rowTimeChip(row, now)}
-        ${actionButtons(row)}
+      ({ machine, row }) => html`<div class="my-status-row-wrap">
+        ${noticeBanner(row)}
+        <div class="my-status-row">
+          ${machineIcon(machine.id)}
+          <strong>${machine.label}</strong>
+          ${positionLine(row.position)}
+          ${rowBadge(row, true)}
+          ${rowTimeChip(row, now)}
+          ${actionButtons(row)}
+        </div>
       </div>`,
     )}
   </div>`;
@@ -438,6 +505,7 @@ export function homePage(
   identity: string,
   machines: Machine[],
   rowsByMachine: Map<number, QueueRow[]>,
+  myOffers: OfferRow[],
   now: number,
 ): Html {
   const mine = machines.flatMap((m) => {
@@ -452,7 +520,7 @@ export function homePage(
         <button class="btn-quiet" type="submit">Switch room</button>
       </form></p>
       <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
-        ${myStatusBlock(mine, now)}
+        ${myStatusBlock(mine, myOffers, now)}
       </div>
       <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
   );

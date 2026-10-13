@@ -1,6 +1,6 @@
 import type { SSEStreamingApi } from "hono/streaming";
 import { db } from "./db.ts";
-import { machines } from "./schema.ts";
+import { machines, offers } from "./schema.ts";
 import * as queue from "./queue.ts";
 
 // Crit 9: real-time sync (plans/crit-9.md Stage 1). SSE carries only a
@@ -47,6 +47,19 @@ function digestOf(machineId: number, now: number): string {
 
 async function tick(): Promise<void> {
   const now = Date.now();
+
+  // Crit 9 Stage 3: offers aren't tied to one machine's QueueRow digest
+  // (an offer lives on the *candidate's own* machine's status, not the
+  // idle machine's queue), so a plain "changed" broadcast covers them —
+  // processed before the per-machine digest pass below so the same tick
+  // that creates/expires an offer also reaches everyone within ~1s.
+  const beforeOfferState = db.select().from(offers).all();
+  queue.processOffers(now);
+  const afterOfferState = db.select().from(offers).all();
+  if (JSON.stringify(beforeOfferState) !== JSON.stringify(afterOfferState)) {
+    await broadcast("changed");
+  }
+
   const allMachines = db.select({ id: machines.id }).from(machines).all();
   for (const { id } of allMachines) {
     const digest = digestOf(id, now);

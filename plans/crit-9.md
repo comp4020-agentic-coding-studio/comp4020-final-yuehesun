@@ -272,44 +272,98 @@ browsers within a second.
 
 ### Stage 3 — offer system (early-opening case)
 
-New mechanism for the two cases crit 8 never had: the person ahead of you
-missing their turn (handled differently from Stage 2's own-queue case
-when it creates slack elsewhere), and a different machine of your type
-going fully idle with nobody queued for it.
+New mechanism for the case crit 8 never had: a machine of your type goes
+fully idle (zero active reservations) while someone elsewhere, on a
+different machine of the same type, is still waiting — `plan.md`'s
+"earlier machine" offer. (The person-ahead-missed-their-turn case from
+`plan.md`'s User story is already covered: Stage 2's move-back-one swap
+*is* that case, for the same queue — no separate offer needed there since
+there's always a definite "next person" to hand the turn to directly.)
 
-**Schema:** new `offers` table — `id`, `reservationId` (who it's offered
-to), `machineId` (which machine), `offeredAt`, `respondBy` (offeredAt + 2
-min), `status` (`pending` / `accepted` / `declined` / `expired`).
+**Schema:**
+- New `offers` table — `id`, `reservationId` (who it's offered to),
+  `machineId` (the idle machine), `offeredAt`, `respondBy` (`offeredAt` +
+  2 min), `status` (`pending` / `accepted` / `declined` / `expired`).
+- `reservations` gets a new nullable `offerId` column (FK `offers.id`),
+  set only on the new reservation created by accepting an offer. This is
+  how `settleMachine` knows to give it a 10-minute claim window instead
+  of the normal 3-minute one (`front.offerId != null ? OFFER_CLAIM_WINDOW_MS
+  : CLAIM_WINDOW_MS`), and it's also how "my pending/active offer
+  history" is queryable without a separate join table.
 
-**Tick extension:** the same Stage 1 tick that calls `settleMachine()`
-also, per machine type, checks for an idle machine with no queue and at
-least one eligible waiting person on another machine of that type
-(furthest from their own start, per `plan.md`'s "longest waiting, skip
-anyone already about to start on their own machine" rule), and creates an
-offer if none is already pending for that machine.
+**Eligibility algorithm** (runs in the tick, not a route handler — same
+"tick does the detecting" reasoning as Stage 1): for an idle machine of
+type T with no pending offer already outstanding,
+1. List every `waiting` reservation on every *other* machine of type T,
+   ordered by `joinedAt` ascending (longest-waiting first).
+2. Skip anyone who already has a pending offer for any machine (never
+   double-offer the same person), or a `declined`/`expired` offer already
+   on record for *this* machine (prevents an instant re-offer ping-pong
+   back to someone who just said no — see limitation below).
+3. Skip anyone whose current `scheduledStartMs` is already `<= now` —
+   switching gains them nothing, per `plan.md`'s "someone already about
+   to start on their own machine gets skipped."
+4. The first remaining candidate gets the offer.
 
-**Routes:** `POST /offers/:id/accept`, `POST /offers/:id/decline`.
+**Documented limitation, by design, not an oversight:** step 2's
+decline/expire exclusion is sticky for as long as the machine stays
+continuously idle — it doesn't reset if the machine is used and goes
+idle again later (that would need tracking "which idle spell" an offer
+belongs to, which this doesn't). Accepted as a reasonable simplification:
+worst case, someone who declined an opening doesn't get re-asked about
+that exact same opening — not a fairness problem, just slightly
+conservative.
 
-**Accept semantics (decided):** accepting vacates the original
-reservation entirely — same effect as a cancel, bumping everyone behind
-it up by one — and claims the new machine directly. No double-holding:
-once you've accepted, you're doing laundry, there's no reason to keep a
-second place.
+**Offer processing, once per tick, before per-machine digests are
+computed** (so the same tick's broadcast reflects it): expire any pending
+offer past its `respondBy`, then run the eligibility algorithm for every
+now-offer-free idle machine. Fires the generic `changed` SSE event
+whenever anything changed — offers aren't tied to one `QueueRow`, so they
+can't ride the existing per-machine digest check.
 
-**Decline / no-response (decided):** declining, or not responding within
-2 minutes, passes the offer to the next eligible person while the
-original holder keeps their place untouched. If nobody eligible is left,
-the machine falls back to crit 8's existing "free but unclaimed" amber
-state — no new state invented, it's just visibly claimable by anyone who
-walks up or reserves next.
+**Routes:** `POST /offers/:id/accept`, `POST /offers/:id/decline` —
+owner-only (the offer's reservation's `personName` must match), same
+`loadOwned`-style check as every other action route.
 
-**Accepted-but-not-scanned:** 10 minutes to actually claim (scan) the new
-machine once accepted, or it counts as a missed turn under Stage 2's
-move-back-one rule, same mechanism, not a separate rule.
+**Accept (decided):** only valid while the original reservation is still
+`waiting` — already `claimed`/`running` means they're committed to their
+own machine, accepting doesn't make sense, 409. On success: original
+reservation → `cancelled` (same effect as `cancel`, bumps its own queue
+up by one); a new `waiting` reservation is created on the offer's
+machine, same `washingType`/`durationMinutes` carried over, `offerId` set
+to this offer; `settleMachine` starts its (10-minute) claim window
+immediately, since the machine was idle. Offer → `accepted`. No re-check
+against `MAX_ACTIVE_PER_TYPE` — this is a swap, not an addition; the
+person's active-reservation count for this type is unchanged.
 
-Verify: one machine goes idle with an eligible person waiting elsewhere,
-confirm the offer appears, accept and decline paths both tested, and the
-no-taker fallback to "free but unclaimed" when nobody's eligible.
+**Decline (decided):** marks the offer `declined` and stops there — the
+*next* tick's offer processing naturally finds the next eligible
+candidate, rather than duplicating candidate-selection logic in the
+route handler. Original reservation/place untouched.
+
+**No eligible candidate at all (wording fix from `plan.md`):** `plan.md`
+says this falls back to "free but unclaimed" — but a machine nobody's
+ever been offered to, with zero reservations on it, is `machine-free`
+(green "Free," open to anyone) in the app's existing vocabulary, not
+`machine-unclaimed` (amber, which specifically means someone's reserved
+it but hasn't claimed yet). Same underlying intent ("visibly claimable by
+anyone"), just the already-correct existing green state, not a new one.
+
+**Accepted-but-not-scanned:** handled entirely by `settleMachine`'s
+existing claim-window logic once `offerId` gives it the 10-minute window
+— if it lapses, Stage 2's `moveBackOnePlace` runs the same as any other
+missed window. With nobody else queued on that machine yet (the common
+case, since it was just idle), there's nothing to swap with — same
+graceful no-op Stage 2 already has for a solo queue, which reads to a
+viewer as the machine sitting at "unclaimed" past its deadline. No new
+code path.
+
+Verify: one machine goes idle with an eligible person waiting elsewhere
+on a different machine of the same type — confirm the offer appears for
+them (not anyone already about to start); accept cancels their old spot
+and claims the new machine with a visibly longer countdown; decline hands
+it to the next eligible person within one tick; with nobody eligible, the
+machine just reads as plain "Free."
 
 ### Stage 4 — document the decision
 

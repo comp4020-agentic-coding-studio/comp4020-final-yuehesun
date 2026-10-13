@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
@@ -7,7 +7,7 @@ import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
 import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
-import { machines } from "./schema.ts";
+import { machines, offers, reservations } from "./schema.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
 import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage } from "./views.ts";
 
@@ -17,6 +17,21 @@ export const app = new Hono();
 
 app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
 
+// Crit 9 Stage 3: pending offers aren't tied to a QueueRow — a pending
+// offer lives on the candidate's own reservation, not the idle machine's
+// queue — so the home page and /my-status both need this looked up
+// separately to show it in the pinned "your status" block.
+function pendingOffersFor(identity: string, now: number) {
+  return db
+    .select({ offer: offers, reservation: reservations, machine: machines })
+    .from(offers)
+    .innerJoin(reservations, eq(offers.reservationId, reservations.id))
+    .innerJoin(machines, eq(offers.machineId, machines.id))
+    .where(and(eq(reservations.personName, identity), eq(offers.status, "pending"), eq(reservations.status, "waiting")))
+    .all()
+    .filter((row) => row.offer.respondBy > now);
+}
+
 app.get("/", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(identityPage());
@@ -24,7 +39,8 @@ app.get("/", (c) => {
   const now = Date.now();
   const allMachines = db.select().from(machines).all();
   const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
-  return c.html(homePage(identity, allMachines, rowsByMachine, now));
+  const myOffers = pendingOffersFor(identity, now);
+  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now));
 });
 
 // Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
@@ -63,7 +79,8 @@ app.get("/my-status", (c) => {
     const row = queue.queueFor(m.id, now).find((r) => r.person === identity);
     return row ? [{ machine: m, row }] : [];
   });
-  return c.html(myStatusBlock(mine, now));
+  const myOffers = pendingOffersFor(identity, now);
+  return c.html(myStatusBlock(mine, myOffers, now));
 });
 
 app.post("/identity", async (c) => {
@@ -126,6 +143,9 @@ actionRoute("/reservations/:id/claim", queue.claim);
 actionRoute("/reservations/:id/start", queue.start);
 actionRoute("/reservations/:id/cancel", queue.cancel);
 actionRoute("/reservations/:id/finish", queue.finish);
+actionRoute("/reservations/:id/dismiss-notice", queue.dismissNotice);
+actionRoute("/offers/:id/accept", queue.acceptOffer);
+actionRoute("/offers/:id/decline", queue.declineOffer);
 
 // JSON queue state — not a page a visitor sees, just how spec/ and
 // debugging inspect invariants without parsing HTML (plans/crit-8.md).

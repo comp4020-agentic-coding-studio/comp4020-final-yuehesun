@@ -15,6 +15,20 @@
       "when": 1791329512954,
       "tag": "0001_modern_odin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791912795893,
+      "tag": "0002_yielding_mother_askani",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791915806729,
+      "tag": "0003_perpetual_thena",
+      "breakpoints": true
     }
   ]
 }

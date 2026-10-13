@@ -1,11 +1,16 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "./db.ts";
-import { machines, type Reservation, reservations } from "./schema.ts";
+import { machines, type Machine, type Offer, offers, type Reservation, reservations } from "./schema.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
 // A claimed-but-never-started machine would otherwise sit blocked forever —
 // the same forfeit the fairness rule already applies to an unclaimed turn.
 export const START_WINDOW_MS = 5 * 60 * 1000;
+// Crit 9 (plans/crit-9.md Stage 3): longer than the normal claim window,
+// since accepting an offer means travelling to a machine you weren't
+// already camped at — plan.md gives this case 10 minutes, not 3.
+export const OFFER_CLAIM_WINDOW_MS = 10 * 60 * 1000;
+export const OFFER_RESPOND_WINDOW_MS = 2 * 60 * 1000;
 
 const ACTIVE_STATUSES = ["waiting", "claimed", "running"] as const;
 
@@ -18,11 +23,34 @@ function activeReservations(machineId: number): Reservation[] {
     .all();
 }
 
-// Lazily brings a machine's queue up to date: finishes a running wash whose
-// time is up, and expires a front-of-queue claim window that's been missed.
-// Crit 8's fairness rule is the blunt version (plans/crit-8.md): missing the
-// window loses the spot outright, no reinstatement — the gentler "move back
-// one place" is crit 9's documented upgrade (plan.md #1).
+// Crit 9 (plans/crit-9.md Stage 2): miss your claim/start window and you
+// move back exactly one place — swapped with whoever's next — instead of
+// losing your spot outright (crit 8's blunt rule, now the rejected
+// alternative; see docs/adr/0005). Swapping joinedAt is the whole
+// mechanism: position is still "order by joinedAt," so nothing else about
+// queueFor changes. Both sides get a notice so the swap is never silent.
+// With nobody behind to swap with, there's no one to move back to — that
+// case is crit 9 Stage 3's offer mechanism, not this function's job.
+function moveBackOnePlace(missed: Reservation, now: number): boolean {
+  const [, next] = activeReservations(missed.machineId);
+  if (!next) return false;
+
+  const missedJoinedAt = missed.joinedAt;
+  const nextJoinedAt = next.joinedAt;
+  db.update(reservations)
+    .set({ joinedAt: missedJoinedAt, notice: "moved_up", turnStartedAt: null })
+    .where(eq(reservations.id, next.id))
+    .run();
+  db.update(reservations)
+    .set({ joinedAt: nextJoinedAt, status: "waiting", notice: "moved_back", turnStartedAt: null, claimedAt: null })
+    .where(eq(reservations.id, missed.id))
+    .run();
+  return true;
+}
+
+// Lazily brings a machine's queue up to date: finishes a running wash
+// whose time is up, and settles a front-of-queue claim/start window
+// that's been missed (moveBackOnePlace above).
 export function settleMachine(machineId: number, now: number = Date.now()): void {
   for (;;) {
     const [front] = activeReservations(machineId);
@@ -39,8 +67,8 @@ export function settleMachine(machineId: number, now: number = Date.now()): void
 
     if (front.status === "claimed") {
       if (now - front.claimedAt! >= START_WINDOW_MS) {
-        db.update(reservations).set({ status: "missed" }).where(eq(reservations.id, front.id)).run();
-        continue; // next person in line becomes the new front
+        if (moveBackOnePlace(front, now)) continue;
+        return;
       }
       return;
     }
@@ -52,9 +80,14 @@ export function settleMachine(machineId: number, now: number = Date.now()): void
       return;
     }
 
-    if (now - front.turnStartedAt >= CLAIM_WINDOW_MS) {
-      db.update(reservations).set({ status: "missed" }).where(eq(reservations.id, front.id)).run();
-      continue; // next person in line becomes the new front
+    // Crit 9 Stage 3: a reservation created by accepting an offer gets the
+    // longer 10-minute window, since it means travelling to a machine you
+    // weren't already at — plan.md's own distinction, not the normal
+    // 3-minute in-place claim window.
+    const window = front.offerId != null ? OFFER_CLAIM_WINDOW_MS : CLAIM_WINDOW_MS;
+    if (now - front.turnStartedAt >= window) {
+      if (moveBackOnePlace(front, now)) continue;
+      return;
     }
 
     return;
@@ -73,6 +106,8 @@ export interface QueueRow {
   fixed: boolean;
   /** Only set for the front, waiting reservation: when its 3-minute claim window runs out. */
   claimDeadlineMs?: number;
+  /** Crit 9 Stage 2: set once if this reservation was just moved by settleMachine()'s swap, cleared by dismissNotice. */
+  notice: Reservation["notice"];
 }
 
 // Position and estimated/fixed time, computed from the chain of
@@ -110,7 +145,11 @@ export function queueFor(machineId: number, now: number = Date.now()): QueueRow[
       scheduledStartMs,
       endMs,
       fixed,
-      claimDeadlineMs: i === 0 && r.status === "waiting" && r.turnStartedAt != null ? r.turnStartedAt + CLAIM_WINDOW_MS : undefined,
+      claimDeadlineMs:
+        i === 0 && r.status === "waiting" && r.turnStartedAt != null
+          ? r.turnStartedAt + (r.offerId != null ? OFFER_CLAIM_WINDOW_MS : CLAIM_WINDOW_MS)
+          : undefined,
+      notice: r.notice,
     };
   });
 }
@@ -197,6 +236,167 @@ export function cancel(reservationId: number, personName: string): ActionResult 
 
   db.update(reservations).set({ status: "cancelled" }).where(eq(reservations.id, row.id)).run();
   settleMachine(row.machineId); // the next person may now be free to claim
+  return { ok: true };
+}
+
+// Crit 9 (plans/crit-9.md Stage 2): clears a moved_back/moved_up notice
+// once the person has actually seen it — doesn't auto-expire on a timer,
+// since the point is confirming it was seen, not that time passed.
+export function dismissNotice(reservationId: number, personName: string): ActionResult {
+  const row = loadOwned(reservationId, personName);
+  if ("ok" in row) return row;
+
+  db.update(reservations).set({ notice: null }).where(eq(reservations.id, row.id)).run();
+  return { ok: true };
+}
+
+// --- crit 9 Stage 3: the "earlier machine" offer ---------------------
+
+function isIdle(machineId: number): boolean {
+  return activeReservations(machineId).length === 0;
+}
+
+function pendingOfferFor(machineId: number): Offer | undefined {
+  return db
+    .select()
+    .from(offers)
+    .where(and(eq(offers.machineId, machineId), eq(offers.status, "pending")))
+    .get();
+}
+
+function hasDeclinedOrExpiredOfferFor(reservationId: number, machineId: number): boolean {
+  return (
+    db
+      .select({ id: offers.id })
+      .from(offers)
+      .where(
+        and(
+          eq(offers.reservationId, reservationId),
+          eq(offers.machineId, machineId),
+          inArray(offers.status, ["declined", "expired"]),
+        ),
+      )
+      .get() != null
+  );
+}
+
+function hasAnyPendingOffer(reservationId: number): boolean {
+  return (
+    db
+      .select({ id: offers.id })
+      .from(offers)
+      .where(and(eq(offers.reservationId, reservationId), eq(offers.status, "pending")))
+      .get() != null
+  );
+}
+
+// plan.md's User story: among everyone waiting for a machine of this
+// type, elsewhere, the longest-waiting person for whom this specific
+// opening would genuinely be earlier gets it — someone already about to
+// start on their own machine is skipped, not offered.
+function eligibleCandidate(machineType: string, idleMachineId: number, now: number): Reservation | undefined {
+  const candidates = db
+    .select({ r: reservations })
+    .from(reservations)
+    .innerJoin(machines, eq(reservations.machineId, machines.id))
+    .where(
+      and(eq(machines.type, machineType), ne(reservations.machineId, idleMachineId), eq(reservations.status, "waiting")),
+    )
+    .orderBy(asc(reservations.joinedAt))
+    .all()
+    .map((row) => row.r);
+
+  for (const candidate of candidates) {
+    if (hasAnyPendingOffer(candidate.id)) continue;
+    if (hasDeclinedOrExpiredOfferFor(candidate.id, idleMachineId)) continue;
+
+    const ownRow = queueFor(candidate.machineId, now).find((r) => r.reservationId === candidate.id);
+    if (!ownRow || ownRow.scheduledStartMs <= now) continue; // already about to start
+
+    return candidate;
+  }
+  return undefined;
+}
+
+// Expires overdue offers, then offers every now-offer-free idle machine
+// to its eligible candidate, if any (plans/crit-9.md Stage 3). Called
+// from the realtime tick, the same "tick does the detecting" shape as
+// settleMachine — offers aren't tied to a request either.
+export function processOffers(now: number = Date.now()): void {
+  const overdue = db
+    .select()
+    .from(offers)
+    .where(and(eq(offers.status, "pending")))
+    .all()
+    .filter((o) => now >= o.respondBy);
+  for (const o of overdue) {
+    db.update(offers).set({ status: "expired" }).where(eq(offers.id, o.id)).run();
+  }
+
+  const allMachines = db.select().from(machines).all();
+  for (const machine of allMachines) {
+    if (!isIdle(machine.id)) continue;
+    if (pendingOfferFor(machine.id)) continue;
+
+    const candidate = eligibleCandidate(machine.type, machine.id, now);
+    if (!candidate) continue;
+
+    db.insert(offers)
+      .values({ reservationId: candidate.id, machineId: machine.id, offeredAt: now, respondBy: now + OFFER_RESPOND_WINDOW_MS })
+      .run();
+  }
+}
+
+function loadOwnedOffer(offerId: number, personName: string): { offer: Offer; reservation: Reservation } | ActionResult {
+  const offer = db.select().from(offers).where(eq(offers.id, offerId)).get();
+  if (!offer) return { ok: false, status: 404, message: "no such offer" };
+  const reservation = db.select().from(reservations).where(eq(reservations.id, offer.reservationId)).get();
+  if (!reservation || reservation.personName !== personName) {
+    return { ok: false, status: 403, message: "not your offer" };
+  }
+  if (offer.status !== "pending") return { ok: false, status: 409, message: "this offer is no longer open" };
+  return { offer, reservation };
+}
+
+// Accepting only makes sense while still waiting on the original machine
+// — claimed/running means already committed there. Vacates the original
+// spot entirely (same effect as cancel) and claims the new, idle machine
+// directly: no double-holding, and no re-check against
+// MAX_ACTIVE_PER_TYPE, since this is a swap, not an addition.
+export function acceptOffer(offerId: number, personName: string): ActionResult {
+  const loaded = loadOwnedOffer(offerId, personName);
+  if ("ok" in loaded) return loaded;
+  const { offer, reservation } = loaded;
+  if (reservation.status !== "waiting") {
+    return { ok: false, status: 409, message: "you're already committed to your own machine" };
+  }
+
+  const now = Date.now();
+  db.update(reservations).set({ status: "cancelled" }).where(eq(reservations.id, reservation.id)).run();
+  db.insert(reservations)
+    .values({
+      machineId: offer.machineId,
+      personName,
+      washingType: reservation.washingType,
+      durationMinutes: reservation.durationMinutes,
+      joinedAt: now,
+      status: "waiting",
+      offerId: offer.id,
+    })
+    .run();
+  db.update(offers).set({ status: "accepted" }).where(eq(offers.id, offer.id)).run();
+  settleMachine(reservation.machineId, now); // the old spot's next person may now be free to claim
+  settleMachine(offer.machineId, now); // starts the new (10-minute) claim window immediately
+  return { ok: true };
+}
+
+// Leaves the original reservation untouched — the next tick's
+// processOffers naturally finds the next eligible candidate, rather than
+// duplicating candidate-selection here.
+export function declineOffer(offerId: number, personName: string): ActionResult {
+  const loaded = loadOwnedOffer(offerId, personName);
+  if ("ok" in loaded) return loaded;
+  db.update(offers).set({ status: "declined" }).where(eq(offers.id, loaded.offer.id)).run();
   return { ok: true };
 }
 
