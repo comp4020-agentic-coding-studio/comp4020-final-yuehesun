@@ -47,11 +47,11 @@ const STYLES = `
     max-width: 48rem; margin: 0 auto; padding: 1rem 1rem 3rem;
     background: var(--page); color: var(--ink);
   }
-  h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+  h1 { font-size: 2.25rem; font-weight: 800; margin: 0.75rem 0 1.25rem; letter-spacing: -0.02em; }
   h1 a { color: inherit; text-decoration: none; }
   h2 { font-size: 1rem; margin: 0 0 0.5rem; }
   a { color: var(--info); }
-  .topnav { display: flex; gap: 1rem; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  .topnav { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
   .topnav a { text-decoration: none; font-weight: 600; }
 
   /* buttons: the live action is loud, Cancel stays quiet (plans/crit-8.md) */
@@ -208,11 +208,11 @@ function page(title: string, body: Html): Html {
         <style>${raw(STYLES)}</style>
       </head>
       <body hx-ext="sse" sse-connect="/events">
-        <h1><a href="/">Laundry Queue</a></h1>
         <nav class="topnav">
           <a href="/">Machines</a>
-          <a href="/readme/">README</a>
+          <a href="/readme/">What good means here</a>
         </nav>
+        <h1><a href="/">Laundry Queue</a></h1>
         ${body}
         <script>${raw(COUNTDOWN_SCRIPT)}</script>
       </body>
