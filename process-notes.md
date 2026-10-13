@@ -63,3 +63,37 @@ student's own position being enforced.
 **Backed by:**
 - [`21b90b3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/21b90b3) (README)
 - [`b81fa8b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b81fa8b) (CLAUDE.md)
+
+## Agent's own verification servers clobbering my dev server
+
+**What happened:** I kept running `pnpm dev` myself to check the agent's
+UI wording fixes, and kept seeing the old text no matter how hard I
+refreshed — then `pnpm dev` itself failed outright with "address already
+in use." Turned out the agent had been starting its own throwaway servers
+on the same port 8080 my dev server uses, to curl-test its changes
+without bothering me for a browser check each time. One of those leftover
+servers didn't actually die when the agent thought it had killed it, kept
+squatting on the port, and kept serving the app from before its latest
+code change — so what I was looking at wasn't stale browser cache or a
+mistake on my end, it was a different, older process answering the same
+port.
+
+**The obvious alternative:** let the agent just "be more careful" next
+time and move on — it already found and explained the exact mechanism
+once asked.
+
+**What I decided instead:** a mistake the agent has already repeated more
+than once in one session isn't fixed by it trying harder next time —
+"try harder" doesn't survive a `/clear`. I told it to put a real rule in
+`CLAUDE.md`: never touch port 8080 for its own verification, and actually
+check the port is free after cleanup instead of trusting a `kill`
+command's exit code.
+
+**Why it helped:** a rule the agent has to re-derive from scratch every
+session is worth less than one written into the harness once — this is
+exactly the kind of recurring failure `CLAUDE.md` is supposed to catch,
+not a one-off I should have to keep catching by hand.
+
+**Backed by:**
+- `CLAUDE.md`'s Workflow section (pending: not yet committed — lands with
+  this crit's next commit)

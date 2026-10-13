@@ -51,6 +51,13 @@ what the agent needs to carry from any of it is your call.
   don't make that a special process — just note it in the plan or the state
   once it lands, so the next session knows.
 - Run `pnpm check` and make it green before showing the user anything.
+- When starting a server for your own verification (not the user's
+  `pnpm dev`), never use port 8080 — that's reserved for the user's dev
+  server. Use a distinct port instead. After cleanup, confirm the port is
+  actually free (`ss -tlnp` or equivalent) rather than trusting a `kill`
+  command's exit code alone — a stray process left listening on 8080 is
+  what the user ends up testing against, silently, with no error telling
+  either of you it's stale.
 
 ## Process
 
@@ -75,10 +82,14 @@ what the agent needs to carry from any of it is your call.
   hash — real, from `git log`/`git show`, or `pending: Stage N` if nothing's
   committed yet. Never invent a hash.
 - Before shipping: remind me to write `PROCESS.md` — pick only the most
-  important moment from `process-notes.md` and write it up as a coherent,
-  clearly reasoned narrative of the whole build, from the assignment brief
-  to the harness we built. A crit week needs 150–300 words; an assignment
-  needs 400–600.
+  important moment(s) from `process-notes.md` and write it up as a coherent,
+  clearly reasoned narrative of the whole build, from the brief to the
+  harness we built. This repo is the final project (one repo across crits
+  8/9/10, graded as a whole), so the final-project brief's numbers apply,
+  not a standalone crit week's: `PROCESS.md` is 900–1100 words and gets
+  **rewritten in full** at each crit so it always describes the project as
+  it stands — not appended to — and must also justify the stack/workflow
+  choice and its trade-offs. `README.md` is 400–600 words.
 - Also remind me to write `reflections/` from the whole `process-notes.md`,
   kept moments or not.
 
