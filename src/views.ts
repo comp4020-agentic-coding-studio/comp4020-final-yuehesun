@@ -265,11 +265,16 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 // otherwise. The claim deadline also ticks client-side every second (see
 // the page shell's script) — plans/crit-8.md calls for an actual
 // countdown, not text that only updates when the card gets re-fetched.
+// The label itself says "Est." while unfixed, not just the chip's
+// dashed-vs-solid border — README.md argues uncertainty should be marked,
+// not just rendered subtly enough to miss (plans/crit-8.md's "estimated
+// vs. fixed" distinction is meant to be visible before you even read the
+// label, but it still needs the label to actually say so).
 function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "claimed") return raw("");
   if (row.status === "running") return timeChip("Free at", row.endMs, now, true, compact);
   if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
-  return timeChip("Starts", row.scheduledStartMs, now, row.fixed, compact);
+  return timeChip(row.fixed ? "Starts" : "Est. start", row.scheduledStartMs, now, row.fixed, compact);
 }
 
 function washingTypeOptions(): Html {
