@@ -71,7 +71,9 @@ const STYLES = `
   .badge-warning { background: var(--warning-tint); color: #7a5300; }
   .badge-neutral { background: #eeede9; color: var(--ink-muted); }
 
-  /* round numbered queue-position badge, deli-ticket style */
+  /* round numbered queue-position badge, deli-ticket style — used only
+     inside a machine card's own numbered list, where the <ol> itself is
+     the context for what the number means */
   .position {
     display: inline-flex; align-items: center; justify-content: center;
     width: 1.6rem; height: 1.6rem; border-radius: 50%;
@@ -79,6 +81,17 @@ const STYLES = `
     flex: none;
   }
   .mine .position { background: var(--mine); color: white; }
+
+  /* "#N in line" pill — the same badge pulled out on its own (only used
+     in the pinned "your status" block, where every row is already yours)
+     needs the words, not just a lone number, so it's one bordered pill
+     instead of a bare circle sitting next to separate text. Always the
+     "mine" colour, since everything in that block is the viewer's own. */
+  .position-line {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: var(--mine); color: white; font-weight: 700; font-size: 0.8rem;
+    border-radius: 999px; padding: 0.2rem 0.65rem;
+  }
 
   /* time chip: clock time + relative time together; fixed = solid, estimate = dashed */
   .chip {
@@ -242,10 +255,12 @@ function positionBadge(n: number): Html {
 // Bare `positionBadge` reads fine inside the machine card's numbered
 // queue list (reservationLine), where the <ol> itself is the context —
 // but pulled out on its own, in the pinned "your status" block or the
-// reservation detail page, a lone number has nothing around it saying
-// what it counts. "#N in line" says it plainly without a full sentence.
+// home page's own row for your reservation, a lone number has nothing
+// around it saying what it counts. One pill with "#N in line" replaces
+// the circle entirely here, rather than sitting a text label next to it —
+// a circled "1" and "#1 in line" are the same fact said twice.
 function positionLine(n: number): Html {
-  return html`${positionBadge(n)} <span>#${n} in line</span>`;
+  return html`<span class="position-line">#${n} in line</span>`;
 }
 
 // mm:ss form for the one chip that actually ticks (the claim window) —
@@ -270,7 +285,7 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 }
 
 // The one chip relevant to a given row: a countdown while it's unclaimed
-// and free, a finish time while running, or an estimated/fixed turn time
+// and free, a finish time while running, or an estimated/fixed ready time
 // otherwise. The claim deadline also ticks client-side every second (see
 // the page shell's script) — plans/crit-8.md calls for an actual
 // countdown, not text that only updates when the card gets re-fetched.
@@ -281,16 +296,18 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 // label, but it still needs the label to actually say so).
 //
 // Two labels deliberately avoid words the app uses for something else:
-// "Turn at" (not "Starts") is when the machine is yours to claim — not
+// "Ready at" (not "Starts") is when the machine is yours to claim — not
 // when you actually start the wash, which is a separate tap after
-// claiming. "Finish at" (not "Free at") is when the current wash ends —
-// "Free" is the app's own word for a machine nobody's queued for, and a
-// finished machine with someone waiting goes to "unclaimed," not free.
+// claiming; "Ready" was picked over the earlier "Turn at" for being the
+// plainer, more everyday word, while still not colliding with "start."
+// "Finish at" (not "Free at") is when the current wash ends — "Free" is
+// the app's own word for a machine nobody's queued for, and a finished
+// machine with someone waiting goes to "unclaimed," not free.
 function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "claimed") return raw("");
   if (row.status === "running") return timeChip("Finish at", row.endMs, now, true, compact);
   if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
-  return timeChip(row.fixed ? "Turn at" : "Est. turn at", row.scheduledStartMs, now, row.fixed, compact);
+  return timeChip(row.fixed ? "Ready at" : "Est. ready at", row.scheduledStartMs, now, row.fixed, compact);
 }
 
 function washingTypeOptions(): Html {

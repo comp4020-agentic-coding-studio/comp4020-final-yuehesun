@@ -95,13 +95,17 @@ app.post("/machines/:id/reservations", async (c) => {
   if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
 
   // spec/'s join() client reads this id out of the Location header's path
-  // (plans/crit-8.md's wire contract) — the string shape has to stay even
-  // though nothing now serves GET /reservations/:id (plans/crit-9.md Stage
-  // 1.5: the page was a redundant hop, since the home page's pinned "your
-  // status" block already renders every action directly).
+  // (plans/crit-8.md's wire contract) — the string shape has to stay.
+  // GET /reservations/:id below just bounces a real browser on to "/"
+  // (plans/crit-9.md Stage 1.5: the detail page itself is gone, since the
+  // home page's pinned "your status" block already renders every action
+  // directly) — spec/'s client never actually follows this redirect, it
+  // only parses the id out of the header string.
   c.header("Location", `/reservations/${result.reservationId}`);
   return c.body(null, 303);
 });
+
+app.get("/reservations/:id", (c) => c.redirect("/", 303));
 
 // Crit 9 (plans/crit-9.md Stage 1.5): actions redirect to the home page,
 // not a reservation detail page — there isn't one anymore.

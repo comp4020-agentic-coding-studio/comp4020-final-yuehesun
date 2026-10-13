@@ -156,11 +156,15 @@ second page to actually use.
 - Remove the "Manage your reservation →" link and the `reservationPage`
   function; `machineCard` renders `actionButtons(row)` directly for the
   viewer's own row, the same as `myStatusBlock` already does.
-- Remove `GET /reservations/:id` entirely — `spec/` never depends on it
-  (every test drives `join`/`claim`/`cancel`/`state`, never this page), so
-  nothing to update there. The action routes themselves
-  (`/reservations/:id/claim` etc.) are untouched; only the page that
-  linked to them goes.
+- `GET /reservations/:id` loses its page but not the route itself — it now
+  just bounces straight to `/` (`c.redirect("/", 303)`). This has to stay
+  a real route, not a removed one: `POST /machines/:id/reservations`'s
+  `Location` header still has to point at `/reservations/<id>` (`spec/`'s
+  `join()` client parses the id out of that header string, never actually
+  following it), but a real browser's "Reserve" form submit *does* follow
+  a 303 — caught by the user clicking it for real after the page was
+  removed outright the first time, which 404'd. The action routes
+  themselves (`/reservations/:id/claim` etc.) are untouched.
 - Nothing shared with anyone outside the app depends on this URL (no
   sharing/bookmarking use case exists in `plan.md`'s user story), so
   there's no deprecation concern.
