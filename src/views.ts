@@ -239,6 +239,15 @@ function positionBadge(n: number): Html {
   return html`<span class="position">${n}</span>`;
 }
 
+// Bare `positionBadge` reads fine inside the machine card's numbered
+// queue list (reservationLine), where the <ol> itself is the context —
+// but pulled out on its own, in the pinned "your status" block or the
+// reservation detail page, a lone number has nothing around it saying
+// what it counts. "#N in line" says it plainly without a full sentence.
+function positionLine(n: number): Html {
+  return html`${positionBadge(n)} <span>#${n} in line</span>`;
+}
+
 // mm:ss form for the one chip that actually ticks (the claim window) —
 // plans/crit-8.md calls for "an actual countdown, not static text", and a
 // deadline a few minutes out reads better to the second than "in 3 min".
@@ -261,7 +270,7 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 }
 
 // The one chip relevant to a given row: a countdown while it's unclaimed
-// and free, an end time while running, or an estimated/fixed start time
+// and free, a finish time while running, or an estimated/fixed turn time
 // otherwise. The claim deadline also ticks client-side every second (see
 // the page shell's script) — plans/crit-8.md calls for an actual
 // countdown, not text that only updates when the card gets re-fetched.
@@ -270,11 +279,18 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 // not just rendered subtly enough to miss (plans/crit-8.md's "estimated
 // vs. fixed" distinction is meant to be visible before you even read the
 // label, but it still needs the label to actually say so).
+//
+// Two labels deliberately avoid words the app uses for something else:
+// "Turn at" (not "Starts") is when the machine is yours to claim — not
+// when you actually start the wash, which is a separate tap after
+// claiming. "Finish at" (not "Free at") is when the current wash ends —
+// "Free" is the app's own word for a machine nobody's queued for, and a
+// finished machine with someone waiting goes to "unclaimed," not free.
 function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "claimed") return raw("");
-  if (row.status === "running") return timeChip("Free at", row.endMs, now, true, compact);
+  if (row.status === "running") return timeChip("Finish at", row.endMs, now, true, compact);
   if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
-  return timeChip(row.fixed ? "Starts" : "Est. start", row.scheduledStartMs, now, row.fixed, compact);
+  return timeChip(row.fixed ? "Turn at" : "Est. turn at", row.scheduledStartMs, now, row.fixed, compact);
 }
 
 function washingTypeOptions(): Html {
@@ -378,7 +394,7 @@ export function myStatusBlock(mine: { machine: Machine; row: QueueRow }[], now: 
       ({ machine, row }) => html`<div class="my-status-row">
         ${machineIcon(machine.id)}
         <strong>${machine.label}</strong>
-        ${positionBadge(row.position)}
+        ${positionLine(row.position)}
         ${rowBadge(row, true)}
         ${rowTimeChip(row, now)}
         ${actionButtons(row)}
@@ -425,7 +441,7 @@ export function reservationPage(machine: Machine, row: QueueRow, identity: strin
       hx-swap="outerHTML"
     >
       <div class="machine-head">${machineIcon(machine.id)}<h2>${machine.label}</h2></div>
-      <p>${positionBadge(row.position)} ${rowBadge(row, owner)}</p>
+      <p>${positionLine(row.position)} ${rowBadge(row, owner)}</p>
       ${rowTimeChip(row, now)}
       ${owner ? html`<p>${actionButtons(row)}</p>` : html`<p>This isn't your reservation.</p>`}
       <p><a href="/">← All machines</a></p>
