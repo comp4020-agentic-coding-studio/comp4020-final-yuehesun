@@ -1,13 +1,15 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { streamSSE } from "hono/streaming";
 import { db } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
 import * as queue from "./queue.ts";
+import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
 import { machines, reservations } from "./schema.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { errorPage, homePage, identityPage, readmePage, reservationPage } from "./views.ts";
+import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, reservationPage } from "./views.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -23,6 +25,45 @@ app.get("/", (c) => {
   const allMachines = db.select().from(machines).all();
   const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
   return c.html(homePage(identity, allMachines, rowsByMachine, now));
+});
+
+// Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
+// carries only change signals, named per machine, so each fragment below
+// re-fetches itself with the viewer's own cookie rather than the server
+// pushing rendered HTML that would be the same for every viewer.
+app.get("/events", (c) => {
+  return streamSSE(c, async (stream) => {
+    realtime.addStream(stream);
+    stream.onAbort(() => realtime.removeStream(stream));
+    while (!stream.closed && !stream.aborted) {
+      await stream.sleep(60_000);
+    }
+  });
+});
+
+app.get("/machines/:id/card", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(errorPage("sign in first", 400), 400);
+
+  const machineId = Number(c.req.param("id"));
+  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
+  if (!machine) return c.html(errorPage("no such machine", 404), 404);
+
+  const rows = queue.queueFor(machineId);
+  return c.html(machineCard(machine, rows, identity, Date.now()));
+});
+
+app.get("/my-status", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(errorPage("sign in first", 400), 400);
+
+  const now = Date.now();
+  const allMachines = db.select().from(machines).all();
+  const mine = allMachines.flatMap((m) => {
+    const row = queue.queueFor(m.id, now).find((r) => r.person === identity);
+    return row ? [{ machine: m, row }] : [];
+  });
+  return c.html(myStatusBlock(mine, now));
 });
 
 app.post("/identity", async (c) => {

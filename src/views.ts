@@ -140,6 +140,31 @@ const STYLES = `
   .prose code { background: #eeede9; border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
 `;
 
+// Crit 9: the claim-window countdown ticks client-side every second
+// (plans/crit-8.md calls for "an actual countdown, not static text") —
+// the server only ever sends the deadline once, in data-countdown, and
+// this script is the only thing that recomputes "how long left" between
+// re-fetches. It re-scans the DOM each tick rather than caching element
+// references, so it keeps working after htmx/SSE swaps a card out from
+// under it with no extra wiring needed on the fragment routes' side.
+const COUNTDOWN_SCRIPT = `
+  function tickCountdowns() {
+    document.querySelectorAll("[data-countdown]").forEach(function (el) {
+      var deadline = Number(el.getAttribute("data-countdown"));
+      var remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      var minutes = Math.floor(remaining / 60);
+      var seconds = remaining % 60;
+      el.textContent = minutes + ":" + String(seconds).padStart(2, "0");
+    });
+  }
+  setInterval(tickCountdowns, 1000);
+`;
+
+// Crit 9: one shared SSE connection per page (hx-ext="sse" sse-connect
+// opens it), carrying only change signals — each listening element below
+// re-fetches its own small, identity-aware fragment on its own trigger
+// (plans/crit-9.md Stage 1), rather than the server pushing rendered HTML
+// to every connection regardless of whose cookie it is.
 function page(title: string, body: Html): Html {
   return html`<!doctype html>
     <html lang="en">
@@ -148,15 +173,17 @@ function page(title: string, body: Html): Html {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${title} — Laundry Queue</title>
         <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+        <script src="https://unpkg.com/htmx-ext-sse@2.2.4/sse.js"></script>
         <style>${raw(STYLES)}</style>
       </head>
-      <body>
+      <body hx-ext="sse" sse-connect="/events">
         <h1><a href="/">Laundry Queue</a></h1>
         <nav class="topnav">
           <a href="/">Machines</a>
           <a href="/readme/">README</a>
         </nav>
         ${body}
+        <script>${raw(COUNTDOWN_SCRIPT)}</script>
       </body>
     </html>`;
 }
@@ -212,22 +239,36 @@ function positionBadge(n: number): Html {
   return html`<span class="position">${n}</span>`;
 }
 
-function timeChip(label: string, ms: number, now: number, fixed: boolean, compact = false): Html {
+// mm:ss form for the one chip that actually ticks (the claim window) —
+// plans/crit-8.md calls for "an actual countdown, not static text", and a
+// deadline a few minutes out reads better to the second than "in 3 min".
+function countdownText(remainingMs: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function timeChip(label: string, ms: number, now: number, fixed: boolean, compact = false, countdown = false): Html {
+  const relative = countdown
+    ? html`<span class="chip-relative" data-countdown="${ms}">${countdownText(ms - now)}</span>`
+    : html`<span class="chip-relative">${relativeTime(ms, now)}</span>`;
   return html`<div class="chip ${fixed ? "chip-fixed" : "chip-estimate"} ${compact ? "chip-compact" : ""}">
     <span class="chip-label">${label}</span>
     <span class="chip-time">${clockTime(ms)}</span>
-    <span class="chip-relative">${relativeTime(ms, now)}</span>
+    ${relative}
   </div>`;
 }
 
 // The one chip relevant to a given row: a countdown while it's unclaimed
 // and free, an end time while running, or an estimated/fixed start time
-// otherwise. Recomputed per request from real timestamps — not a static
-// "3 minutes left" string (plans/crit-8.md).
+// otherwise. The claim deadline also ticks client-side every second (see
+// the page shell's script) — plans/crit-8.md calls for an actual
+// countdown, not text that only updates when the card gets re-fetched.
 function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "claimed") return raw("");
   if (row.status === "running") return timeChip("Free at", row.endMs, now, true, compact);
-  if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact);
+  if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
   return timeChip("Starts", row.scheduledStartMs, now, row.fixed, compact);
 }
 
@@ -289,12 +330,22 @@ function reservationLine(row: QueueRow, identity: string, now: number): Html {
   </li>`;
 }
 
+// The whole card is swapped as one unit (hx-swap="outerHTML") on its own
+// machine's SSE event, since the state class (free/unclaimed/running)
+// changes along with the content — the fetched replacement carries the
+// same id/trigger, so it keeps listening after every swap.
 export function machineCard(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
   const mine = rows.find((r) => r.person === identity);
   const front = rows[0];
   const stateClass = !front ? "machine-free" : front.status === "waiting" ? "machine-unclaimed" : "machine-running";
 
-  return html`<div class="machine ${stateClass}">
+  return html`<div
+    class="machine ${stateClass}"
+    id="machine-${machine.id}"
+    hx-trigger="sse:machine-${machine.id}"
+    hx-get="/machines/${machine.id}/card"
+    hx-swap="outerHTML"
+  >
     <div class="machine-head">
       ${machineIcon(machine.id)}
       <h2>${machine.label}</h2>
@@ -314,7 +365,7 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
   </div>`;
 }
 
-function myStatusBlock(mine: { machine: Machine; row: QueueRow }[], now: number): Html {
+export function myStatusBlock(mine: { machine: Machine; row: QueueRow }[], now: number): Html {
   if (mine.length === 0) return raw("");
   return html`<div class="my-status">
     <h2>Your status</h2>
@@ -348,7 +399,9 @@ export function homePage(
       <form method="post" action="/identity/clear" style="display:inline">
         <button class="btn-quiet" type="submit">Switch room</button>
       </form></p>
-      ${myStatusBlock(mine, now)}
+      <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
+        ${myStatusBlock(mine, now)}
+      </div>
       <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
   );
 }
@@ -358,11 +411,20 @@ export function reservationPage(machine: Machine, row: QueueRow, identity: strin
 
   return page(
     machine.label,
-    html`<div class="machine-head">${machineIcon(machine.id)}<h2>${machine.label}</h2></div>
+    html`<div
+      id="reservation-body"
+      hx-trigger="sse:machine-${machine.id}"
+      hx-get="/reservations/${row.reservationId}"
+      hx-select="#reservation-body"
+      hx-target="this"
+      hx-swap="outerHTML"
+    >
+      <div class="machine-head">${machineIcon(machine.id)}<h2>${machine.label}</h2></div>
       <p>${positionBadge(row.position)} ${rowBadge(row, owner)}</p>
       ${rowTimeChip(row, now)}
       ${owner ? html`<p>${actionButtons(row)}</p>` : html`<p>This isn't your reservation.</p>`}
-      <p><a href="/">← All machines</a></p>`,
+      <p><a href="/">← All machines</a></p>
+    </div>`,
   );
 }
 
