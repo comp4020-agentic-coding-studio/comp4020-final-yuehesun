@@ -45,23 +45,25 @@ nothing else is kept.
 
 ## Several people at once
 
-*(Written once crit 9's real-time sync and fairness escalation are built
-and verified — this section will describe exactly what reaches every
-open page within a second, what happens when a claim window is missed,
-and how an early opening is offered, the way the mechanism actually
-behaves, not how it's meant to.)*
+A claim, start, or cancel reaches every open page within a second, no
+reload needed.
+
+Miss your claim window and you move back one place, swapped with
+whoever's next, not ejected — both told why, until dismissed. A machine
+freed early with nobody queued goes to whoever's waited longest elsewhere
+for whom it's genuinely earlier; 10 minutes to claim it, or it moves on
+while your own place holds. [`docs/adr/0005`](docs/adr/0005-fairness-escalation.md)
+says why, against crit 8's blunter rule.
 
 ## What's enforced, what's judged
 
-`spec/` checks what can be checked mechanically: a machine never has two
-active claims at once; a queue position only moves forward except
-through the documented miss-your-window rule; identity has to be a bare
-room number, anything else rejected; a room holds at most two active
-reservations per machine type at a time. Whether standing in the room
-with nothing to do is actually the thing residents feel relieved of, and
-whether the claim window is long enough to be fair without being long
-enough to sit idle, aren't things a test can check — that's for whoever
-actually uses the room to judge.
+`spec/` checks what's mechanical: a machine never has two active claims
+at once; a queue position only moves forward except through the
+documented miss-your-window rule; identity has to be a bare room number,
+anything else rejected; a room holds at most two active reservations per
+machine type. Whether standing in the room actually feels relieved, and
+whether the windows are long enough to be fair without inviting idling,
+is for whoever uses the room to judge.
 
 ## Sources consulted
 
