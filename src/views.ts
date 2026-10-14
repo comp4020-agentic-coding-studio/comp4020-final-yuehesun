@@ -41,6 +41,7 @@ const STYLES = `
     --info-tint: #e8f1fb;
     --mine: #4a3aa7;
     --mine-tint: #efecfa;
+    --dryer: #b5461f;
     --card-radius: 1.25rem;
   }
   * { box-sizing: border-box; }
@@ -281,17 +282,26 @@ function relativeTime(ms: number, now: number): string {
 // number sticker, so the icon alone (shape = type, number = which one)
 // is enough to tell machines apart before reading any text. Decorative
 // for screen readers (the adjacent "Washer N" text is the real
-// accessible name). One shape today; a second shape is the hook crit 9's
-// dryers need (plans/crit-8.md, and now plans/crit-9.md Stage 8).
-function machineIcon(number: number): Html {
+// accessible name).
+//
+// Crit 9 Stage 8: a dryer gets its own drum colour (orange, not the
+// washer's purple) *and* its own top-left detail — vent slits instead of
+// a flat display strip — so the two types read apart by shape, not colour
+// alone (plans/crit-8.md's rule: colour is never the only cue).
+function machineIcon(number: number, type: Machine["type"]): Html {
+  const isDryer = type === "dryer";
+  const drumFill = isDryer ? "var(--dryer)" : "var(--mine)";
+  const topDetail = isDryer
+    ? `<path d="M6 4.3h1.8M9.1 4.3h1.8M12.2 4.3h1.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`
+    : `<rect x="6" y="4.3" width="7" height="1.6" rx="0.8" stroke="currentColor" stroke-width="1.1"/>`;
   return raw(
     `<svg class="machine-icon" width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="2.5" y="2" width="19" height="20" rx="3" stroke="currentColor" stroke-width="1.4"/>
-      <rect x="6" y="4.3" width="7" height="1.6" rx="0.8" stroke="currentColor" stroke-width="1.1"/>
+      ${topDetail}
       <circle cx="16.3" cy="5.1" r="0.9" stroke="currentColor" stroke-width="1.1"/>
       <circle cx="19" cy="5.1" r="0.9" stroke="currentColor" stroke-width="1.1"/>
       <circle cx="12" cy="14.5" r="6.8" stroke="currentColor" stroke-width="1.4"/>
-      <circle cx="12" cy="14.5" r="5.4" fill="var(--mine)" stroke="currentColor" stroke-width="1"/>
+      <circle cx="12" cy="14.5" r="5.4" fill="${drumFill}" stroke="currentColor" stroke-width="1"/>
       <text x="12" y="15" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" stroke="none" fill="white">${number}</text>
     </svg>`,
   );
@@ -525,7 +535,7 @@ export function machineCard(machine: Machine, rows: QueueRow[], identity: string
     hx-swap="outerHTML"
   >
     <div class="machine-head">
-      ${machineIcon(machine.id)}
+      ${machineIcon(machine.id, machine.type)}
       <h2>${machine.label}</h2>
       ${!front ? badge("good", "✓", "Free") : raw("")}
     </div>
@@ -599,7 +609,7 @@ export function myStatusBlock(
         ${noticeBanner(row)}
         ${statusDots(row.status)}
         <div class="my-status-row">
-          ${machineIcon(machine.id)}
+          ${machineIcon(machine.id, machine.type)}
           <strong>${machine.label}</strong>
           ${positionLine(row.position)}
           ${rowBadge(row, true)}

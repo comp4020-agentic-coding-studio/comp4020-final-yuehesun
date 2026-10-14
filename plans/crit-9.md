@@ -430,13 +430,16 @@ wholesale:
   the pattern there. It sits next to the existing text badge, not instead
   of it (colour/shape is never the only cue, per `plans/crit-8.md`'s
   accessibility rule).
-- **Washer/dryer colour coding (light blue / orange), noted but not
-  implemented this stage.** Clean pattern, directly reusable once a
-  second machine type exists (crit 9 Stage 5's dryers weren't attempted,
-  so there's only one type to colour right now) — recorded here so the
-  palette is designed with that extension in mind (one more accent colour
-  reserved, not retrofitted later), not built for a type that doesn't
-  exist yet.
+- **Washer/dryer colour coding, noted in Stage 6 and implemented once
+  Stage 8 gave it something to colour.** Once dryers existed, the two
+  machine types' icons looked identical apart from the "Washer N" /
+  "Dryer N" label text — not actually a problem the accessibility rule
+  requires fixing (that rule bans colour/shape as the *only* cue, not
+  as *no* cue), but a user-raised rough edge the earlier note was
+  waiting on. `machineIcon()` now takes the machine's `type`: a dryer
+  gets an orange drum (`--dryer`, not the washer's purple `--mine`) and
+  its own top-left detail — vent slits instead of the washer's flat
+  display strip — so the two read apart by shape as well as colour.
 - **"Done but not collected," not added.** MIT's own team removed this
   exact state after finding it confused users — and `plan.md`'s own gap
   list already has this feature (#6) unscheduled. Independent confirmation
