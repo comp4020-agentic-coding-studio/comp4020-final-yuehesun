@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { db } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
+import * as logging from "./logging.ts";
 import * as queue from "./queue.ts";
 import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
@@ -15,6 +16,23 @@ import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePa
 const IDENTITY_COOKIE = "person";
 
 export const app = new Hono();
+
+// Crit 10 (plans/crit-10.md Stage 2): a request line for every
+// state-changing request. GETs are deliberately excluded — htmx/SSE
+// re-fetch /machines/:id/card and /my-status on every state change
+// (crit 9's realtime transport), and logging those would bury "who did
+// what" under routine polling that isn't anyone doing anything. The tag
+// bound here is what lets every logEvent() call made while handling this
+// request (in app.ts or queue.ts) share one tag with this request line.
+app.use(async (c, next) => {
+  if (c.req.method !== "POST") return next();
+
+  const tag = logging.genTag();
+  const start = Date.now();
+  await logging.withTag(tag, next);
+  const user = getCookie(c, IDENTITY_COOKIE) ?? "-";
+  logging.logRequest(tag, c.req.method, c.req.path, c.res.status, Date.now() - start, user);
+});
 
 app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
 
@@ -90,13 +108,16 @@ app.post("/identity", async (c) => {
   if (!room) return c.html(errorPage("enter your room number as roomXXX, e.g. room304", 400), 400);
 
   setCookie(c, IDENTITY_COOKIE, room, { path: "/", httpOnly: true, sameSite: "Lax" });
+  logging.logEvent("identity_set", { room });
   return c.redirect("/", 303);
 });
 
 // Lets a visitor get back to the room-number prompt — there was otherwise
 // no way back to it, including to switch rooms while testing.
 app.post("/identity/clear", (c) => {
+  const room = getCookie(c, IDENTITY_COOKIE);
   deleteCookie(c, IDENTITY_COOKIE, { path: "/" });
+  if (room) logging.logEvent("identity_cleared", { room });
   return c.redirect("/", 303);
 });
 
@@ -126,7 +147,16 @@ app.post("/machines/:id/reservations", async (c) => {
   }
 
   const result = queue.join(machineId, identity, typeInput, durationMinutes);
-  if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
+  if (!result.ok) {
+    logging.logEvent("reservation_join_denied", { room: identity, machine: machineId, reason: result.message });
+    return c.html(errorPage(result.message, result.status), result.status);
+  }
+  logging.logEvent("reservation_joined", {
+    reservation: result.reservationId,
+    room: identity,
+    machine: machineId,
+    type: typeInput,
+  });
 
   // spec/'s join() client reads this id out of the Location header's path
   // (plans/crit-8.md's wire contract) — the string shape has to stay.
@@ -143,27 +173,36 @@ app.get("/reservations/:id", (c) => c.redirect("/", 303));
 
 // Crit 9 (plans/crit-9.md Stage 1.5): actions redirect to the home page,
 // not a reservation detail page — there isn't one anymore.
-function actionRoute(path: string, act: (id: number, identity: string) => queue.ActionResult) {
+//
+// Crit 10 (plans/crit-10.md Stage 3): `name` drives both the success
+// event and (suffixed "_denied") the failure one — this is also what
+// makes the brief's authorization example show up for free: a 403 from
+// `loadOwned`/`loadOwnedOffer` (room A acting on room B's reservation)
+// logs as a named, room-attributed denial instead of an unlabelled row.
+function actionRoute(path: string, name: string, act: (id: number, identity: string) => queue.ActionResult) {
   app.post(path, (c) => {
     const identity = getCookie(c, IDENTITY_COOKIE);
     if (!identity) return c.html(errorPage("sign in first", 400), 400);
 
     const id = Number(c.req.param("id"));
     const result = act(id, identity);
-    if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
-
+    if (!result.ok) {
+      logging.logEvent(`${name}_denied`, { id, room: identity, reason: result.message });
+      return c.html(errorPage(result.message, result.status), result.status);
+    }
+    logging.logEvent(name, { id, room: identity });
     return c.redirect("/", 303);
   });
 }
 
-actionRoute("/reservations/:id/claim", queue.claim);
-actionRoute("/reservations/:id/start", queue.start);
-actionRoute("/reservations/:id/cancel", queue.cancel);
-actionRoute("/reservations/:id/finish", queue.finish);
-actionRoute("/reservations/:id/dismiss-notice", queue.dismissNotice);
-actionRoute("/reservations/:id/dismiss-dryer-prompt", queue.dismissDryerPrompt);
-actionRoute("/offers/:id/accept", queue.acceptOffer);
-actionRoute("/offers/:id/decline", queue.declineOffer);
+actionRoute("/reservations/:id/claim", "reservation_claimed", queue.claim);
+actionRoute("/reservations/:id/start", "reservation_started", queue.start);
+actionRoute("/reservations/:id/cancel", "reservation_cancelled", queue.cancel);
+actionRoute("/reservations/:id/finish", "reservation_finished", queue.finish);
+actionRoute("/reservations/:id/dismiss-notice", "notice_dismissed", queue.dismissNotice);
+actionRoute("/reservations/:id/dismiss-dryer-prompt", "dryer_prompt_dismissed", queue.dismissDryerPrompt);
+actionRoute("/offers/:id/accept", "offer_accepted", queue.acceptOffer);
+actionRoute("/offers/:id/decline", "offer_declined", queue.declineOffer);
 
 // Crit 9 (plans/crit-9.md Stage 8): queues a dryer reservation alongside
 // an existing washer reservation — needs its own route rather than
@@ -178,7 +217,15 @@ app.post("/reservations/:id/queue-dryer", async (c) => {
   if (!isDryingType(dryingType)) return c.html(errorPage("pick a drying type", 400), 400);
 
   const result = queue.queueDryer(washReservationId, identity, dryingType, dryingDurationFor(dryingType));
-  if (!result.ok) return c.html(errorPage(result.message, result.status), result.status);
+  if (!result.ok) {
+    logging.logEvent("dryer_queue_denied", { reservation: washReservationId, room: identity, reason: result.message });
+    return c.html(errorPage(result.message, result.status), result.status);
+  }
+  logging.logEvent("dryer_queued", {
+    reservation: washReservationId,
+    room: identity,
+    dryerReservation: result.reservationId,
+  });
 
   return c.redirect("/", 303);
 });
