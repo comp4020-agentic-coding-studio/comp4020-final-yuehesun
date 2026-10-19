@@ -173,6 +173,16 @@ and the offer moves to the next person instead.
   `reflections/crit-9.md` written (the user's own). **Crit 9 is fully
   shipped**, deployed and verified live at
   `https://comp4020-final-yuehesun.fly.dev/`.
+- **Crit 10 ("fly by instruments") — planned, not yet built.**
+  `plans/crit-10.md` has the full stage-by-stage detail: server-side
+  action logging (request lines for state-changing POSTs only, named
+  events per action, tick-driven system events like the move-back-one
+  swap tagged as the system's own decision rather than attributed to a
+  request), a new ADR documenting the log shape and confirming the
+  already-shipped identity/authorization model it builds on, then a
+  rehearsal of the crit's own two-Chrome-profile, logs-only narration
+  format. #7 (peak times from logs) is in the plan as a bonus stage,
+  attempted only once the core logging is solid.
 
 ## The feature list
 
@@ -241,14 +251,18 @@ feature list above.)
 - **Crit 8** (`plans/crit-8.md`): one machine type, manual reservation
   (pick or scan), simple fairness, estimated/fixed time, persistence. The
   smallest version that's genuinely alive.
-- **Crit 9** ("all at once"): **done** — real-time sync over SSE (<1s, no
-  reload, including passive expiries via a server tick); one documented
-  multi-user decision, #1's fairness escalation plus #12's cross-machine
-  offer together (`docs/adr/0005-fairness-escalation.md`). Dryers (#5)
-  not attempted. Visual design pass blocked on the user.
-- **Crit 10** ("fly by instruments"): server-side logging of every queue
-  action; a live "what's happening now" view for a logs-only demo; #7 as a
-  bonus if time allows.
+- **Crit 9** ("all at once"): **done, fully shipped** — real-time sync
+  over SSE (<1s, no reload, including passive expiries via a server
+  tick); one documented multi-user decision, #1's fairness escalation
+  plus #12's cross-machine offer together
+  (`docs/adr/0005-fairness-escalation.md`); the visual design pass; and
+  dryers (#5), the stretch, also done.
+- **Crit 10** ("fly by instruments") — planned (`plans/crit-10.md`), not
+  yet built: server-side logging of every state-changing action (who did
+  what, including denied attempts and the queue's own tick-driven
+  decisions), documented in a new ADR against the already-shipped
+  identity/authorization model; #7 (peak times from logs) as a bonus if
+  time allows.
 
 ## Decisions locked in for crit 8 Stage 1
 
