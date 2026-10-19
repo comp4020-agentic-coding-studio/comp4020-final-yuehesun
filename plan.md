@@ -173,16 +173,28 @@ and the offer moves to the next person instead.
   `reflections/crit-9.md` written (the user's own). **Crit 9 is fully
   shipped**, deployed and verified live at
   `https://comp4020-final-yuehesun.fly.dev/`.
-- **Crit 10 ("fly by instruments") — planned, not yet built.**
-  `plans/crit-10.md` has the full stage-by-stage detail: server-side
-  action logging (request lines for state-changing POSTs only, named
-  events per action, tick-driven system events like the move-back-one
-  swap tagged as the system's own decision rather than attributed to a
-  request), a new ADR documenting the log shape and confirming the
-  already-shipped identity/authorization model it builds on, then a
-  rehearsal of the crit's own two-Chrome-profile, logs-only narration
-  format. #7 (peak times from logs) is in the plan as a bonus stage,
-  attempted only once the core logging is solid.
+- **Crit 10 ("fly by instruments") — Stages 1-5 done, deployed and
+  verified live.** `src/logging.ts` tags every log line via
+  `AsyncLocalStorage` (not a module-level variable, since a shared
+  mutable tag would mislabel the concurrent-actions scenario this crit
+  demonstrates). Every state-changing POST gets a request line plus a
+  named event (including denied cross-room attempts — the brief's own
+  authorization example); GETs are excluded (crit 9's SSE re-fetches
+  would otherwise bury "who did what" in polling noise). The queue's own
+  tick-driven decisions (a move-back-one swap, an offer's creation or
+  expiry) are logged too, under one shared tag per decision rather than
+  attributed to a request that doesn't exist — verified by letting a
+  real 3-minute claim window lapse untouched. `docs/adr/0006-action-
+  logging.md` documents the shape and states plainly that log content is
+  judged, not enforced (`spec/` never captures stdout). Deployed
+  (`https://comp4020-final-yuehesun.fly.dev/`); a live smoke test — two
+  room numbers, one denied cross-room cancel — confirmed `mise exec --
+  flyctl logs -a comp4020-final-yuehesun` reads exactly as designed.
+  **Still needed:** Stage 6's real two-Chrome-profile rehearsal (the
+  user narrating from the logs alone, not curl standing in for it),
+  Stage 7 (bonus, peak times from logs — needs its own persisted table,
+  not reuse of stdout logging, per the plan's own scope note), Stage 8's
+  wrap-up (`PROCESS.md` rewrite, `reflections/crit-10.md`).
 
 ## The feature list
 
