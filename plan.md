@@ -149,10 +149,30 @@ and the offer moves to the next person instead.
   crit 8's timing-dependent behavior — nothing automates waiting out a
   real window). `README.md`'s "Several people at once" now describes the
   real mechanism. `PROCESS.md` rewritten in full (948 words, per the
-  final-project brief's 900-1100 target). Stage 5 (dryers, a stretch) not
-  attempted. Stage 6 (visual design pass) is blocked on the user
-  providing reference UI and image assets — reminder still open.
-  `reflections/crit-9.md` still needed (the user's own).
+  final-project brief's 900-1100 target).
+- **Crit 9 Stage 6 (visual design pass) done.** User-supplied reference
+  UI (`research/1.png` plus Instagram/site examples, see
+  `research/ui-references.md`) drove a redraw: rounded illustrated
+  machine icon, status-dot sequence for a reservation's own lifecycle
+  (not queue position, which can move backward), nav moved above the
+  title, palette/contrast pass. Adopted/not-adopted reasoning recorded
+  inline in `plans/crit-9.md` Stage 6, benchmarked against
+  `plans/crit-8.md`'s accessibility rule (colour/shape never the only
+  cue) and the move-back-one mechanic.
+- **Crit 9 Stage 8 (dryers, the stretch) done.** No new machines — 2 of
+  the existing 10 washers converted to dryers (idempotent conversion,
+  verified against a real pre-existing production-shaped database). A
+  resident gets asked, after reserving a wash, whether to also queue a
+  dryer for after it; `pickDryer()` picks the dryer that's soonest
+  genuinely available *after* the wash itself finishes, not just whoever
+  is "next in line" — the claim window on that dryer reservation doesn't
+  start until the linked wash reaches "done", so it can't expire before
+  the resident could physically be there. Dryer icon now also has its
+  own colour and shape detail (orange drum, vent slits) rather than
+  sharing the washer's icon verbatim.
+  `reflections/crit-9.md` written (the user's own). **Crit 9 is fully
+  shipped**, deployed and verified live at
+  `https://comp4020-final-yuehesun.fly.dev/`.
 
 ## The feature list
 
