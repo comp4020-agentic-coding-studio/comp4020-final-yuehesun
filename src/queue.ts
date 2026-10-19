@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "./db.ts";
+import * as logging from "./logging.ts";
 import { machines, type Machine, type Offer, offers, type Reservation, reservations } from "./schema.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
@@ -45,13 +46,30 @@ function moveBackOnePlace(missed: Reservation, now: number): boolean {
     .set({ joinedAt: nextJoinedAt, status: "waiting", notice: "moved_back", turnStartedAt: null, claimedAt: null })
     .where(eq(reservations.id, missed.id))
     .run();
+  // Crit 10 (plans/crit-10.md Stage 4): both sides of one swap share
+  // settleMachine's ambient tag (request's own, or a fresh tick tag — see
+  // ensureTag below), so the log reads as one decision, not two unrelated
+  // lines.
+  logging.logEvent("reservation_moved_back", { reservation: missed.id, room: missed.personName, machine: missed.machineId });
+  logging.logEvent("reservation_moved_up", { reservation: next.id, room: next.personName, machine: next.machineId });
   return true;
 }
 
 // Lazily brings a machine's queue up to date: finishes a running wash
 // whose time is up, and settles a front-of-queue claim/start window
 // that's been missed (moveBackOnePlace above).
+//
+// Crit 10 (plans/crit-10.md Stage 4): wrapped in ensureTag — called both
+// synchronously inside a request handler (join/cancel/finish/acceptOffer
+// all call this directly, so a swap it triggers shares that request's own
+// tag) and from the realtime tick with no request behind it at all (a
+// passive expiry nobody's clicking anything for), where ensureTag mints a
+// fresh tag instead. No call site elsewhere needs to know which case it is.
 export function settleMachine(machineId: number, now: number = Date.now()): void {
+  logging.ensureTag(() => settleMachineInner(machineId, now));
+}
+
+function settleMachineInner(machineId: number, now: number): void {
   for (;;) {
     const [front] = activeReservations(machineId);
     if (!front) return;
@@ -60,6 +78,10 @@ export function settleMachine(machineId: number, now: number = Date.now()): void
       const endsAt = front.startedAt! + front.durationMinutes * 60_000;
       if (now >= endsAt) {
         db.update(reservations).set({ status: "done" }).where(eq(reservations.id, front.id)).run();
+        // Named differently from the manual "end the wash early" action
+        // (reservation_finished, app.ts) so the log never confuses a wash
+        // that ran its full course with one someone cut short.
+        logging.logEvent("reservation_completed_auto", { reservation: front.id, room: front.personName, machine: machineId });
         continue;
       }
       return;
@@ -366,7 +388,16 @@ function eligibleCandidate(machineType: string, idleMachineId: number, now: numb
 // to its eligible candidate, if any (plans/crit-9.md Stage 3). Called
 // from the realtime tick, the same "tick does the detecting" shape as
 // settleMachine — offers aren't tied to a request either.
+//
+// Crit 10 (plans/crit-10.md Stage 4): ensureTag the same way settleMachine
+// is — processOffers is only ever called from the tick today, with no
+// ambient request tag to reuse, but ensureTag keeps this safe even if that
+// ever changes, with no extra parameter to thread through call sites.
 export function processOffers(now: number = Date.now()): void {
+  logging.ensureTag(() => processOffersInner(now));
+}
+
+function processOffersInner(now: number): void {
   const overdue = db
     .select()
     .from(offers)
@@ -375,6 +406,13 @@ export function processOffers(now: number = Date.now()): void {
     .filter((o) => now >= o.respondBy);
   for (const o of overdue) {
     db.update(offers).set({ status: "expired" }).where(eq(offers.id, o.id)).run();
+    const reservation = db.select().from(reservations).where(eq(reservations.id, o.reservationId)).get();
+    logging.logEvent("offer_expired", {
+      offer: o.id,
+      reservation: o.reservationId,
+      room: reservation?.personName ?? "?",
+      machine: o.machineId,
+    });
   }
 
   const allMachines = db.select().from(machines).all();
@@ -385,9 +423,12 @@ export function processOffers(now: number = Date.now()): void {
     const candidate = eligibleCandidate(machine.type, machine.id, now);
     if (!candidate) continue;
 
-    db.insert(offers)
+    const { id } = db
+      .insert(offers)
       .values({ reservationId: candidate.id, machineId: machine.id, offeredAt: now, respondBy: now + OFFER_RESPOND_WINDOW_MS })
-      .run();
+      .returning({ id: offers.id })
+      .get();
+    logging.logEvent("offer_created", { offer: id, reservation: candidate.id, room: candidate.personName, machine: machine.id });
   }
 }
 
