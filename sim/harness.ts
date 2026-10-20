@@ -12,7 +12,11 @@
 // in this file would be too late.
 import { VirtualClock } from "./virtual-clock.ts";
 
-export type MissedWindowPolicy = "wait-forever" | "eject" | "move-back-one";
+// Re-exported from queue.ts rather than redeclared, so there is exactly
+// one definition of what the policies are — see queue.ts's own
+// setMissedWindowPolicy for why this switch exists and why only this
+// harness (never app.ts/realtime.ts) ever calls it.
+export type { MissedWindowPolicy } from "../src/queue.ts";
 
 export interface HarnessMachine {
   id: number;

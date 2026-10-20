@@ -31,6 +31,30 @@ function activeReservations(machineId: number): Reservation[] {
     .all();
 }
 
+// Crit 10 extension, Stage 13 (plans/crit-10.md "Extension"; ADR 0007): the
+// fairness simulation compares production's rule against the two
+// alternatives README's own argument rejected (ADR 0005) — "wait forever"
+// (no forfeit at all) and "eject" (crit 8's blunt rule). This is the one
+// seam that selects between them, deliberately shaped so nothing reachable
+// from the running app can reach it:
+// - it lives in queue.ts itself, not a parameter threaded through from
+//   app.ts/realtime.ts — neither of those modules, nor anything they call,
+//   ever imports setMissedWindowPolicy;
+// - the default is "move-back-one", so a module that never calls the
+//   setter (the entire running app) behaves exactly as before;
+// - only sim/harness.ts calls the setter, once, right after creating its
+//   own in-memory database — never from spec/ files that run against the
+//   real app over HTTP.
+// CLAUDE.md's test harness rules state this plainly as a rule, not just a
+// comment: no env var, route, setting or default reachable in production
+// may select anything other than move-back-one.
+export type MissedWindowPolicy = "wait-forever" | "eject" | "move-back-one";
+let missedWindowPolicy: MissedWindowPolicy = "move-back-one";
+
+export function setMissedWindowPolicy(policy: MissedWindowPolicy): void {
+  missedWindowPolicy = policy;
+}
+
 // Crit 9 (plans/crit-9.md Stage 2): miss your claim/start window and you
 // move back exactly one place — swapped with whoever's next — instead of
 // losing your spot outright (crit 8's blunt rule, now the rejected
@@ -60,6 +84,35 @@ function moveBackOnePlace(missed: Reservation, now: number): boolean {
   logging.logEvent("reservation_moved_back", { reservation: missed.id, room: missed.personName, machine: missed.machineId });
   logging.logEvent("reservation_moved_up", { reservation: next.id, room: next.personName, machine: next.machineId });
   return true;
+}
+
+// The simulation's "eject" policy (crit 8's original rule, ADR 0005's
+// rejected alternative): the missed reservation is marked "missed" and
+// drops out of the active queue entirely — not moved, not offered a
+// retry, just gone. Mirrors what crit 8's code actually did before ADR
+// 0005 replaced it, for a faithful comparison rather than a guess at what
+// the old behaviour was.
+function ejectMissed(missed: Reservation): void {
+  db.update(reservations).set({ status: "missed" }).where(eq(reservations.id, missed.id)).run();
+  logging.logEvent("reservation_ejected", { reservation: missed.id, room: missed.personName, machine: missed.machineId });
+}
+
+// Applies whichever missed-window policy is selected (production is
+// always "move-back-one" — see setMissedWindowPolicy above) when `missed`
+// has just run out its claim or start window. Returns whether
+// settleMachineInner's loop should re-evaluate the machine's new front
+// (true for both real policies' successful outcomes; "wait-forever" never
+// changes anything, so there's nothing new to re-evaluate).
+function applyMissedWindowPolicy(missed: Reservation, now: number): boolean {
+  switch (missedWindowPolicy) {
+    case "wait-forever":
+      return false;
+    case "eject":
+      ejectMissed(missed);
+      return true;
+    case "move-back-one":
+      return moveBackOnePlace(missed, now);
+  }
 }
 
 // Lazily brings a machine's queue up to date: finishes a running wash
@@ -96,7 +149,7 @@ function settleMachineInner(machineId: number, now: number): void {
 
     if (front.status === "claimed") {
       if (now - front.claimedAt! >= START_WINDOW_MS) {
-        if (moveBackOnePlace(front, now)) continue;
+        if (applyMissedWindowPolicy(front, now)) continue;
         return;
       }
       return;
@@ -128,7 +181,7 @@ function settleMachineInner(machineId: number, now: number): void {
     // 3-minute in-place claim window.
     const window = front.offerId != null ? OFFER_CLAIM_WINDOW_MS : CLAIM_WINDOW_MS;
     if (now - front.turnStartedAt >= window) {
-      if (moveBackOnePlace(front, now)) continue;
+      if (applyMissedWindowPolicy(front, now)) continue;
       return;
     }
 
