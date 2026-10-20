@@ -280,6 +280,32 @@ there; "gap" means nobody's claimed it yet.
     a machine ("it's mine"); starting is a separate tap that just records
     the real start time (duration was already chosen at reservation time).
 15. **Cancelling moves the line up by one** — core, crit 8, simple to add.
+16. **Changing washing/drying type after reserving** — **gap**, no crit
+    assigned. Came up because the default dropdown option is the 1-minute
+    test type, and it's easy to reserve without noticing or changing it;
+    a real user might also just change their mind. Needs a decision on
+    when it's still allowed: trivial while `waiting`/`claimed` (nothing's
+    committed to other people's estimates yet), but once `running` the
+    duration is already baked into everyone else's queued `endMs` and
+    `settleMachine`'s own finish check — letting it change after that
+    point would let someone manipulate how long they effectively hold the
+    machine. Current read: allow the change up to `claimed`, lock it at
+    `running`, matching how a real machine can't be reconfigured mid-cycle.
+17. **Water temperature choice (cold/warm/hot)** — **gap**, no crit
+    assigned. Orthogonal to washing type/duration — a separate field, not
+    a new `WASHING_TYPES` entry — and doesn't touch queue position or
+    timing, so it's a lower-risk addition than #16.
+18. **Unclaimed laundry handed off to a numbered pickup spot** — **gap**,
+    no crit assigned. If the next person needs the machine before the
+    previous owner has collected their clothes, they move the clothes to
+    a numbered shelf/locker spot (picked from a fixed list, not freely
+    typed, same "no free text" discipline as room numbers) and the
+    original owner is notified which spot. Needs its own state beyond the
+    existing reservation statuses (something has to track "moved, to spot
+    N, owner not yet confirmed"), a decision on who's allowed to trigger
+    it, and how a spot is marked free again — this is a real new feature,
+    not a small addition; scope it properly before building rather than
+    folding it into an existing stage.
 
 ## Gap tasks — no crit assigned yet
 
@@ -288,6 +314,9 @@ there; "gap" means nobody's claimed it yet.
 - Auto-assign (#11)
 - Push notifications for "it's your turn" (#2), if wanted beyond the spec
   minimum
+- Changing washing/drying type after reserving (#16)
+- Water temperature choice (#17)
+- Unclaimed laundry handed off to a numbered pickup spot (#18)
 
 (#12, cross-machine "earlier machine" offers, shipped in crit 9 — see the
 feature list above.)
