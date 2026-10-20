@@ -24,21 +24,10 @@ The other real breakthrough was uglier. Running a 100-resident simulation
 to check the fairness rules at scale, the whole machine locked up hard
 enough that I had to use `claude --continue` to get back into a usable
 session, twice. The agent's first theory was its own background-task
-handling — plausible, since both crashes happened while it had something
-running in the background. I didn't buy it: a tool spawning a background
-job shouldn't be able to redline the CPU and spin the fans up like that,
-and the timing felt like a cover story for something in the simulation
-itself. I had it test the theory properly rather than accept the
-explanation — open a second, completely agent-free terminal and run the
-exact same simulation by hand. It crashed exactly the same way, with no
-agent anywhere near it. That ruled out my suspicion as cleanly as it
-ruled out the agent's own first guess, and pointed at the real cause: the
-whole 50-seed batch (126,000 simulated minutes) ran inside one
-synchronous loop with no point where the process could ever hand control
-back to the system, which is a much worse thing to do inside a VM than on
-bare metal. The fix was small once found — yield every simulated hour —
-but finding it meant not accepting the first plausible-sounding
-explanation from either side
+handling. I didn't buy it, and had it run the exact same simulation in a
+second, completely agent-free terminal — it crashed exactly the same way,
+which ruled that theory out and pointed at the real cause instead (full
+technical account in `PROCESS.md`)
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
 
 **What did this work change about who I want to be as a software developer?**
@@ -50,9 +39,14 @@ quality gap between a loosely-prompted pass and a fully-specified one was
 too large this crit to read as a coincidence.
 
 I also want to keep my own judgment in the loop when something crashes
-and an explanation arrives fast. "Not a code problem" from the agent
-sounded complete, but it was actually a guess that hadn't been tested
-against the simplest possible alternative. Running the same thing with no
-agent involved at all cost almost nothing and settled the question for
-real instead of settling for whichever explanation sounded more
-convenient at the time.
+and an explanation arrives fast. "Not a code problem" sounded complete,
+but it was a guess that hadn't been tested against the simplest possible
+alternative — running the same thing with no agent involved cost almost
+nothing and settled the question for real.
+
+And reviewing my own project's history for this document, I couldn't
+recall several crit 8/9 decisions until I re-read the ADRs and
+`process-notes.md` and reconstructed them from what was written at the
+time, not just the outcome. That's the actual point of keeping this
+harness going: not that a marker reads it, but that I can still read it
+back once my own memory hasn't.
