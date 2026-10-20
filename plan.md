@@ -321,6 +321,14 @@ there; "gap" means nobody's claimed it yet.
 (#12, cross-machine "earlier machine" offers, shipped in crit 9 — see the
 feature list above.)
 
+**A possible second-phase direction, not a scoped task:** the crit 10
+extension's fairness simulation (`/simulation`, `docs/adr/0011-reading-the-simulation-numbers.md`)
+surfaced that `moveBackOnePlace` has no cap on how many consecutive times
+one reservation can be swapped backward — worth asking in a future
+iteration whether a long run of bad luck should eventually route into
+the existing cross-machine offer (#12) instead of an indefinite in-place
+swap. Not committed to; just worth not forgetting.
+
 ## Mapping onto crits (summary — full detail in each crit's own plan file)
 
 - **Crit 8** (`plans/crit-8.md`): one machine type, manual reservation
