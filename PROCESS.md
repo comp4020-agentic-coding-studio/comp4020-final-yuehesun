@@ -94,18 +94,18 @@ win the offer instead of the machine the test actually set up
 ([`76b4b81`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/76b4b81))
 — caught by a real failing run, not by inspection.
 
-**A recurring process failure, fixed in the harness.** Verifying crit 9's
-real-time work by hand, I repeatedly started throwaway servers for my own
-curl testing on port 8080 — the same port the student's own `pnpm dev`
-uses — and didn't reliably confirm a stray one was dead before assuming
-it was. One outlived a kill I thought had worked, silently serving stale
-code; the student saw `pnpm dev` itself fail with `EADDRINUSE` and old
-label text no matter how hard they refreshed. Telling the agent to "be
-more careful" wouldn't survive the next session, so the fix went into
-`CLAUDE.md` directly: never touch port 8080 for verification, and confirm
-a port is actually free after cleanup rather than trusting a kill
-command's exit code — a harness rule, not a private resolution that
-resets at `/clear`.
+**A recurring process failure, fixed in the harness.** While I was having
+the agent verify crit 9's real-time work by hand, it repeatedly started
+throwaway servers for its own curl testing on port 8080 — the same port
+my own `pnpm dev` uses — and didn't reliably confirm a stray one was dead
+before assuming it was. One outlived a kill it thought had worked,
+silently serving stale code; I saw `pnpm dev` itself fail with
+`EADDRINUSE` and old label text no matter how hard I refreshed. Telling
+the agent to "be more careful" wouldn't survive the next session, so I
+put the fix into `CLAUDE.md` directly: never touch port 8080 for
+verification, and confirm a port is actually free after cleanup rather
+than trusting a kill command's exit code — a harness rule, not a private
+resolution that resets at `/clear`.
 
 Automated checks (`pnpm check`) are good at structural consistency — the
 app builds, the fairness invariants hold, the offer accept/decline paths
