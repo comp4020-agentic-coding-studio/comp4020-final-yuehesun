@@ -265,6 +265,7 @@ const STYLES = `
   .simulation-replay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
   .simulation-replay-clock { font-weight: 700; font-size: var(--text-lg); margin-left: auto; }
   .simulation-replay-banner { min-height: 1.5em; font-weight: 600; color: var(--info); }
+  .simulation-closing { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--rule); color: var(--ink-muted); font-size: var(--text-sm); }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -1225,14 +1226,20 @@ export function simulationPage(results: SimulationResults | undefined, machines:
       assumptions it ran with are listed below.</p>
     </div>
 
+    ${simulationReplaySection(results, machines)}
+
+    <section class="simulation-metric">
+      <h2>What the numbers add up to</h2>
+      <p>Same data as the day you just watched (or any of the other 49
+      seeds run under each policy) — summarised across all of them below.</p>
+    </section>
+
     ${SIMULATION_METRICS.map(
       (m) => html`<section class="simulation-metric">
         <h2>${m.label}</h2>
         ${simulationBarChart(results, m.key, m.unit)}
       </section>`,
     )}
-
-    ${simulationReplaySection(results, machines)}
 
     <section class="simulation-assumptions">
       <h2>Assumptions this run made</h2>
@@ -1250,6 +1257,15 @@ export function simulationPage(results: SimulationResults | undefined, machines:
           all, and ${(results.model.chanceAcceptsOfferGivenResponds * 100).toFixed(0)}% of those accept it.</li>
       </ul>
       <p>These are guesses, not data from a real building — changing them changes every number above.</p>
-    </section>`,
+    </section>
+
+    <p class="simulation-closing">This page reports numbers, not an
+    argument — what they actually support, what they don't, and this
+    simulation's own limitations are written up separately in
+    <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0011-reading-the-simulation-numbers.md">ADR 0011</a>.
+    The app's fairness argument itself is
+    <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0005-fairness-escalation.md">ADR 0005</a>'s
+    and <a href="/readme/">README</a>'s, made on different grounds than anything
+    measured here.</p>`,
   );
 }
