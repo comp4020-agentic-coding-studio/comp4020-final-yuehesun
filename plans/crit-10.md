@@ -276,6 +276,7 @@ not a reuse of the crit's core logging mechanism. Flagging this now so
 "bonus feature" isn't assumed to be free once the core logging exists.
 
 ### Stage 8 — wrap-up
+(Runs after the review of the extension run — see "Extension" below.)
 
 - Grow `plan.md`: update the feature list's status for #7 (if attempted),
   current-state section, and the crit 10 row in "Mapping onto crits."
@@ -311,3 +312,60 @@ not a reuse of the crit's core logging mechanism. Flagging this now so
    of the stdout logging** — decided now, before Stage 7 is attempted, so
    it isn't discovered mid-build that "just read the logs" can't actually
    survive a restart.
+
+## Extension
+
+Stages 1–6 cover what crit 10's spec asks for. This extension takes the
+crit further on the parts of `README.md`'s argument that are still only
+judged, or only half true:
+
+- crit 8/9's timing rules (claim, start and offer windows, passive expiry)
+  have only been checked by hand, by waiting out a real window;
+- the final project's top band asks the app to hold up under two people
+  acting at once and a slow connection, which nothing tests yet;
+- README says the queue pulls you back "at exactly two moments", but
+  nothing on the page marks either moment;
+- the home page still says live updates "aren't built yet", and the
+  crit 9 design pass came out plain.
+
+### How it runs
+
+One unattended run driven by `prompt.md`, about two hours, on its own
+branch, under `CLAUDE.md`'s "Unattended runs" rules. I write the plan,
+ADRs and prompt first and commit them; the agent builds; I review the
+branch, then do Stage 8's wrap-up myself. Why a single run instead of my
+usual stop-after-each-stage workflow: see `process-notes.md`.
+
+### Decisions fixed before the run
+
+1. Identity stays an unverified room number (ADR 0002/0004).
+2. One harness, two uses: property tests check the rules never break, the
+   simulation compares rules (ADR 0007).
+3. Robustness tests are spec; their reasoning is ADR 0008.
+4. Turn alerts are in-page, not push (ADR 0009).
+5. No separate `/board`, no wait-time prediction: the home page is the
+   board, and it gets the redesign.
+
+### Stages inside the run (detail in `prompt.md`)
+
+- **Stage 9** — `src/clock.ts`, in-process harness in `sim/`,
+  `spec/fairness-properties.test.ts` plus direct timing tests; a
+  deliberate break must make the property test fail.
+- **Stage 10** — simultaneous joins, double claim, double submit, reconnect
+  notice and refetch, restart persistence.
+- **Stage 11** — in-page turn alerts, once per transition.
+- **Stage 12** — home page redesign: Flighty reference
+  (`research/flighty/`), design plan committed before CSS, scored
+  screenshot review rounds at 390px and 1280px, before/after screenshots.
+- **Stage 13 (stretch)** — fairness simulation, `sim/results.json`,
+  `/fairness`.
+- Stage 8 (wrap-up) runs after the review of the run's branch.
+
+### What I check after the run
+
+- `HANDOFF.md`: every call the agent made without asking.
+- The deliberate-break counterexample from Stage 9.
+- Before/after screenshots, then the real app on my phone.
+- Two Chrome profiles: alerts, reconnect, double-tap on Slow 3G.
+- Anything wrong goes into `CLAUDE.md` or `spec/` before merging, not just
+  a fix.

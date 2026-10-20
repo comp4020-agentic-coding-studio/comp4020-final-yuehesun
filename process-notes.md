@@ -131,3 +131,123 @@ things only show up once a working version exists to click on.
 - [`4cae99e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/4cae99e) (page removed, "end the wash" added)
 - [`b04d236`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/b04d236) (the redirect bug the removal caused, fixed)
 - `plans/crit-9.md`'s Stage 1.5
+
+## Identity stays unverified, even though the logs can't tell two people with one room number apart
+
+**What happened:** reviewing the app against crit 10's brief, I was told
+the identity model has a hole the crit is built to expose: anyone can type
+another resident's room number, act as them, and the logs show both people
+as the same room. The suggested fix was binding a room number to the first
+browser that claims it, with a short pairing code for a second device.
+
+**The obvious alternative:** add the binding — it closes the hole and
+makes the logs unambiguous.
+
+**What I decided instead:** keep the room number as a plain, unverified
+identifier, as ADR 0002/0004 already say. Crit 10 asks that what each
+person may change is checked on the server and the decision is written
+down with why; the server already checks ownership by room number, and
+the trade-off is already written down.
+
+**Why:** binding would make every two-browser test, including the crit's
+own, slower to set up, for a threat that barely exists in one building
+where residents know each other. The cost of the hole is real but small;
+the cost of the fix lands on every single use.
+
+**Backed by:** ADR 0002/0004 (unchanged); `plans/crit-10.md` Extension,
+decision 1 (pending: plan commit).
+
+## One harness instead of two features
+
+**What happened:** I was offered two separate ideas for making the queue's
+rules checkable: property-based tests that run thousands of random action
+sequences against the rules, and a fairness simulator that compares crit
+8's rule, crit 9's rule and plain first-come-first-served over a simulated
+Saturday.
+
+**The obvious alternative:** build them as two features — a test suite
+and a separate simulator.
+
+**What I decided instead:** they need the same thing underneath — the
+real queue code, a clock the test controls, and generated situations — so
+they are one harness used twice: the tests check the rules never break,
+the simulation compares rules.
+
+**Why:** two pieces of machinery would mean two places that could drift
+from the real queue code, and twice the build cost. One harness also
+means the numbers on `/fairness` come from exactly the code the tests
+check.
+
+**Backed by:** `docs/adr/0007-verification-harness.md`;
+`CLAUDE.md` test harness rules (pending: Stage 9).
+
+## The home page is the board
+
+**What happened:** I was offered a separate `/board` page for a screen in
+the laundry room, styled like an airport departure board, and a feature
+that predicts wait time as a range.
+
+**The obvious alternative:** build both.
+
+**What I decided instead:** neither. The home page already lists every
+machine, its state and who's next — it is the board. The effort goes into
+redesigning that page properly. The prediction isn't needed: the queue
+already shows a fixed time once the person ahead has started.
+
+**Why:** a second page showing the same queue is a feature with no reason
+to exist beyond the one already there, and the brief marks those down. The
+crit 9 design pass came out plain; fixing the page everyone actually uses
+is worth more.
+
+**Backed by:** `plans/crit-10.md` Extension, decision 5, and Stage 12
+(pending).
+
+## Turn alerts on the page, not push notifications
+
+**What happened:** README promises the queue pulls you back at two
+moments — one person ahead, and your turn — but nothing on the page marks
+either. Push notifications were suggested as the full version.
+
+**The obvious alternative:** Web Push, so the alert reaches a locked phone.
+
+**What I decided instead:** an in-page dialog plus a tab-title change.
+
+**Why:** push needs a service worker, a permission prompt, and on an
+iPhone the site added to the home screen first — heavy for this app, and
+it can't be tested quickly in two browser profiles. The in-page alert
+makes README's two moments real now. The gap that's left (a locked phone
+sees it later) gets written into README honestly.
+
+**Backed by:** `docs/adr/0009-turn-alerts.md` (pending: Stage 11).
+
+## One unattended run for the extension, with my decisions fixed first
+
+**What happened:** crit 9's design pass came out plain even though I gave
+the agent references. Looking back, it only ever had a text description of
+the reference, never looked at its own result, and had no design plan, so
+it produced the generic version. I'd also seen how the crit agents' pod
+runs work: one `prompt.md`, one long unattended run.
+
+**The obvious alternative:** my usual workflow — the agent builds one
+stage, stops, I check, repeat — with the same loose UI instructions as
+crit 9.
+
+**What I decided instead:** one unattended run of about two hours from a
+`prompt.md` I wrote, after committing the plan, ADRs 0007–0009 and an
+"Unattended runs" section in `CLAUDE.md`. Every decision that was mine to
+make is fixed in the prompt and the ADRs before the run (no identity
+verification, one harness, in-page alerts, no separate board). The UI
+stage forces what crit 9 lacked: real reference images it has to open and
+describe, a design plan committed before any CSS, and scored screenshot
+review rounds at both widths with before/after screenshots.
+
+**Why:** the UI failure was a process failure, not a model one — the
+agent had no way to see what it built. A detailed prompt with a
+verification loop it can run alone fixes that, and fixing my own decisions
+in writing first means the run builds my choices instead of making them.
+What it gets wrong is the next thing to check.
+
+**Backed by:** `CLAUDE.md` "Unattended runs" and "Test harness rules"
+(pending: plan commit); `prompt.md` (pending: plan commit; deleted by the
+run's last commit); `HANDOFF.md` and `research/design-review.md` (pending:
+the run).
