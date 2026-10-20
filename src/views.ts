@@ -196,7 +196,6 @@ const STYLES = `
   /* the landing page's app introduction */
   .intro { line-height: 1.6; margin-bottom: 1.25rem; }
   .intro p { margin: 0.6rem 0; }
-  .intro .coming-next { color: var(--ink-muted); font-size: 0.9rem; font-style: italic; }
 
   /* README.md, rendered in full at /readme/ */
   .prose { line-height: 1.6; }
@@ -494,9 +493,6 @@ export function identityPage(): Html {
       helps you find a freed-up machine as fast as possible. It's
       automated from start to finish, making sharing with strangers easy
       and keeping communication and waiting costs as low as possible.</p>
-
-      <p class="coming-next">Reminders, finding a freed-up machine faster,
-      and live updates aren't built yet — coming next.</p>
     </div>
       <p>Enter your room number — that's how the queue tells you apart. Just
       the number is fine (e.g. <strong>304</strong>). No account, nothing
