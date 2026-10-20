@@ -193,6 +193,11 @@ const STYLES = `
      acknowledgement) — crit 9 Stage 8 */
   .dryer-prompt { border: 1px solid var(--mine); flex-wrap: wrap; margin-top: 0.6rem; }
 
+  /* crit 10 extension, Stage 10 (ADR 0008): a dropped SSE connection must
+     never leave a stale queue on screen silently — warning colour, not
+     info, since it's telling you the page might be behind right now. */
+  .connection-notice { background: var(--warning-tint); color: #7a5300; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0 0 0.75rem; font-size: 0.9rem; font-weight: 600; }
+
   /* the landing page's app introduction */
   .intro { line-height: 1.6; margin-bottom: 1.25rem; }
   .intro p { margin: 0.6rem 0; }
@@ -253,6 +258,51 @@ const DISABLE_ON_SUBMIT_SCRIPT = `
   });
 `;
 
+// Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
+// a dropped SSE connection must never leave a stale queue on screen
+// silently — that's the worst case for an app whose whole point is that
+// the screen can be trusted instead of walking down to the room. The
+// extension's own htmx:sseError/htmx:sseOpen events (dispatched on the
+// element carrying sse-connect, i.e. <body>) are the only signal
+// available: there's no separate "reconnected" event, just "opened again"
+// after at least one prior error.
+//
+// Re-fetching every live fragment on reconnect reuses the exact same path
+// a real SSE message already takes, rather than hand-rolling a second way
+// to know each fragment's URL/target/swap style: every element carrying
+// hx-trigger="sse:..." already has htmx listening for a plain DOM event
+// of that literal name (that's how the SSE extension delivers a message
+// in the first place — it just dispatches that named event on the
+// element), so re-dispatching the same event name does exactly what a
+// live message would, with no per-fragment wiring and no risk of this
+// script's idea of "the fragments" drifting from the real ones as new
+// sse: triggers get added later (Stage 11's turn alerts, Stage 13's
+// /fairness, ...).
+const RECONNECT_SCRIPT = `
+  function refetchLiveFragments() {
+    document.querySelectorAll("[hx-trigger]").forEach(function (el) {
+      var trigger = el.getAttribute("hx-trigger");
+      if (trigger && trigger.indexOf("sse:") === 0) {
+        el.dispatchEvent(new Event(trigger));
+      }
+    });
+  }
+  document.body.addEventListener("htmx:sseError", function () {
+    var notice = document.getElementById("connection-notice");
+    if (notice) notice.hidden = false;
+  });
+  document.body.addEventListener("htmx:sseOpen", function () {
+    var notice = document.getElementById("connection-notice");
+    // Only act if the notice was actually showing — htmx:sseOpen also
+    // fires on the very first successful connection, which was never a
+    // reconnect and needs no refetch.
+    if (notice && !notice.hidden) {
+      notice.hidden = true;
+      refetchLiveFragments();
+    }
+  });
+`;
+
 // Crit 9: one shared SSE connection per page (hx-ext="sse" sse-connect
 // opens it), carrying only change signals — each listening element below
 // re-fetches its own small, identity-aware fragment on its own trigger
@@ -275,9 +325,11 @@ function page(title: string, body: Html): Html {
           <a href="/readme/">What good means here</a>
         </nav>
         <h1><a href="/">Laundry Queue</a></h1>
+        <p id="connection-notice" class="connection-notice" role="status" hidden>Connection lost — reconnecting…</p>
         ${body}
         <script>${raw(COUNTDOWN_SCRIPT)}</script>
         <script>${raw(DISABLE_ON_SUBMIT_SCRIPT)}</script>
+        <script>${raw(RECONNECT_SCRIPT)}</script>
       </body>
     </html>`;
 }
