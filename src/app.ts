@@ -98,7 +98,7 @@ app.get("/my-status", (c) => {
     const rowsForMachine = queue.queueFor(m.id, now);
     const row = rowsForMachine.find((r) => r.person === identity);
     return row
-      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row), dryerSuggestion: queue.suggestedDryer(row.reservationId) }]
+      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row, m.type), dryerSuggestion: queue.suggestedDryer(row.reservationId) }]
       : [];
   });
   const myOffers = pendingOffersFor(identity, now);

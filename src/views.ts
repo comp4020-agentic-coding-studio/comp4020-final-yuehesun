@@ -534,16 +534,16 @@ function machineIcon(number: number, type: Machine["type"]): Html {
 // meaning alone). Returns the class and the label separately so callers
 // can lay them out differently (a board cell's state-word span vs. the
 // status hero's own larger reason line).
-function stateWordFor(row: QueueRow, forOwner: boolean): { cls: string; label: string } {
-  if (row.status === "running") return { cls: "state-running", label: "Washing" };
+function stateWordFor(row: QueueRow, forOwner: boolean, machineType: Machine["type"]): { cls: string; label: string } {
+  if (row.status === "running") return { cls: "state-running", label: machineType === "dryer" ? "Drying" : "Washing" };
   if (row.status === "claimed") return { cls: "state-claimed", label: "Claimed" };
   if (row.position === 1) return forOwner ? { cls: "state-alert", label: "Your turn" } : { cls: "state-unclaimed", label: "Unclaimed" };
   if (row.position === 2) return { cls: "state-muted", label: "Nearly your turn" };
   return { cls: "state-muted", label: "Waiting" };
 }
 
-function rowBadge(row: QueueRow, forOwner: boolean): Html {
-  const { cls, label } = stateWordFor(row, forOwner);
+function rowBadge(row: QueueRow, forOwner: boolean, machineType: Machine["type"]): Html {
+  const { cls, label } = stateWordFor(row, forOwner, machineType);
   return html`<span class="state-word ${cls}">${label}</span>`;
 }
 
@@ -608,19 +608,22 @@ function boardTimeCell(row: QueueRow | undefined, now: number): Html {
 // aren't shown for cancelled/missed, since those exit the sequence
 // sideways rather than completing it; the plain text badge already
 // covers that case.
-const STATUS_STEPS = [
-  { key: "waiting", label: "Waiting" },
-  { key: "claimed", label: "Claimed" },
-  { key: "running", label: "Washing" },
-  { key: "done", label: "Done" },
-] as const;
+function statusSteps(machineType: Machine["type"]): { key: QueueRow["status"]; label: string }[] {
+  return [
+    { key: "waiting", label: "Waiting" },
+    { key: "claimed", label: "Claimed" },
+    { key: "running", label: machineType === "dryer" ? "Drying" : "Washing" },
+    { key: "done", label: "Done" },
+  ];
+}
 
-function statusDots(status: QueueRow["status"]): Html {
-  const stepIndex = STATUS_STEPS.findIndex((s) => s.key === status);
+function statusDots(status: QueueRow["status"], machineType: Machine["type"]): Html {
+  const steps = statusSteps(machineType);
+  const stepIndex = steps.findIndex((s) => s.key === status);
   if (stepIndex === -1) return raw(""); // cancelled/missed: no sequence to show
 
   return html`<div class="status-dots" role="list" aria-label="Reservation progress">
-    ${STATUS_STEPS.map((step, i) => {
+    ${steps.map((step, i) => {
       const done = i < stepIndex;
       const current = i === stepIndex;
       const dot = html`<span
@@ -630,7 +633,7 @@ function statusDots(status: QueueRow["status"]): Html {
         <span aria-hidden="true">${done ? "✓" : ""}</span>
         <span class="sr-only">${step.label}${done ? " (done)" : current ? " (current step)" : ""}</span>
       </span>`;
-      const line = i < STATUS_STEPS.length - 1 ? html`<span class="dot-line" aria-hidden="true"></span>` : raw("");
+      const line = i < steps.length - 1 ? html`<span class="dot-line" aria-hidden="true"></span>` : raw("");
       return html`${dot}${line}`;
     })}
   </div>`;
@@ -677,12 +680,13 @@ function dryingTypeOptions(): Html {
 // way as every other action, just with a confirmation step first since
 // it's irreversible and not necessarily the machine's owner clicking it
 // by mistake (plans/crit-9.md Stage 1.5).
-function actionButtons(row: QueueRow): Html {
+function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
+  const verb = machineType === "dryer" ? "dry" : "wash";
   return html`${row.status === "waiting" && row.position === 1
       ? html`<form method="post" action="/reservations/${row.reservationId}/claim"><button class="btn-primary" type="submit">Claim (scan)</button></form>`
       : raw("")}
     ${row.status === "claimed"
-      ? html`<form method="post" action="/reservations/${row.reservationId}/start"><button class="btn-primary" type="submit">Start the wash</button></form>`
+      ? html`<form method="post" action="/reservations/${row.reservationId}/start"><button class="btn-primary" type="submit">Start the ${verb}</button></form>`
       : raw("")}
     ${row.status === "waiting" || row.status === "claimed"
       ? html`<form method="post" action="/reservations/${row.reservationId}/cancel"><button class="btn-quiet" type="submit">Cancel</button></form>`
@@ -691,8 +695,8 @@ function actionButtons(row: QueueRow): Html {
       ? html`<form
           method="post"
           action="/reservations/${row.reservationId}/finish"
-          onsubmit="return confirm('End this wash now? This can\\'t be undone.')"
-        ><button class="btn-quiet" type="submit">End the wash</button></form>`
+          onsubmit="return confirm('End this ${verb} now? This can\\'t be undone.')"
+        ><button class="btn-quiet" type="submit">End the ${verb}</button></form>`
       : raw("")}`;
 }
 
@@ -817,18 +821,19 @@ function statusHero(
   aheadLabel: string | undefined,
   dryerSuggestion: DryerOption | undefined,
 ): Html {
-  const { cls, label } = stateWordFor(row, true);
+  const { cls, label } = stateWordFor(row, true, machine.type);
   const countdownTarget = heroCountdownTarget(row);
   const figure =
     countdownTarget != null
       ? html`<p class="hero-figure num" data-countdown="${countdownTarget}">${countdownText(countdownTarget - now)}</p>`
       : html`<p class="hero-figure hero-figure-static state-muted">${row.status === "claimed" ? "Claimed" : "Done"}</p>`;
 
+  const verb = machine.type === "dryer" ? "dry" : "wash";
   const reason =
     row.status === "running"
-      ? "Your wash is running."
+      ? `Your ${verb} is running.`
       : row.status === "claimed"
-        ? "Claimed — start the wash when you're ready."
+        ? `Claimed — start the ${verb} when you're ready.`
         : row.status === "done"
           ? "Done — thanks for using this machine."
           : row.notice === "moved_back"
@@ -851,8 +856,8 @@ function statusHero(
       <span>${reason} <span class="num">${heroClockLine(row, now)}</span></span>
       ${positionLine(row.position)}
     </p>
-    ${statusDots(row.status)}
-    <div class="hero-actions">${actionButtons(row)}</div>
+    ${statusDots(row.status, machine.type)}
+    <div class="hero-actions">${actionButtons(row, machine.type)}</div>
     ${dryerSuggestion ? dryerPromptCard(row.reservationId, dryerSuggestion) : raw("")}
   </div>`;
 }
@@ -879,7 +884,7 @@ export function myStatusBlock(
 function boardRow(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
   const front = rows[0];
   const mine = rows.find((r) => r.person === identity);
-  const { cls, label } = front ? stateWordFor(front, front.person === identity) : { cls: "state-free", label: "Free" };
+  const { cls, label } = front ? stateWordFor(front, front.person === identity, machine.type) : { cls: "state-free", label: "Free" };
   const nextRoom = front ? (front.person === identity ? "you" : front.person) : "—";
 
   return html`<div
@@ -931,11 +936,12 @@ function boardSection(title: string, machinesOfType: Machine[], rowsByMachine: M
 // upstream-dependency framing). Only meaningful while still waiting
 // behind someone — the front-of-queue and already-committed cases never
 // call this.
-export function aheadLabelFor(allRowsForMachine: QueueRow[], row: QueueRow): string | undefined {
+export function aheadLabelFor(allRowsForMachine: QueueRow[], row: QueueRow, machineType: Machine["type"]): string | undefined {
   const idx = allRowsForMachine.findIndex((r) => r.reservationId === row.reservationId);
   if (idx <= 0) return undefined;
   const ahead = allRowsForMachine[idx - 1];
-  if (ahead.status === "running") return `Waiting on ${ahead.person}'s wash, ends ${clockTime(ahead.endMs)}.`;
+  const verb = machineType === "dryer" ? "dry" : "wash";
+  if (ahead.status === "running") return `Waiting on ${ahead.person}'s ${verb}, ends ${clockTime(ahead.endMs)}.`;
   return `Waiting behind ${ahead.person}.`;
 }
 
@@ -951,7 +957,7 @@ export function homePage(
     const rowsForMachine = rowsByMachine.get(m.id) ?? [];
     const row = rowsForMachine.find((r) => r.person === identity);
     return row
-      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row), dryerSuggestion: getDryerSuggestion(row.reservationId) }]
+      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row, m.type), dryerSuggestion: getDryerSuggestion(row.reservationId) }]
       : [];
   });
   const washers = machines.filter((m) => m.type === "washer");
