@@ -227,6 +227,32 @@ const COUNTDOWN_SCRIPT = `
   setInterval(tickCountdowns, 1000);
 `;
 
+// Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
+// every state-changing form here is a plain browser POST, not an
+// htmx-issued request (plans/crit-9.md Stage 1.5's own reasoning for the
+// "end the wash" confirm dialog) — so disabling "while in flight" means
+// disabling the button for the moment between click and the browser's own
+// navigation to the redirect response, which is exactly the slow-connection
+// gap ADR 0008 is about (a resident taps again because nothing *seemed* to
+// happen yet). One delegated listener covers every present and future
+// form, including ones htmx/SSE swap in later, with no per-form wiring.
+// Re-enabling on pageshow handles the back-forward cache: a disabled
+// button would otherwise stay disabled forever if the browser restores
+// the page from bfcache instead of reloading it.
+const DISABLE_ON_SUBMIT_SCRIPT = `
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    var button = form.querySelector("button[type=submit]");
+    if (button) button.disabled = true;
+  });
+  window.addEventListener("pageshow", function () {
+    document.querySelectorAll("button[type=submit]:disabled").forEach(function (button) {
+      button.disabled = false;
+    });
+  });
+`;
+
 // Crit 9: one shared SSE connection per page (hx-ext="sse" sse-connect
 // opens it), carrying only change signals — each listening element below
 // re-fetches its own small, identity-aware fragment on its own trigger
@@ -251,6 +277,7 @@ function page(title: string, body: Html): Html {
         <h1><a href="/">Laundry Queue</a></h1>
         ${body}
         <script>${raw(COUNTDOWN_SCRIPT)}</script>
+        <script>${raw(DISABLE_ON_SUBMIT_SCRIPT)}</script>
       </body>
     </html>`;
 }

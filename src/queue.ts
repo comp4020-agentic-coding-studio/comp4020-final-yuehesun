@@ -13,6 +13,12 @@ export const START_WINDOW_MS = 5 * 60 * 1000;
 // already camped at — plan.md gives this case 10 minutes, not 3.
 export const OFFER_CLAIM_WINDOW_MS = 10 * 60 * 1000;
 export const OFFER_RESPOND_WINDOW_MS = 2 * 60 * 1000;
+// Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008): a
+// double-submit window — a resident on a slow connection taps "Reserve"
+// again because nothing seemed to happen. Far longer than a double tap,
+// far shorter than a real second visit to the page, per ADR 0008's own
+// reasoning.
+export const JOIN_DEDUP_WINDOW_MS = 3 * 1000;
 
 const ACTIVE_STATUSES = ["waiting", "claimed", "running"] as const;
 
@@ -258,9 +264,32 @@ function nextJoinedAt(machineId: number, now: number): number {
   return latest != null && now <= latest ? latest + 1 : now;
 }
 
+// Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
+// the same room joining the same machine with the same washing type again
+// within JOIN_DEDUP_WINDOW_MS is treated as the same request arriving
+// twice (a double tap, or a resident retrying because a slow connection
+// hadn't shown a result yet) — not a second, genuinely new reservation.
+// Scoped to "active" reservations only: once the first one has already
+// moved on (cancelled, done, ...), a new join is a new join, however soon
+// after.
+function recentDuplicateJoin(
+  machineId: number,
+  personName: string,
+  washingType: string,
+  now: number,
+): Reservation | undefined {
+  return activeReservations(machineId).find(
+    (r) => r.personName === personName && r.washingType === washingType && now - r.joinedAt < JOIN_DEDUP_WINDOW_MS,
+  );
+}
+
 export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): JoinResult {
   const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
   if (!machine) return { ok: false, status: 404, message: "no such machine" };
+
+  const now = clockNow();
+  const duplicate = recentDuplicateJoin(machineId, personName, washingType, now);
+  if (duplicate) return { ok: true, reservationId: duplicate.id };
 
   if (activeOfTypeCount(personName, machine.type) >= MAX_ACTIVE_PER_TYPE) {
     return {
@@ -270,7 +299,6 @@ export function join(machineId: number, personName: string, washingType: string,
     };
   }
 
-  const now = clockNow();
   const joinedAt = nextJoinedAt(machineId, now);
   const { id } = db
     .insert(reservations)
