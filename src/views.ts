@@ -4,6 +4,7 @@ import type { Machine, Offer, Reservation } from "./schema.ts";
 import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
 import type { DryerOption, QueueRow } from "./queue.ts";
+import type { SimulationResults } from "../scripts/simulate.ts";
 
 // Crit 9 Stage 3: one row for a pending offer the viewer could accept or
 // decline, joined up for display — not a QueueRow, since a pending offer
@@ -241,6 +242,21 @@ const STYLES = `
   .prose p, .prose ul, .prose ol { margin: var(--space-3) 0; }
   .prose li { margin: var(--space-1) 0; }
   .prose code { background: var(--rule); border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
+
+  /* /simulation: server-rendered SVG bars, no chart library (crit 10
+     extension Stage 13, ADR 0007's second use, ADR 0010) */
+  .simulation-metric { margin: var(--space-6) 0; }
+  .simulation-metric h2 { margin-bottom: var(--space-3); }
+  .simulation-chart { display: flex; flex-direction: column; gap: var(--space-2); }
+  .simulation-bar-row { display: grid; grid-template-columns: 11rem 1fr auto; gap: var(--space-3); align-items: center; }
+  .simulation-bar-label { font-size: var(--text-sm); color: var(--ink-muted); }
+  .simulation-bar { width: 100%; height: 0.9rem; border-radius: 0.2rem; overflow: hidden; }
+  .simulation-bar-value { font-size: var(--text-sm); white-space: nowrap; }
+  .simulation-assumptions { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--rule); }
+  .simulation-assumptions li { margin: var(--space-2) 0; }
+  @media (max-width: 640px) {
+    .simulation-bar-row { grid-template-columns: 1fr; gap: var(--space-1); }
+  }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -413,7 +429,7 @@ const TURN_ALERT_SCRIPT = `
 // live message would, with no per-fragment wiring and no risk of this
 // script's idea of "the fragments" drifting from the real ones as new
 // sse: triggers get added later (Stage 11's turn alerts, Stage 13's
-// /fairness, ...).
+// /simulation, ...).
 const RECONNECT_SCRIPT = `
   function refetchLiveFragments() {
     document.querySelectorAll("[hx-trigger]").forEach(function (el) {
@@ -459,6 +475,7 @@ function page(title: string, body: Html): Html {
         <nav class="topnav">
           <a href="/">Machines</a>
           <a href="/readme/">What good means here</a>
+          <a href="/simulation">Simulation</a>
         </nav>
         <h1><a href="/">Laundry Queue</a></h1>
         <p id="connection-notice" class="connection-notice" role="status" hidden>Connection lost — reconnecting…</p>
@@ -992,4 +1009,107 @@ export function errorPage(message: string, status: number): Html {
 // `raw` because marked already escaped/produced the HTML, not user input.
 export function readmePage(renderedHtml: string): Html {
   return page("README", html`<div class="prose">${raw(renderedHtml)}</div>`);
+}
+
+// Crit 10 extension, Stage 13 (plans/crit-10.md "Extension"; ADR 0007,
+// second use): scripts/simulate.ts's own numbers, shown without a
+// conclusion about which policy is "better" — CLAUDE.md's test harness
+// rules reserve that argument for README/PROCESS, and this page doesn't
+// make it. One labelled bar per policy per metric; colour is never the
+// only cue (every bar also has its number printed next to it).
+const POLICY_LABELS: Record<string, string> = {
+  "wait-forever": "Wait forever",
+  eject: "Eject (crit 8)",
+  "move-back-one": "Move back one (current)",
+};
+const POLICY_COLOR_VAR: Record<string, string> = {
+  "wait-forever": "--ink-muted",
+  eject: "--alert",
+  "move-back-one": "--free",
+};
+
+const SIMULATION_METRICS: { key: string; label: string; unit: string }[] = [
+  { key: "joinToStartWaitMedianMinutes", label: "Join-to-start wait (median)", unit: "min" },
+  { key: "joinToStartWaitP90Minutes", label: "Join-to-start wait (p90)", unit: "min" },
+  { key: "joinToStartWaitMaxMinutes", label: "Join-to-start wait (max)", unit: "min" },
+  { key: "movedBackOrEjectedCount", label: "People moved back or ejected", unit: "" },
+  {
+    key: "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront",
+    label: "Machine idle while someone waited behind an absent front",
+    unit: "min",
+  },
+  { key: "extraWaitCausedForOthersMinutes", label: "Extra wait a late person caused others", unit: "min" },
+  { key: "extraWaitPaidBySelfMinutes", label: "Extra wait a late person paid themselves", unit: "min" },
+];
+
+function simulationBarChart(results: SimulationResults, metricKey: string, unit: string): Html {
+  const values = results.policies.map((p) => p.aggregate[metricKey as keyof typeof p.aggregate].mean);
+  const max = Math.max(1, ...values);
+  return html`<div class="simulation-chart" role="img" aria-label="Bar chart comparing ${metricKey} across missed-window policies">
+    ${results.policies.map((p) => {
+      const stat = p.aggregate[metricKey as keyof typeof p.aggregate];
+      const widthPct = (stat.mean / max) * 100;
+      const colorVar = POLICY_COLOR_VAR[p.policy] ?? "--ink-muted";
+      return html`<div class="simulation-bar-row">
+        <span class="simulation-bar-label">${POLICY_LABELS[p.policy] ?? p.policy}</span>
+        <svg class="simulation-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+          <rect x="0" y="0" width="100" height="10" fill="var(--rule)" />
+          <rect x="0" y="0" width="${widthPct.toFixed(1)}" height="10" fill="var(${colorVar})" />
+        </svg>
+        <span class="simulation-bar-value num">${stat.mean.toFixed(1)}${unit} <span class="state-muted">(±${stat.stddev.toFixed(1)})</span></span>
+      </div>`;
+    })}
+  </div>`;
+}
+
+// Named /simulation rather than /fairness (ADR 0010): the point of this
+// page is the testing practice — driving the real queue code through a
+// large volume of randomized, reproducible scenarios (deterministic
+// simulation testing) — not an argument about which missed-window policy
+// is fairest. The policy comparison is one output of running it, not
+// what the page is for.
+export function simulationPage(results: SimulationResults | undefined): Html {
+  if (!results) {
+    return page(
+      "Simulation",
+      html`<p>No simulation results yet — run <code>pnpm sim</code> to generate <code>sim/results.json</code>.</p>`,
+    );
+  }
+
+  return page(
+    "Simulation",
+    html`<div class="intro">
+      <p><strong>Simulated building, not real usage.</strong> Every number below comes from
+      ${results.seedCount} randomly generated Saturdays in a made-up ${results.model.residentCount}-resident
+      building, run through the real queue code with a virtual clock (<a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0007-verification-harness.md">ADR 0007</a>,
+      <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0010-fairness-simulation-as-testing.md">ADR 0010</a>),
+      not measurements of a real laundry room. Re-run it yourself with <code>pnpm sim</code>; the
+      assumptions it ran with are listed below.</p>
+    </div>
+
+    ${SIMULATION_METRICS.map(
+      (m) => html`<section class="simulation-metric">
+        <h2>${m.label}</h2>
+        ${simulationBarChart(results, m.key, m.unit)}
+      </section>`,
+    )}
+
+    <section class="simulation-assumptions">
+      <h2>Assumptions this run made</h2>
+      <ul>
+        <li>${results.model.residentCount} residents, one simulated Saturday,
+          ${results.model.simulatedMinutes / 60} hours (08:00–22:00).</li>
+        <li>Each resident does a mean of ${results.model.meanLoadsPerResident} loads of laundry across the day.</li>
+        <li>A resident never claims their turn at all ${(results.model.chanceNeverClaims * 100).toFixed(0)}% of the time,
+          and never starts a wash once claimed ${(results.model.chanceNeverStartsOnceClaimed * 100).toFixed(0)}% of the time.</li>
+        <li>When they do act, lateness is random up to ${results.model.maxClaimLatenessMinutes} minutes for claiming
+          and ${results.model.maxStartLatenessMinutes} minutes for starting — both past the real windows, so a
+          resident sometimes makes it and sometimes doesn't, re-rolled fresh every time a window opens.</li>
+        <li>${(results.model.chanceQueuesDryerAfterWash * 100).toFixed(0)}% take the post-wash dryer prompt;
+          ${(results.model.chanceRespondsToOfferAtAll * 100).toFixed(0)}% respond to an "earlier machine" offer at
+          all, and ${(results.model.chanceAcceptsOfferGivenResponds * 100).toFixed(0)}% of those accept it.</li>
+      </ul>
+      <p>These are guesses, not data from a real building — changing them changes every number above.</p>
+    </section>`,
+  );
 }

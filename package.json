@@ -9,7 +9,8 @@
     "check": "pnpm typecheck && pnpm test",
     "check:evidence": "node scripts/check-evidence.ts",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "sim": "node scripts/simulate.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
