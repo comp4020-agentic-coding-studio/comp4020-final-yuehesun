@@ -483,6 +483,112 @@ performance pass.
    only — never a conclusion about which policy is "better" anywhere in
    `README.md`/`PROCESS.md` (`CLAUDE.md`'s test harness rule).
 
+### Stage 14 — board replay on `/simulation` (new, user's own idea)
+
+**Why.** `/simulation`'s bar charts answer "how much," but a reader can't
+tell *what actually happened* from a bar — the user's own observation
+after looking at the page. The fix isn't live interaction with the real
+simulation (see below for why that's out), it's showing one real
+simulated day play out on the same board layout residents already
+recognize from the home page.
+
+**What was ruled out first, and why (recorded so it isn't re-litigated):**
+a button that triggers a fresh simulation run against the *deployed* app
+was considered and rejected outright — `src/db.ts`'s `db` and
+`src/clock.ts`'s clock implementation are both process-wide singletons
+with exactly one binding each; running a simulation in the same process
+as production would mean either writing simulated rooms into the real
+database, or hijacking the real clock every real visitor's countdown
+reads from, for the ~10-15 minutes the batch takes. There's no way to
+make `queue.join()` "write to the fake DB this call, the real one next
+call" inside one process. Running it as a genuinely separate process
+(its own Fly machine, its own DB, its own clock) was also considered and
+rejected: it would turn one `Dockerfile`/one deployed app (ADR 0003's
+fixed decision) into two coordinating services, a real jump in
+architecture for a testing page, not a feature residents need live.
+**Decision: the button plays back an already-recorded run, it never
+triggers a new one.** Recorded data is generated offline by `pnpm sim`,
+committed to the repo, and read read-only by the deployed app — the same
+pattern `/simulation`'s existing numbers already use, just with a richer
+recording.
+
+**What gets recorded.** One seed is "one full day" already — 100
+residents, 840 simulated minutes, not one resident per seed (this was
+confirmed by hand before writing this plan, to avoid the same kind of
+wrong mental model that caused Stage 13's lateness-modelling bug). The
+replay needs exactly one seed, for one policy, recorded as a frame per
+simulated minute:
+
+```ts
+interface ReplayFrame {
+  minute: number; // 0..839
+  machines: {
+    machineId: number;
+    state: "free" | "unclaimed" | "your-turn" | "nearly-your-turn" | "waiting" | "claimed" | "running";
+    nextRoom: string | undefined; // front reservation's room, or undefined if free
+    timeLeftSeconds: number | undefined; // mirrors boardTimeCell's own rules, undefined where it'd show "—"
+  }[];
+  events: { kind: "moved_back" | "moved_up" | "ejected" | "offer_created" | "dryer_queued"; room: string; machineId: number }[];
+}
+```
+
+`state` is a pre-computed label, not a raw `QueueRow["status"]` — the
+replay is pure client-side JS with no server round-trip per frame, so it
+can't call `stateWordFor`/`boardTimeCell` (server-side TypeScript); the
+recording step does that computation once, offline, in
+`scripts/simulate.ts`, reusing the exact same logic those two functions
+already encode (not a second copy of the rules — ADR 0007's own
+principle applied to display logic, not just queue logic). `events` is
+exactly what Stage 13's policy-event diff (the "Policy-event detection
+doesn't parse log lines" note above) already detects per tick — recorded
+instead of only counted.
+
+**Which seed.** Not the most dramatic one. Pick, per policy, whichever
+seed's `movedBackOrEjectedCount` is closest to that policy's own mean
+across all 50 seeds (`sim/results.json` already has both numbers) — a
+representative day, not a cherry-picked extreme that would misrepresent
+what's typical.
+
+**Size, checked before committing to this design:** ~60 bytes/machine/frame
+x 10 machines x 840 frames ≈ 490KB for one policy's replay, ~1.5MB for
+all three — committed as `sim/replay.json` (or inlined into
+`sim/results.json` behind the policy objects already there, decided at
+build time, whichever keeps the file easier to read). This is a one-time
+file write by `pnpm sim`, not a repeat of Stage 13's hang incident (that
+was 126,000 *synchronous ticks run back to back*, a CPU problem; this is
+a few hundred KB written once at the end of a run already yielding
+control periodically) — no new performance risk.
+
+**Playback, once per press, events included (user's own call — not a
+scrubbable timeline, not looping):**
+
+- A "Play the simulation" button on `/simulation`, under the bar charts.
+- Pressing it renders the same four-column board shape as the real home
+  page (`boardRow`'s layout: machine, state, next room, time left) for
+  the picked seed's 10 machines, then advances one simulated minute at a
+  time on a short interval (fast enough to watch 840 minutes resolve in
+  well under a minute of real time — exact speed tuned once it's actually
+  running, not guessed here), updating each row from `ReplayFrame.machines`.
+- Every frame's `events` are shown as a brief, dismissing-on-next-frame
+  banner line above the board ("room123 moved back one place — missed
+  their claim window", "room456's wash earned them a dryer offer") — this
+  is what makes a swap *visible happening*, not just countable afterward.
+- Plays once start to finish, then stops on the final frame (not
+  looping) — a replay that loops silently becomes ambient noise exactly
+  the way README's calm-technology argument warns against; a replay you
+  watched once and that then holds still is easy to come back and read.
+- Pure client-side: no new server route, no new fragment, no SSE
+  involvement — `ReplayFrame[]` ships as part of what `/simulation`
+  already returns, and a `<script>` block steps through it with
+  `setInterval`/`requestAnimationFrame`.
+
+**Verify:** load `/simulation` with no JS errors in the console; press
+play, watch at least one `moved_back`/`moved_up` pair appear together
+(mirrors ADR 0005's own two-sided notice); confirm it stops cleanly on
+the last frame; confirm the page's existing bar charts are unaffected;
+check both viewports (390px and 1280px) since this is a new UI surface,
+following Stage 12's own lesson about not shipping unviewed output.
+
 ### What I check after the run
 
 - `HANDOFF.md`: every call the agent made without asking.

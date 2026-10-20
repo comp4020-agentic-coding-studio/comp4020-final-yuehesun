@@ -86,6 +86,40 @@ it ships no route or UI a resident touches except the read-only
 forbid it from drawing a conclusion in `README.md`/`PROCESS.md` about
 which policy is "better" — it reports numbers, the argument stays mine.
 
+## Extension (Stage 14): a recorded playback, not a live trigger
+
+The bar charts above answer "how much," not "what actually happened" —
+a reader can't tell from a number that a swap is two specific rooms
+trading places at a specific minute. The fix considered first, and
+rejected, was a button on the deployed page that runs a fresh simulation
+on demand: `src/db.ts`'s `db` and `src/clock.ts`'s clock are both
+process-wide singletons with exactly one binding each, so running a
+simulation in the same process as production would mean either writing
+simulated rooms into the real database or hijacking every real visitor's
+clock for the ~10-15 minutes the batch takes — there's no way to make
+`queue.join()` write to a fake database on one call and the real one on
+the next within a single process. Running it as a genuinely separate
+process (its own Fly machine, its own database, its own clock) was also
+rejected: it would turn one deployed app (ADR 0003's fixed decision) into
+two coordinating services, a real jump in architecture for a testing
+page, not a feature residents need live.
+
+**Decision: the button plays back an already-recorded run; it never
+triggers a new one.** `scripts/simulate.ts` additionally records one
+seed's full day as a `ReplayFrame[]` per policy — the seed closest to
+that policy's own mean `movedBackOrEjectedCount` (a typical day, not the
+most dramatic one) — committed as part of `sim/results.json`, read
+read-only by `/simulation` exactly like the existing numbers. The board
+state labels (`src/board-state.ts`'s `boardStateFor`/`boardStateLabel`)
+are shared with `src/views.ts`'s real board, extracted into their own
+module so the replay and the real page can't silently disagree about
+what a given state means — the same discipline this ADR already applies
+to the queue rules themselves, applied one layer up to display logic.
+Playback is pure client-side JavaScript stepping through the embedded
+JSON; it plays once, start to finish, and stops on the last frame rather
+than looping — a replay that loops silently becomes exactly the ambient
+noise README's calm-technology argument warns against.
+
 ## Consequences
 
 - `sim/results.json` and `/simulation` exist to document *how much* the
