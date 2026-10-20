@@ -23,3 +23,7 @@ mise.local.toml
 # your course API key, and this repo goes public when you ship. Your tracked
 # harness is CLAUDE.md (and any AGENTS.md), not this directory.
 .claude/
+
+# App Store marketing screenshots, downloaded per research/flighty/SOURCES.md
+# — reference material for the design pass, not ours to redistribute.
+research/flighty/*.jpg
