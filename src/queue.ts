@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { now as clockNow } from "./clock.ts";
 import { db } from "./db.ts";
 import * as logging from "./logging.ts";
 import { machines, type Machine, type Offer, offers, type Reservation, reservations } from "./schema.ts";
@@ -65,7 +66,7 @@ function moveBackOnePlace(missed: Reservation, now: number): boolean {
 // tag) and from the realtime tick with no request behind it at all (a
 // passive expiry nobody's clicking anything for), where ensureTag mints a
 // fresh tag instead. No call site elsewhere needs to know which case it is.
-export function settleMachine(machineId: number, now: number = Date.now()): void {
+export function settleMachine(machineId: number, now: number = clockNow()): void {
   logging.ensureTag(() => settleMachineInner(machineId, now));
 }
 
@@ -150,7 +151,7 @@ export interface QueueRow {
 // A reservation's time is fixed once the one directly ahead of it has
 // actually started (their real start + their chosen duration); until then
 // it's an estimate built on everyone ahead starting on schedule.
-export function queueFor(machineId: number, now: number = Date.now()): QueueRow[] {
+export function queueFor(machineId: number, now: number = clockNow()): QueueRow[] {
   settleMachine(machineId, now);
   const ordered = activeReservations(machineId);
 
@@ -240,6 +241,23 @@ function activeOfTypeCount(personName: string, machineType: string): number {
     .all().length;
 }
 
+// Crit 10 extension, Stage 9 (plans/crit-10.md "Extension"; ADR 0007/0008):
+// the fairness rule's whole mechanism is "swap two reservations'
+// joinedAt" (moveBackOnePlace above) — found by the property tests this
+// stage adds: two joins landing in the same millisecond gave them equal
+// joinedAt, which made that swap a no-op, silently defeating the fairness
+// rule exactly when ADR 0008's own "several rooms join at once" scenario
+// happens. Keeping joinedAt strictly increasing per machine (bump to one
+// past whatever's already there, if "now" would collide) fixes it at the
+// source: ties can never occur, so the swap always has an effect, and
+// queue position among genuinely simultaneous joins still resolves
+// deterministically (insertion order) rather than being
+// implementation-defined.
+function nextJoinedAt(machineId: number, now: number): number {
+  const latest = activeReservations(machineId).at(-1)?.joinedAt;
+  return latest != null && now <= latest ? latest + 1 : now;
+}
+
 export function join(machineId: number, personName: string, washingType: string, durationMinutes: number): JoinResult {
   const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
   if (!machine) return { ok: false, status: 404, message: "no such machine" };
@@ -252,10 +270,11 @@ export function join(machineId: number, personName: string, washingType: string,
     };
   }
 
-  const now = Date.now();
+  const now = clockNow();
+  const joinedAt = nextJoinedAt(machineId, now);
   const { id } = db
     .insert(reservations)
-    .values({ machineId, personName, washingType, durationMinutes, joinedAt: now, status: "waiting" })
+    .values({ machineId, personName, washingType, durationMinutes, joinedAt, status: "waiting" })
     .returning({ id: reservations.id })
     .get();
   settleMachine(machineId, now); // if the machine's free, this starts their claim window immediately
@@ -279,7 +298,7 @@ export function claim(reservationId: number, personName: string): ActionResult {
     return { ok: false, status: 409, message: "it's not your turn" };
   }
 
-  db.update(reservations).set({ status: "claimed", claimedAt: Date.now() }).where(eq(reservations.id, row.id)).run();
+  db.update(reservations).set({ status: "claimed", claimedAt: clockNow() }).where(eq(reservations.id, row.id)).run();
   return { ok: true };
 }
 
@@ -288,7 +307,7 @@ export function start(reservationId: number, personName: string): ActionResult {
   if ("ok" in row) return row;
   if (row.status !== "claimed") return { ok: false, status: 409, message: "claim the machine before starting it" };
 
-  db.update(reservations).set({ status: "running", startedAt: Date.now() }).where(eq(reservations.id, row.id)).run();
+  db.update(reservations).set({ status: "running", startedAt: clockNow() }).where(eq(reservations.id, row.id)).run();
   return { ok: true };
 }
 
@@ -393,7 +412,7 @@ function eligibleCandidate(machineType: string, idleMachineId: number, now: numb
 // is — processOffers is only ever called from the tick today, with no
 // ambient request tag to reuse, but ensureTag keeps this safe even if that
 // ever changes, with no extra parameter to thread through call sites.
-export function processOffers(now: number = Date.now()): void {
+export function processOffers(now: number = clockNow()): void {
   logging.ensureTag(() => processOffersInner(now));
 }
 
@@ -456,7 +475,7 @@ export function acceptOffer(offerId: number, personName: string): ActionResult {
     return { ok: false, status: 409, message: "you're already committed to your own machine" };
   }
 
-  const now = Date.now();
+  const now = clockNow();
   db.update(reservations).set({ status: "cancelled" }).where(eq(reservations.id, reservation.id)).run();
   db.insert(reservations)
     .values({
@@ -464,7 +483,7 @@ export function acceptOffer(offerId: number, personName: string): ActionResult {
       personName,
       washingType: reservation.washingType,
       durationMinutes: reservation.durationMinutes,
-      joinedAt: now,
+      joinedAt: nextJoinedAt(offer.machineId, now), // same tie-avoidance as join() above
       status: "waiting",
       offerId: offer.id,
     })
@@ -549,7 +568,7 @@ export function suggestedDryer(washReservationId: number): DryerOption | undefin
   const machine = db.select().from(machines).where(eq(machines.id, wash.machineId)).get();
   if (!machine || machine.type !== "washer") return undefined;
 
-  const now = Date.now();
+  const now = clockNow();
   const washRow = queueFor(wash.machineId, now).find((r) => r.reservationId === washReservationId);
   if (!washRow) return undefined;
   return pickDryer(washRow.endMs, now);
@@ -584,7 +603,7 @@ export function queueDryer(washReservationId: number, personName: string, drying
     return { ok: false, status: 409, message: `${personName} already has ${MAX_ACTIVE_PER_TYPE} active dryer reservations` };
   }
 
-  const now = Date.now();
+  const now = clockNow();
   const { id } = db
     .insert(reservations)
     .values({
@@ -592,7 +611,7 @@ export function queueDryer(washReservationId: number, personName: string, drying
       personName,
       washingType: dryingType,
       durationMinutes,
-      joinedAt: now,
+      joinedAt: nextJoinedAt(option.machineId, now), // same tie-avoidance as join() above
       status: "waiting",
       notBeforeReservationId: washReservationId,
     })
