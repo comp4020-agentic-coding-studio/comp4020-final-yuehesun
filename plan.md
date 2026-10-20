@@ -195,6 +195,40 @@ and the offer moves to the next person instead.
   Stage 7 (bonus, peak times from logs — needs its own persisted table,
   not reuse of stdout logging, per the plan's own scope note), Stage 8's
   wrap-up (`PROCESS.md` rewrite, `reflections/crit-10.md`).
+- **Crit 10 extension — one unattended ~2-hour run per `prompt.md`,
+  Stages 9-12 shipped, Stage 13 (stretch) not attempted.** `src/clock.ts`
+  is the one seam `queue.ts` reads time through; `sim/` (seeded PRNG,
+  forward-only virtual clock, a driver that calls the real `queue.ts`
+  functions, no rule copied) backs `spec/fairness-properties.test.ts`
+  (fast-check, 200 runs x 60 steps, all 7 ADR 0007 invariants) and
+  `spec/queue-timing.test.ts`. The property tests found and fixed a real
+  concurrency bug in `moveBackOnePlace` (two same-millisecond joins tied
+  `joinedAt`, making the fairness swap a no-op — exactly the "several
+  rooms join at once" case ADR 0008 exists for); the deliberate-break
+  drill's shrunk counterexample is quoted in commit `8118424` and
+  `HANDOFF.md`. `spec/contention.test.ts` (20 simultaneous joins, double
+  claim, double-submit dedup) and `spec/restart.test.ts` cover ADR 0008;
+  an SSE reconnect notice + full fragment refetch was verified by
+  `SIGKILL`ing a real server mid-connection. In-page turn alerts (native
+  `<dialog>`, `document.title` flash, once per transition via
+  `sessionStorage`) ship per ADR 0009. The home page was redesigned from
+  a Flighty reference (`research/flighty/`, `research/design-plan.md`
+  committed before any CSS) into a departure-board layout with a
+  signature status-hero (remaining time at 4.5x body text); the >=2-round
+  scored review (`research/design-review.md`) found and fixed two real
+  display bugs (a stale "0:00" on "Claimed", a wrong static "Done" on a
+  running wash) by actually looking at screenshots, plus a Stage 6
+  critique round (intro paragraph width, offer card countdown
+  prominence). `research/screens/before-*.png` and `after-*.png` (same
+  names) are both committed. **Not attempted:** Stage 13's fairness
+  simulation (`sim/results.json`, `/fairness`) — explicitly the run's own
+  first thing to cut, and Stage 12 (flagged the most important, not to
+  be shortcut) took the run's bulk of time instead. Full detail, every
+  unasked-for call, and what's still weakest: `HANDOFF.md`. Docker build
+  verification could not be completed in this environment (WSL2 without
+  Docker Desktop's WSL integration enabled) — `pnpm check` was confirmed
+  green against a plain local server instead; the real `docker build`
+  path is still to be checked by hand before shipping.
 
 ## The feature list
 

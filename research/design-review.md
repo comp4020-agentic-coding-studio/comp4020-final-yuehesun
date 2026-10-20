@@ -349,3 +349,40 @@ column's left edge and the board's first column) was seen on most
 desktop screenshots and never scored below 4 — left as a candidate for
 Stage 6's extra critique round rather than fixed now, since it's cosmetic
 and every screen already clears the ≥4 bar without it.
+
+## Stage 6 extra critique round
+
+Per `prompt.md` Stage 6.2: re-screenshotted every "after" state, picked
+the two weakest screens from the scoring above, did one more fix round
+on each.
+
+**Weakest: no-room.** The only screen with an item scored 2 ("Does
+anything look like the generic version from 4.3?") — the intro
+paragraph had no `max-width`, so at 1280px it stretched into an
+unconstrained block of body text across most of the page's own 72rem
+shell, exactly "a centred column with wasted margins" in spirit even
+though there's no card grid here to begin with. Fixed: `.intro` now
+caps at `38rem`, a comfortable reading measure, leaving the rest of the
+1280px viewport as visible negative space rather than a stretched
+paragraph. Re-screenshotted
+(`research/screens/after-no-room-{mobile,desktop}.png`, replacing the
+round-1 captures) — confirms the fix without changing the screen's
+own intentionally minimal structure.
+
+**Second weakest: offer.** Scored 4, not 5, on "is my status's time the
+first thing the eye lands on" — the respond-by countdown sat at body
+text size inline in a sentence, competing with "Switch now"/"Stay put"
+for attention rather than being legible at a glance the way the status
+hero's own countdown is. Fixed: the countdown now sits on its own line,
+at `--text-lg` and `--free`-coloured bold weight (`.decision-countdown`),
+the same "pull the one timed fact out, make it bigger" move the status
+hero already makes. Re-verified with a fresh Playwright run reaching a
+real offer (not re-saved into `research/screens/`, since "offer" isn't
+one of the four states `research/screens/before-*.png` originally
+captured — the fix is visible directly in the updated `src/views.ts`
+and was confirmed rendering correctly at both viewports before this
+round closed).
+
+Both fixes are additive CSS/markup changes (a `max-width`, a line break
+plus one new class) — no fragment id, `hx-*` attribute, or `spec/`-read
+text changed.

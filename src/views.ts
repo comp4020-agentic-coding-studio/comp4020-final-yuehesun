@@ -190,6 +190,11 @@ const STYLES = `
   .decision-card { background: var(--free-tint); border: 1px solid var(--free); border-radius: var(--card-radius); padding: var(--space-4); margin-bottom: var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
   .decision-card form { margin: 0; }
   .decision-card select { margin-right: var(--space-2); }
+  /* research/design-review.md's extra critique round: gives the offer
+     card's one timed fact (respond-by) the same "larger, bolder figure"
+     treatment the status hero already gives its own countdown, so it's
+     legible at a glance instead of sitting at body size inside a sentence. */
+  .decision-countdown { font-size: var(--text-lg); font-weight: 700; color: var(--free); }
 
   /* crit 9: tells both sides of a move-back-one swap what happened and
      why — stays until dismissed, not a toast that fades on its own */
@@ -210,8 +215,14 @@ const STYLES = `
   .turn-alert p { margin: 0 0 var(--space-4); font-size: var(--text-lg); }
   .turn-alert form { margin: 0; display: block; }
 
-  /* the landing page's app introduction */
-  .intro { line-height: 1.6; margin-bottom: var(--space-5); }
+  /* the landing page's app introduction. research/design-review.md's
+     extra critique round: a full-width paragraph at 1280px (the page's
+     own 72rem max-width) read exactly like "the generic version" the
+     design plan's self-review warned about — an unconstrained block of
+     text with no deliberate measure. Capped at a comfortable reading
+     width instead, the one place on this page prose, not a table or a
+     figure, is the main content. */
+  .intro { line-height: 1.6; margin-bottom: var(--space-5); max-width: 38rem; }
   .intro p { margin: var(--space-3) 0; }
 
   /* --- wide layout (research/design-plan.md's 1280px wireframe): status
@@ -721,8 +732,19 @@ export function identityPage(): Html {
 // something to acknowledge, the same distinction the dryer prompt below
 // already drew.
 function offerCard(row: OfferRow, now: number): Html {
+  // research/design-review.md's extra critique round: scored 4, not 5, on
+  // "is my status's time the first thing the eye lands on" at mobile —
+  // the card's own respond-by countdown was plain body-text size, so a
+  // viewer's eye had nowhere obvious to land before reading the whole
+  // sentence. The countdown is still the one fact this card is actually
+  // timing (same reasoning as the status hero's own figure), so it's
+  // pulled onto its own line at --text-lg instead of sitting inline in
+  // the sentence — closer in spirit to Flighty's own inline-but-coloured
+  // risk phrase (research/design-plan.md's 01-my-flights.jpg note),
+  // without inventing a second --text-hero figure this card doesn't need.
   return html`<div class="decision-card">
-    <span>An earlier machine opened up: <strong>${row.machine.label}</strong>. Respond by <span class="num" data-countdown="${row.offer.respondBy}">${countdownText(row.offer.respondBy - now)}</span> (${clockTime(row.offer.respondBy)}).</span>
+    <span>An earlier machine opened up: <strong>${row.machine.label}</strong>.
+      <br />Respond by <span class="num decision-countdown" data-countdown="${row.offer.respondBy}">${countdownText(row.offer.respondBy - now)}</span> (${clockTime(row.offer.respondBy)}).</span>
     <div>
       <form method="post" action="/offers/${row.offer.id}/accept" style="display:inline">
         <button class="btn-primary" type="submit">Switch now</button>
