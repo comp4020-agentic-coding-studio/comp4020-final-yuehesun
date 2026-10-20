@@ -198,6 +198,15 @@ const STYLES = `
      info, since it's telling you the page might be behind right now. */
   .connection-notice { background: var(--warning-tint); color: #7a5300; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0 0 0.75rem; font-size: 0.9rem; font-weight: 600; }
 
+  /* crit 10 extension, Stage 11 (ADR 0009): the dialog browsers focus
+     automatically on showModal() — no extra focus-management script
+     needed, and Escape closes it via the dialog element's own built-in
+     behaviour (both captured by the "close" listener in TURN_ALERT_SCRIPT). */
+  .turn-alert { border: none; border-radius: var(--card-radius); padding: 1.25rem 1.5rem; max-width: 24rem; box-shadow: 0 8px 24px rgba(11,11,11,0.18); }
+  .turn-alert::backdrop { background: rgba(11,11,11,0.4); }
+  .turn-alert p { margin: 0 0 1rem; font-size: 1.05rem; }
+  .turn-alert form { margin: 0; display: block; }
+
   /* the landing page's app introduction */
   .intro { line-height: 1.6; margin-bottom: 1.25rem; }
   .intro p { margin: 0.6rem 0; }
@@ -248,6 +257,11 @@ const DISABLE_ON_SUBMIT_SCRIPT = `
   document.addEventListener("submit", function (event) {
     var form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
+    // method=dialog forms (the turn-alert's own "Got it") never navigate
+    // the page — they just close their <dialog> — so disabling their
+    // button here would leave it disabled forever with no pageshow to
+    // undo it. Only real state-changing POSTs want this treatment.
+    if (form.method === "dialog") return;
     var button = form.querySelector("button[type=submit]");
     if (button) button.disabled = true;
   });
@@ -256,6 +270,106 @@ const DISABLE_ON_SUBMIT_SCRIPT = `
       button.disabled = false;
     });
   });
+`;
+
+// Crit 10 extension, Stage 11 (plans/crit-10.md "Extension"; ADR 0009):
+// README's calm technology argument names exactly two moments the queue
+// pulls you back for — one person ahead, and your turn — so this is the
+// only place in the app that opens a dialog unprompted. Reads
+// data-reservation/data-alert off whatever the server just rendered into
+// #my-status-wrapper (alertStateFor in the server-side code above), so it
+// works identically on first load and after every SSE-triggered refetch,
+// with no separate client-side notion of "my position." Dismissal is
+// "once per transition": keyed on reservation id *and* which state fired
+// (sessionStorage, wrapped in try/catch — Safari private mode and similar
+// can throw on access), so moving from "one ahead" to "my turn" still
+// alerts even though "one ahead" was already dismissed, but a reload or a
+// live refetch while still in the same state never reopens it. Per ADR
+// 0009: no sound, no vibration, nothing for anyone else's changes — only
+// the viewer's own reservations ever reach this code at all, since
+// #my-status-wrapper only ever renders the signed-in room's own rows.
+const TURN_ALERT_SCRIPT = `
+  var ORIGINAL_TITLE = document.title;
+  var alertQueue = [];
+  var currentKey = null;
+  var titleChanged = false;
+  var dialog = document.getElementById("turn-alert");
+  var dialogText = document.getElementById("turn-alert-text");
+
+  function storageKey(reservationId, state) {
+    return "turnAlertSeen:" + reservationId + ":" + state;
+  }
+  function alreadySeen(key) {
+    try { return sessionStorage.getItem(key) === "1"; } catch (e) { return false; }
+  }
+  function markSeen(key) {
+    try { sessionStorage.setItem(key, "1"); } catch (e) { /* ignore */ }
+  }
+
+  function sentenceFor(state) {
+    return state === "my-turn"
+      ? "It's your turn — claim your machine before the window runs out."
+      : "One person is ahead of you — it's nearly your turn.";
+  }
+  function titleFor(state) {
+    return state === "my-turn" ? "● Your turn — Laundry Queue" : "● Get ready — Laundry Queue";
+  }
+
+  // The title keeps announcing until the tab is actually focused, per ADR
+  // 0009 — not just until the dialog closes, since dismissing it requires
+  // being focused already in most cases, but a background tab getting a
+  // fresh refetch (htmx:afterSwap can fire while hidden) must still be
+  // able to flag itself for whenever the viewer does look.
+  function restoreTitleIfFocused() {
+    if (titleChanged && document.hasFocus()) {
+      document.title = ORIGINAL_TITLE;
+      titleChanged = false;
+    }
+  }
+
+  function showNext() {
+    if (!dialog || dialog.open || alertQueue.length === 0) return;
+    var next = alertQueue.shift();
+    currentKey = next.key;
+    dialogText.textContent = sentenceFor(next.state);
+    document.title = titleFor(next.state);
+    titleChanged = true;
+    dialog.showModal();
+  }
+
+  if (dialog) {
+    // Fires on both the "Got it" button (type=submit inside a <form
+    // method=dialog>) and Escape (the dialog element's own built-in
+    // behaviour) — either way, the viewer has acknowledged it, so it's
+    // marked seen and never reopens on a later reload/refetch.
+    dialog.addEventListener("close", function () {
+      if (currentKey) markSeen(currentKey);
+      currentKey = null;
+      restoreTitleIfFocused();
+      showNext();
+    });
+  }
+  window.addEventListener("focus", restoreTitleIfFocused);
+
+  function checkAlerts() {
+    document.querySelectorAll("[data-reservation][data-alert]").forEach(function (el) {
+      var state = el.getAttribute("data-alert");
+      if (!state) return;
+      var reservationId = el.getAttribute("data-reservation");
+      var key = storageKey(reservationId, state);
+      if (alreadySeen(key)) return;
+      if (key === currentKey) return;
+      if (alertQueue.some(function (a) { return a.key === key; })) return;
+      alertQueue.push({ key: key, state: state });
+    });
+    showNext();
+  }
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    if (event.target && event.target.id === "my-status-wrapper") checkAlerts();
+  });
+  document.addEventListener("DOMContentLoaded", checkAlerts);
+  if (document.readyState !== "loading") checkAlerts();
 `;
 
 // Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
@@ -327,9 +441,16 @@ function page(title: string, body: Html): Html {
         <h1><a href="/">Laundry Queue</a></h1>
         <p id="connection-notice" class="connection-notice" role="status" hidden>Connection lost — reconnecting…</p>
         ${body}
+        <dialog id="turn-alert" class="turn-alert">
+          <form method="dialog">
+            <p id="turn-alert-text"></p>
+            <button class="btn-primary" type="submit">Got it</button>
+          </form>
+        </dialog>
         <script>${raw(COUNTDOWN_SCRIPT)}</script>
         <script>${raw(DISABLE_ON_SUBMIT_SCRIPT)}</script>
         <script>${raw(RECONNECT_SCRIPT)}</script>
+        <script>${raw(TURN_ALERT_SCRIPT)}</script>
       </body>
     </html>`;
 }
@@ -454,6 +575,22 @@ function timeChip(label: string, ms: number, now: number, fixed: boolean, compac
 // "Finish at" (not "Free at") is when the current wash ends — "Free" is
 // the app's own word for a machine nobody's queued for, and a finished
 // machine with someone waiting goes to "unclaimed," not free.
+// Crit 10 extension, Stage 11 (plans/crit-10.md "Extension"; ADR 0009):
+// README's calm-technology argument names exactly two moments the queue
+// pulls you back for — one person ahead of you, and your turn. Computed
+// from the same QueueRow display data every other status line already
+// uses (position, status, claimDeadlineMs), not a new queue.ts concept:
+// claimDeadlineMs is only set once the claim window has actually started
+// (queueFor's own i===0 && turnStartedAt != null check), which is exactly
+// what keeps a dryer still waiting on its wash — position 1, but not
+// genuinely claimable yet — from firing "my turn" too early.
+function alertStateFor(row: QueueRow): "one-ahead" | "my-turn" | undefined {
+  if (row.status !== "waiting") return undefined;
+  if (row.position === 1 && row.claimDeadlineMs != null) return "my-turn";
+  if (row.position === 2) return "one-ahead";
+  return undefined;
+}
+
 function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
   if (row.status === "claimed") return raw("");
   if (row.status === "running") return timeChip("Finish at", row.endMs, now, true, compact);
@@ -680,7 +817,11 @@ export function myStatusBlock(
     <h2>Your status</h2>
     ${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(
-      ({ machine, row, dryerSuggestion }) => html`<div class="my-status-row-wrap">
+      ({ machine, row, dryerSuggestion }) => html`<div
+        class="my-status-row-wrap"
+        data-reservation="${row.reservationId}"
+        data-alert="${alertStateFor(row) ?? ""}"
+      >
         ${noticeBanner(row)}
         ${statusDots(row.status)}
         <div class="my-status-row">
