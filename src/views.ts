@@ -5,6 +5,7 @@ import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
 import type { DryerOption, QueueRow } from "./queue.ts";
 import type { SimulationResults } from "../scripts/simulate.ts";
+import { BOARD_STATE_CLASS, boardStateFor, boardStateLabel, boardTimeLeftSeconds } from "./board-state.ts";
 
 // Crit 9 Stage 3: one row for a pending offer the viewer could accept or
 // decline, joined up for display — not a QueueRow, since a pending offer
@@ -257,6 +258,13 @@ const STYLES = `
   @media (max-width: 640px) {
     .simulation-bar-row { grid-template-columns: 1fr; gap: var(--space-1); }
   }
+
+  /* /simulation's replay (Stage 14) — reuses .board/.board-row from the
+     real home page's board, so playback looks like the real board, not a
+     separate design; these are only the replay's own controls. */
+  .simulation-replay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
+  .simulation-replay-clock { font-weight: 700; font-size: var(--text-lg); margin-left: auto; }
+  .simulation-replay-banner { min-height: 1.5em; font-weight: 600; color: var(--info); }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -455,6 +463,92 @@ const RECONNECT_SCRIPT = `
   });
 `;
 
+// Crit 10 extension, Stage 14 (plans/crit-10.md "Extension"): drives
+// /simulation's playback from the ReplayFrame[] JSON embedded by
+// simulationReplaySection — entirely client-side, no server round-trip
+// per frame. Plays once start to finish and stops on the last frame
+// (never loops — a replay that loops silently becomes exactly the
+// ambient noise README's calm-technology argument warns against). Every
+// frame's events render as a brief banner line, replaced by the next
+// frame's (or cleared, if a frame has none) rather than accumulating.
+const REPLAY_SCRIPT = `
+  (function () {
+    var dataEl = document.getElementById("replay-data");
+    var policySelect = document.getElementById("replay-policy");
+    var playButton = document.getElementById("replay-play");
+    var clockEl = document.getElementById("replay-clock");
+    var bannerEl = document.getElementById("replay-banner");
+    if (!dataEl || !policySelect || !playButton || !clockEl || !bannerEl) return;
+
+    var allReplays = JSON.parse(dataEl.textContent);
+    var timer = null;
+
+    function minuteToClock(minute) {
+      var totalMinutes = 8 * 60 + minute; // simulated day starts at 08:00
+      var h = Math.floor(totalMinutes / 60) % 24;
+      var m = totalMinutes % 60;
+      return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+    }
+
+    function sentenceFor(event) {
+      if (event.kind === "moved_back") return event.room + " moved back one place — missed their claim or start window.";
+      if (event.kind === "moved_up") return event.room + " moved up — the person ahead missed their window.";
+      if (event.kind === "ejected") return event.room + " was ejected from the queue — missed their window.";
+      if (event.kind === "offer_created") return event.room + " was offered an earlier machine that opened up.";
+      return event.room + " queued a dryer for after their wash.";
+    }
+
+    function renderFrame(frame) {
+      clockEl.textContent = minuteToClock(frame.minute);
+      frame.machines.forEach(function (m) {
+        var row = document.getElementById("replay-machine-" + m.machineId);
+        if (!row) return;
+        var stateEl = row.querySelector('[data-field="state"]');
+        var nextEl = row.querySelector('[data-field="next"]');
+        var timeEl = row.querySelector('[data-field="time"]');
+        if (stateEl) {
+          stateEl.textContent = m.label;
+          stateEl.className = "state-word " + m.cls;
+        }
+        if (nextEl) nextEl.textContent = m.nextRoom || "—";
+        if (timeEl) {
+          if (m.timeLeftSeconds == null) {
+            timeEl.textContent = "—";
+          } else {
+            var mins = Math.floor(m.timeLeftSeconds / 60);
+            var secs = m.timeLeftSeconds % 60;
+            timeEl.textContent = mins + ":" + (secs < 10 ? "0" : "") + secs;
+          }
+        }
+      });
+      bannerEl.textContent = frame.events.length > 0 ? frame.events.map(sentenceFor).join(" ") : "";
+    }
+
+    function play() {
+      if (timer) return; // already playing
+      var frames = allReplays[policySelect.value] || [];
+      if (frames.length === 0) return;
+      playButton.disabled = true;
+      policySelect.disabled = true;
+      var i = 0;
+      renderFrame(frames[0]);
+      timer = setInterval(function () {
+        i++;
+        if (i >= frames.length) {
+          clearInterval(timer);
+          timer = null;
+          playButton.disabled = false;
+          policySelect.disabled = false;
+          return;
+        }
+        renderFrame(frames[i]);
+      }, 60); // 840 frames at 60ms each ~= 50s for the whole simulated day
+    }
+
+    playButton.addEventListener("click", play);
+  })();
+`;
+
 // Crit 9: one shared SSE connection per page (hx-ext="sse" sse-connect
 // opens it), carrying only change signals — each listening element below
 // re-fetches its own small, identity-aware fragment on its own trigger
@@ -551,12 +645,9 @@ function machineIcon(number: number, type: Machine["type"]): Html {
 // meaning alone). Returns the class and the label separately so callers
 // can lay them out differently (a board cell's state-word span vs. the
 // status hero's own larger reason line).
-function stateWordFor(row: QueueRow, forOwner: boolean, machineType: Machine["type"]): { cls: string; label: string } {
-  if (row.status === "running") return { cls: "state-running", label: machineType === "dryer" ? "Drying" : "Washing" };
-  if (row.status === "claimed") return { cls: "state-claimed", label: "Claimed" };
-  if (row.position === 1) return forOwner ? { cls: "state-alert", label: "Your turn" } : { cls: "state-unclaimed", label: "Unclaimed" };
-  if (row.position === 2) return { cls: "state-muted", label: "Nearly your turn" };
-  return { cls: "state-muted", label: "Waiting" };
+function stateWordFor(row: QueueRow | undefined, forOwner: boolean, machineType: Machine["type"]): { cls: string; label: string } {
+  const state = boardStateFor(row, forOwner);
+  return { cls: BOARD_STATE_CLASS[state], label: boardStateLabel(state, machineType) };
 }
 
 function rowBadge(row: QueueRow, forOwner: boolean, machineType: Machine["type"]): Html {
@@ -901,7 +992,7 @@ export function myStatusBlock(
 function boardRow(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
   const front = rows[0];
   const mine = rows.find((r) => r.person === identity);
-  const { cls, label } = front ? stateWordFor(front, front.person === identity, machine.type) : { cls: "state-free", label: "Free" };
+  const { cls, label } = stateWordFor(front, front?.person === identity, machine.type);
   const nextRoom = front ? (front.person === identity ? "you" : front.person) : "—";
 
   return html`<div
@@ -1062,13 +1153,55 @@ function simulationBarChart(results: SimulationResults, metricKey: string, unit:
   </div>`;
 }
 
+// Crit 10 extension, Stage 14 (plans/crit-10.md "Extension"): the bar
+// charts above answer "how much," not "what actually happened" — this
+// plays back one representative simulated day (results.policies[].replay,
+// results.policies[].replaySeed) on the same board layout the real home
+// page uses, so a swap is something you watch happen, not just a number.
+// Pure client side: the whole day's ReplayFrame[] for the selected policy
+// ships embedded in the page (already part of `results`, no new route),
+// and REPLAY_SCRIPT below steps through it with setInterval. One row per
+// machine is rendered server-side once (icon and label never change
+// during playback — only state/next/time left do), matching boardRow's
+// own markup/classes so the replay looks like the real board, not a
+// separate design.
+function simulationReplaySection(results: SimulationResults, machines: Machine[]): Html {
+  return html`<section class="simulation-metric simulation-replay">
+    <h2>Watch one simulated day</h2>
+    <p>Picks the seed closest to each policy's own average above — a
+    typical day, not the most dramatic one — and plays it once, start to
+    finish, on the same board layout the real queue uses.</p>
+    <div class="simulation-replay-controls">
+      <label for="replay-policy">Policy</label>
+      <select id="replay-policy">
+        ${results.policies.map((p) => html`<option value="${p.policy}">${POLICY_LABELS[p.policy] ?? p.policy} — seed ${p.replaySeed}</option>`)}
+      </select>
+      <button class="btn-primary" type="button" id="replay-play">Play the simulation</button>
+      <span class="num simulation-replay-clock" id="replay-clock">08:00</span>
+    </div>
+    <p class="simulation-replay-banner" id="replay-banner" aria-live="polite"></p>
+    <div class="board" id="replay-board">
+      ${machines.map(
+        (m) => html`<div class="board-row" id="replay-machine-${m.id}" data-machine="${m.id}">
+          <span class="board-cell-machine">${machineIcon(m.id, m.type)} ${m.label}</span>
+          <span><span class="board-label">State</span><span class="state-word state-free" data-field="state">Free</span></span>
+          <span><span class="board-label">Next</span><span data-field="next">—</span></span>
+          <span><span class="board-label">Time left</span><span class="num" data-field="time">—</span></span>
+        </div>`,
+      )}
+    </div>
+    <script type="application/json" id="replay-data">${raw(JSON.stringify(Object.fromEntries(results.policies.map((p) => [p.policy, p.replay]))))}</script>
+    <script>${raw(REPLAY_SCRIPT)}</script>
+  </section>`;
+}
+
 // Named /simulation rather than /fairness (ADR 0010): the point of this
 // page is the testing practice — driving the real queue code through a
 // large volume of randomized, reproducible scenarios (deterministic
 // simulation testing) — not an argument about which missed-window policy
 // is fairest. The policy comparison is one output of running it, not
 // what the page is for.
-export function simulationPage(results: SimulationResults | undefined): Html {
+export function simulationPage(results: SimulationResults | undefined, machines: Machine[]): Html {
   if (!results) {
     return page(
       "Simulation",
@@ -1079,10 +1212,15 @@ export function simulationPage(results: SimulationResults | undefined): Html {
   return page(
     "Simulation",
     html`<div class="intro">
+      <p>A hundred-plus-resident building using this queue at once isn't
+      something anyone can click through by hand to check — so instead of
+      manually testing a handful of cases, this runs the real queue code
+      through a large number of randomly generated, reproducible days and
+      reports what happened.</p>
       <p><strong>Simulated building, not real usage.</strong> Every number below comes from
       ${results.seedCount} randomly generated Saturdays in a made-up ${results.model.residentCount}-resident
       building, run through the real queue code with a virtual clock (<a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0007-verification-harness.md">ADR 0007</a>,
-      <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0010-fairness-simulation-as-testing.md">ADR 0010</a>),
+      <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0010-simulation-as-testing.md">ADR 0010</a>),
       not measurements of a real laundry room. Re-run it yourself with <code>pnpm sim</code>; the
       assumptions it ran with are listed below.</p>
     </div>
@@ -1093,6 +1231,8 @@ export function simulationPage(results: SimulationResults | undefined): Html {
         ${simulationBarChart(results, m.key, m.unit)}
       </section>`,
     )}
+
+    ${simulationReplaySection(results, machines)}
 
     <section class="simulation-assumptions">
       <h2>Assumptions this run made</h2>

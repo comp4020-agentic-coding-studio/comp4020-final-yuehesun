@@ -37,7 +37,7 @@ app.use(async (c, next) => {
 
 app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
 
-app.get("/simulation", (c) => c.html(simulationPage(readSimulationResults())));
+app.get("/simulation", (c) => c.html(simulationPage(readSimulationResults(), db.select().from(machines).all())));
 
 // Crit 9 Stage 3: pending offers aren't tied to a QueueRow — a pending
 // offer lives on the candidate's own reservation, not the idle machine's

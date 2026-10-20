@@ -14,6 +14,7 @@ import { createHarness, type Harness, type MissedWindowPolicy } from "../sim/har
 import { makeRng, type Rng } from "../sim/rng.ts";
 import { durationFor, isWashingType } from "../src/washing-types.ts";
 import { dryingDurationFor, isDryingType } from "../src/drying-types.ts";
+import { BOARD_STATE_CLASS, boardStateFor, boardStateLabel, boardTimeLeftSeconds, type BoardState } from "../src/board-state.ts";
 
 // Real incident (plans/crit-10.md Stage 13 detail): the full batch below
 // is 50 seeds x 3 policies x 840 simulated minutes each — about 126,000
@@ -160,12 +161,51 @@ export interface RawMetrics {
   extraWaitPaidBySelfMinutes: number;
 }
 
+// Crit 10 extension, Stage 14 (plans/crit-10.md "Extension"): one
+// simulated minute's board state, recorded only when runOneDay is asked
+// to (the `record` parameter) — the 50-seeds-x-3-policies batch that
+// produces sim/results.json's metrics never records a replay for every
+// run, only the one picked seed per policy does (see runSimulation's own
+// comment on which seed that is). `state` mirrors src/board-state.ts's
+// BoardState exactly — the client-side replay builds its own labels from
+// the same values src/views.ts's board already uses, so "what does this
+// state mean" can't drift between the real board and the replay.
+export interface ReplayFrame {
+  minute: number;
+  machines: {
+    machineId: number;
+    state: BoardState;
+    // Pre-computed by boardStateLabel/BOARD_STATE_CLASS (src/board-state.ts,
+    // src/views.ts) at recording time, not re-derived client-side — the
+    // client has no machine-type lookup of its own, and duplicating the
+    // state->label switch in client JS would be exactly the kind of
+    // second copy ADR 0007 exists to avoid, just in JS instead of TS.
+    label: string;
+    cls: string;
+    nextRoom: string | undefined;
+    timeLeftSeconds: number | undefined;
+  }[];
+  events: { kind: "moved_back" | "moved_up" | "ejected" | "offer_created" | "dryer_queued"; room: string; machineId: number }[];
+}
+
 // Runs one simulated day on an existing harness (reset before the call) —
 // not a fresh harness per call, since sim/harness.ts's createHarness() can
 // only run once per process (better-sqlite3's :memory: db is per-connection).
 // Exported so spec/simulate-determinism.test.ts can run it twice against
 // the same harness (reset between calls) with the same seed and compare.
-export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPolicy): Promise<RawMetrics> {
+//
+// Stage 14: `record: true` additionally builds a ReplayFrame per
+// simulated minute, for the one seed per policy runSimulation picks to
+// ship as /simulation's playback. Off by default — every other seed in
+// the 50-per-policy batch only needs RawMetrics, and recording a frame
+// for all of them would be 50x the replay data for 49 recordings nothing
+// ever reads.
+export async function runOneDay(
+  h: Harness,
+  seed: number,
+  policy: MissedWindowPolicy,
+  record = false,
+): Promise<{ metrics: RawMetrics; replay?: ReplayFrame[] }> {
   h.queue.setMissedWindowPolicy(policy);
   const rng = makeRng(seed);
   const plans = planResidents(rng);
@@ -189,6 +229,7 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
     extraWaitCausedForOthersMinutes: 0,
     extraWaitPaidBySelfMinutes: 0,
   };
+  const replay: ReplayFrame[] | undefined = record ? [] : undefined;
 
   let planIndex = 0;
   const washerIds = h.machines.filter((m) => m.type === "washer").map((m) => m.id);
@@ -200,6 +241,7 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
     if (currentMinute > 0 && currentMinute % 60 === 0) await yieldToEventLoop();
 
     const now = h.clock.now();
+    const minuteEvents: ReplayFrame["events"] = [];
 
     // 1. New arrivals: join, picking the washer with the shortest queue
     // right now (mirrors the home page's "let the app assign" option —
@@ -289,7 +331,11 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
       if (!state.dryerQueued && state.plan.queuesDryer) {
         state.dryerQueued = true; // only one attempt, success or not
         const dryingDuration = isDryingType(state.plan.dryingType) ? dryingDurationFor(state.plan.dryingType) : 0;
-        h.queue.queueDryer(state.reservationId, state.plan.room, state.plan.dryingType, dryingDuration);
+        const dryerResult = h.queue.queueDryer(state.reservationId, state.plan.room, state.plan.dryingType, dryingDuration);
+        if (dryerResult.ok) {
+          const dryerReservation = h.allReservations().find((r) => r.id === dryerResult.reservationId);
+          if (dryerReservation) minuteEvents.push({ kind: "dryer_queued", room: state.plan.room, machineId: dryerReservation.machineId });
+        }
       }
     }
 
@@ -345,9 +391,21 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
 
     // 6. Advance the clock — this is where queue.ts's own settleMachine/
     // processOffers actually fire any policy transition, exactly as the
-    // real realtime tick would.
+    // real realtime tick would. New offers are created inside this call
+    // (processOffers, not something runOneDay calls directly), so
+    // offer_created is detected by diffing pending offer ids before/after
+    // rather than at a single call site.
+    const pendingOfferIdsBefore = new Set(h.allOffers().filter((o) => o.status === "pending").map((o) => o.id));
     h.advanceMinutes(1);
     const afterNow = h.clock.now();
+    if (replay) {
+      for (const offer of h.allOffers()) {
+        if (offer.status === "pending" && !pendingOfferIdsBefore.has(offer.id)) {
+          const reservation = h.allReservations().find((r) => r.id === offer.reservationId);
+          if (reservation) minuteEvents.push({ kind: "offer_created", room: reservation.personName, machineId: offer.machineId });
+        }
+      }
+    }
 
     // 7. Diff each machine's front against step 2's "before" snapshot to
     // detect a policy event. A legitimate state progression (claim/start
@@ -369,6 +427,7 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
       metrics.movedBackOrEjectedCount += 1;
       metrics.extraWaitCausedForOthersMinutes += windowMinutes;
 
+      const missedRoom = reservationsById.get(before.reservationId)?.personName ?? "?";
       const stillActiveSomewhere = afterRows.some((r) => r.reservationId === before.reservationId);
       if (stillActiveSomewhere) {
         // Moved back one place: the "self cost" is waiting behind whoever
@@ -376,13 +435,41 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
         const newFront = afterRows[0];
         const newFrontReservation = h.allReservations().find((r) => r.id === newFront.reservationId);
         if (newFrontReservation) metrics.extraWaitPaidBySelfMinutes += newFrontReservation.durationMinutes;
+        minuteEvents.push({ kind: "moved_back", room: missedRoom, machineId });
+        if (newFrontReservation) minuteEvents.push({ kind: "moved_up", room: newFrontReservation.personName, machineId });
+      } else {
+        // Ejected: no further wait is tracked for them at all (they're
+        // simply gone from the data) — recorded as 0 additional self-cost
+        // deliberately, not omitted, so the metric's meaning stays
+        // "additional minutes measured," distinct from "no further measurable
+        // outcome," which movedBackOrEjectedCount and the join-to-start wait
+        // array (which an ejected reservation never joins) already show.
+        minuteEvents.push({ kind: "ejected", room: missedRoom, machineId });
       }
-      // Ejected: no further wait is tracked for them at all (they're
-      // simply gone from the data) — recorded as 0 additional self-cost
-      // deliberately, not omitted, so the metric's meaning stays
-      // "additional minutes measured," distinct from "no further measurable
-      // outcome," which movedBackOrEjectedCount and the join-to-start wait
-      // array (which an ejected reservation never joins) already show.
+    }
+
+    // 8. Stage 14: one ReplayFrame for this minute, if recording — full
+    // machine state after the clock advanced (so a resident who just
+    // claimed/started this minute shows their new state, not the stale
+    // "before" one), plus every event minuteEvents collected above.
+    if (replay) {
+      replay.push({
+        minute: currentMinute,
+        machines: h.machines.map((m) => {
+          const rows = h.queue.queueFor(m.id, afterNow);
+          const front = rows[0];
+          const state = boardStateFor(front, false);
+          return {
+            machineId: m.id,
+            state,
+            label: boardStateLabel(state, m.type),
+            cls: BOARD_STATE_CLASS[state],
+            nextRoom: front?.person,
+            timeLeftSeconds: boardTimeLeftSeconds(front, afterNow),
+          };
+        }),
+        events: minuteEvents,
+      });
     }
   }
 
@@ -393,7 +480,7 @@ export async function runOneDay(h: Harness, seed: number, policy: MissedWindowPo
     if (r.startedAt != null) metrics.joinToStartWaitMinutes.push((r.startedAt - r.joinedAt) / 60_000);
   }
 
-  return metrics;
+  return { metrics, replay };
 }
 
 function median(values: number[]): number {
@@ -453,6 +540,12 @@ export interface PolicySummary {
   policy: MissedWindowPolicy;
   seeds: SeedResult[];
   aggregate: Record<keyof Omit<SeedResult, "seed">, { mean: number; stddev: number }>;
+  // Stage 14: one representative day's full board history, for
+  // /simulation's playback — the seed whose movedBackOrEjectedCount is
+  // closest to this policy's own mean (not the most dramatic seed, which
+  // would misrepresent what's typical).
+  replaySeed: number;
+  replay: ReplayFrame[];
 }
 
 export interface SimulationResults {
@@ -470,8 +563,8 @@ export async function runSimulation(): Promise<SimulationResults> {
     const seeds: SeedResult[] = [];
     for (let seed = 1; seed <= SEED_COUNT; seed++) {
       h.reset();
-      const raw = await runOneDay(h, seed, policy);
-      seeds.push(summarizeSeed(seed, raw));
+      const { metrics } = await runOneDay(h, seed, policy);
+      seeds.push(summarizeSeed(seed, metrics));
       process.stdout.write(`\r${policy}: seed ${seed}/${SEED_COUNT}          `);
     }
     process.stdout.write("\n");
@@ -485,7 +578,19 @@ export async function runSimulation(): Promise<SimulationResults> {
       "extraWaitPaidBySelfMinutes",
     ];
     const aggregate = Object.fromEntries(keys.map((k) => [k, aggregateStat(seeds, k)])) as PolicySummary["aggregate"];
-    policies.push({ policy, seeds, aggregate });
+
+    // Stage 14: re-run the seed closest to this policy's own mean
+    // movedBackOrEjectedCount, this time recording a replay — a second
+    // run rather than recording all 50 the first time, since only one
+    // per policy ever gets read (see ReplayFrame's own comment).
+    const meanSwaps = aggregate.movedBackOrEjectedCount.mean;
+    const replaySeed = seeds.reduce((closest, s) =>
+      Math.abs(s.movedBackOrEjectedCount - meanSwaps) < Math.abs(closest.movedBackOrEjectedCount - meanSwaps) ? s : closest,
+    ).seed;
+    h.reset();
+    const { replay } = await runOneDay(h, replaySeed, policy, true);
+
+    policies.push({ policy, seeds, aggregate, replaySeed, replay: replay ?? [] });
   }
 
   return { generatedBy: "scripts/simulate.ts", seedCount: SEED_COUNT, model: MODEL, policies };
