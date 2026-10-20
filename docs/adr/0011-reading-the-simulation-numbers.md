@@ -13,7 +13,8 @@ words, and doesn't need a number to be sound. That line raises an
 obvious question: if the numbers can't settle the fairness question,
 what are they actually for? This ADR reads the real `sim/results.json`
 (50 seeds per policy) and says, plainly, what it does and doesn't show —
-the analysis `/simulation` itself is not allowed to state.
+the same reading `/simulation` itself now carries in full, not a
+conclusion the page is barred from stating.
 
 The three policies' aggregate numbers (mean across 50 seeds):
 
@@ -109,7 +110,10 @@ feature list.
 
 ## Decision
 
-Keep `/simulation` exactly as scoped by ADR 0010 (numbers only, no
-argument on the page); this ADR is where the reading of those numbers —
-what they support, what they don't, and what's deliberately left out of
-the page itself — lives instead.
+This reading — what the numbers support, what they don't, this
+simulation's limitations, and the second-phase direction it surfaced —
+is written out in full on `/simulation` itself, not left behind a link a
+reader has to follow to make sense of a page full of bars and numbers.
+This ADR is the record of that reading and why it's safe to put on the
+page: none of it argues which missed-window policy is fairest, the one
+conclusion ADR 0010 reserves for `README.md`/ADR 0005.

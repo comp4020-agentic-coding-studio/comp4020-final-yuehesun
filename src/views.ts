@@ -265,7 +265,17 @@ const STYLES = `
   .simulation-replay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
   .simulation-replay-clock { font-weight: 700; font-size: var(--text-lg); margin-left: auto; }
   .simulation-replay-banner { min-height: 1.5em; font-weight: 600; color: var(--info); }
-  .simulation-closing { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--rule); color: var(--ink-muted); font-size: var(--text-sm); }
+
+  /* The written-out reading of the numbers (docs/adr/0011) — lives on the
+     page itself, not behind a link, so a reader doesn't have to leave to
+     find out what the numbers mean. */
+  .simulation-reading { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--rule); }
+  .simulation-reading h2 { margin-top: var(--space-5); }
+  .simulation-reading h2:first-child { margin-top: 0; }
+  .simulation-reading p, .simulation-reading li { line-height: 1.6; }
+  .simulation-reading li { margin: var(--space-2) 0; }
+  .simulation-reading code { background: var(--rule); border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
+  .simulation-closing { margin-top: var(--space-5); color: var(--ink-muted); font-size: var(--text-sm); }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -1259,13 +1269,66 @@ export function simulationPage(results: SimulationResults | undefined, machines:
       <p>These are guesses, not data from a real building — changing them changes every number above.</p>
     </section>
 
-    <p class="simulation-closing">This page reports numbers, not an
-    argument — what they actually support, what they don't, and this
-    simulation's own limitations are written up separately in
-    <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0011-reading-the-simulation-numbers.md">ADR 0011</a>.
-    The app's fairness argument itself is
-    <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0005-fairness-escalation.md">ADR 0005</a>'s
-    and <a href="/readme/">README</a>'s, made on different grounds than anything
-    measured here.</p>`,
+    <section class="simulation-reading">
+      <h2>What these numbers actually show</h2>
+      <p>The idle-machine result above is a real, assumption-independent
+      check that the code does what the rules say: <code>wait-forever</code>
+      alone produces minutes of a machine sitting idle while someone waited
+      behind an absent front; <code>eject</code> and <code>move-back-one</code>
+      both produce zero. That's not sensitive to how aggressive the lateness
+      assumptions are — it's the direct consequence of those two policies
+      actively resolving a stuck front-of-queue reservation, and
+      <code>wait-forever</code> never doing anything about it.</p>
+      <p><code>move-back-one</code>'s p90 and max wait times sit far above its
+      own median, while <code>eject</code>'s don't — a long tail, not just a
+      higher average. The reason is mechanical: nothing in the rule limits how
+      many times in a row one reservation can be swapped backward. A more
+      realistic lateness assumption would shorten that tail, but wouldn't
+      remove the mechanism that produces it — the rule has no safeguard
+      against a long run of bad luck, independent of how likely that run is.</p>
+      <p><code>eject</code>'s apparently low "extra wait paid by self" isn't
+      because ejecting is cheap — it's a measurement gap. An ejected
+      reservation is simply gone from this simulation's data the moment it
+      happens, so no further cost is ever counted against it. The real cost
+      (losing your place entirely, rejoining from the back) is exactly what
+      <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0005-fairness-escalation.md">ADR 0005</a>
+      already argued against in words; this page's numbers don't measure that
+      cost's size, since nothing here follows a reservation past the point
+      it's deleted.</p>
+      <p>None of this settles, or is being used here to argue, which policy is
+      fairest. That argument is <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0005-fairness-escalation.md">ADR 0005</a>'s
+      and <a href="/readme/">README</a>'s, made on grounds this simulation can't
+      touch — what cost is acceptable to impose on someone for stepping away,
+      not how many minutes it costs on average.</p>
+
+      <h2>Limitations of this simulation</h2>
+      <ul>
+        <li>The lateness assumptions are deliberately aggressive (see
+          "Assumptions" above) — this inflates whatever compounds over
+          repeated attempts (<code>move-back-one</code>'s tail, most of all)
+          more than it inflates one-shot outcomes.</li>
+        <li>It measures efficiency, not fairness. Every metric here is a count
+          or a duration — none of them represent whether something was an
+          acceptable thing to do to someone.</li>
+        <li>No fault injection — this is volume and randomness over normal
+          use, not deliberate crashes or network faults (see
+          <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0010-simulation-as-testing.md">ADR 0010</a>
+          for how this compares to the canonical form of this technique).</li>
+        <li>Only one seed per policy is ever played back above — the one
+          closest to that policy's own mean swap count — not the full spread
+          of 50.</li>
+      </ul>
+
+      <h2>A direction this surfaced, not a decision to build it</h2>
+      <p>The long-tail finding suggests a real question for a future iteration
+      of this app: should the queue cap how many consecutive times one
+      reservation can be swapped backward before some other mechanism takes
+      over — for example, routing it into the existing cross-machine "earlier
+      machine" offer instead of an indefinite in-place swap? This page doesn't
+      answer that; it's recorded as a possible second-phase direction in
+      <code>plan.md</code>, not a scoped feature.</p>
+      <p class="simulation-closing">Full detail behind this reading:
+      <a href="https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/blob/main/docs/adr/0011-reading-the-simulation-numbers.md">ADR 0011</a>.</p>
+    </section>`,
   );
 }

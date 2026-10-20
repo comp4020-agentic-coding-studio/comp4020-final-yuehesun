@@ -82,9 +82,15 @@ number to be sound. It's for two things words alone can't give:
 
 Keep it, framed as a testing practice rather than a user-facing feature:
 it ships no route or UI a resident touches except the read-only
-`/simulation` results page, and `CLAUDE.md`'s test harness rules already
-forbid it from drawing a conclusion in `README.md`/`PROCESS.md` about
-which policy is "better" — it reports numbers, the argument stays mine.
+`/simulation` results page. `/simulation` itself does read and explain
+its own numbers in full — what they support, what they don't, the
+simulation's limitations, and a possible future direction the long tail
+surfaced (ADR 0011) — but `CLAUDE.md`'s test harness rules still forbid
+one specific conclusion anywhere on it or in `README.md`/`PROCESS.md`:
+which missed-window policy is "fairest." That argument is ADR 0005's,
+made on grounds this simulation can't touch; everything else about what
+the numbers themselves mean is fair game to write out in full, on the
+page, rather than behind a link.
 
 ## Extension (Stage 14): a recorded playback, not a live trigger
 
