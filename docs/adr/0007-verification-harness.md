@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted — implementation pending (`plans/crit-10.md` Stages 9 and 13).
+Accepted. Stage 9 (property tests + direct timing tests) shipped; Stage
+13 (the fairness simulation) is a stretch goal, attempted after Stages
+10-12.
 
 ## Context
 
