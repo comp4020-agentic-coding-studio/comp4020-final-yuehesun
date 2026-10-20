@@ -195,6 +195,40 @@ and the offer moves to the next person instead.
   Stage 7 (bonus, peak times from logs — needs its own persisted table,
   not reuse of stdout logging, per the plan's own scope note), Stage 8's
   wrap-up (`PROCESS.md` rewrite, `reflections/crit-10.md`).
+- **Crit 10 extension — one unattended ~2-hour run per `prompt.md`,
+  Stages 9-12 shipped, Stage 13 (stretch) not attempted.** `src/clock.ts`
+  is the one seam `queue.ts` reads time through; `sim/` (seeded PRNG,
+  forward-only virtual clock, a driver that calls the real `queue.ts`
+  functions, no rule copied) backs `spec/fairness-properties.test.ts`
+  (fast-check, 200 runs x 60 steps, all 7 ADR 0007 invariants) and
+  `spec/queue-timing.test.ts`. The property tests found and fixed a real
+  concurrency bug in `moveBackOnePlace` (two same-millisecond joins tied
+  `joinedAt`, making the fairness swap a no-op — exactly the "several
+  rooms join at once" case ADR 0008 exists for); the deliberate-break
+  drill's shrunk counterexample is quoted in commit `8118424` and
+  `HANDOFF.md`. `spec/contention.test.ts` (20 simultaneous joins, double
+  claim, double-submit dedup) and `spec/restart.test.ts` cover ADR 0008;
+  an SSE reconnect notice + full fragment refetch was verified by
+  `SIGKILL`ing a real server mid-connection. In-page turn alerts (native
+  `<dialog>`, `document.title` flash, once per transition via
+  `sessionStorage`) ship per ADR 0009. The home page was redesigned from
+  a Flighty reference (`research/flighty/`, `research/design-plan.md`
+  committed before any CSS) into a departure-board layout with a
+  signature status-hero (remaining time at 4.5x body text); the >=2-round
+  scored review (`research/design-review.md`) found and fixed two real
+  display bugs (a stale "0:00" on "Claimed", a wrong static "Done" on a
+  running wash) by actually looking at screenshots, plus a Stage 6
+  critique round (intro paragraph width, offer card countdown
+  prominence). `research/screens/before-*.png` and `after-*.png` (same
+  names) are both committed. **Not attempted:** Stage 13's fairness
+  simulation (`sim/results.json`, `/fairness`) — explicitly the run's own
+  first thing to cut, and Stage 12 (flagged the most important, not to
+  be shortcut) took the run's bulk of time instead. Full detail, every
+  unasked-for call, and what's still weakest: `HANDOFF.md`. Docker build
+  verification could not be completed in this environment (WSL2 without
+  Docker Desktop's WSL integration enabled) — `pnpm check` was confirmed
+  green against a plain local server instead; the real `docker build`
+  path is still to be checked by hand before shipping.
 
 ## The feature list
 
@@ -246,6 +280,32 @@ there; "gap" means nobody's claimed it yet.
     a machine ("it's mine"); starting is a separate tap that just records
     the real start time (duration was already chosen at reservation time).
 15. **Cancelling moves the line up by one** — core, crit 8, simple to add.
+16. **Changing washing/drying type after reserving** — **gap**, no crit
+    assigned. Came up because the default dropdown option is the 1-minute
+    test type, and it's easy to reserve without noticing or changing it;
+    a real user might also just change their mind. Needs a decision on
+    when it's still allowed: trivial while `waiting`/`claimed` (nothing's
+    committed to other people's estimates yet), but once `running` the
+    duration is already baked into everyone else's queued `endMs` and
+    `settleMachine`'s own finish check — letting it change after that
+    point would let someone manipulate how long they effectively hold the
+    machine. Current read: allow the change up to `claimed`, lock it at
+    `running`, matching how a real machine can't be reconfigured mid-cycle.
+17. **Water temperature choice (cold/warm/hot)** — **gap**, no crit
+    assigned. Orthogonal to washing type/duration — a separate field, not
+    a new `WASHING_TYPES` entry — and doesn't touch queue position or
+    timing, so it's a lower-risk addition than #16.
+18. **Unclaimed laundry handed off to a numbered pickup spot** — **gap**,
+    no crit assigned. If the next person needs the machine before the
+    previous owner has collected their clothes, they move the clothes to
+    a numbered shelf/locker spot (picked from a fixed list, not freely
+    typed, same "no free text" discipline as room numbers) and the
+    original owner is notified which spot. Needs its own state beyond the
+    existing reservation statuses (something has to track "moved, to spot
+    N, owner not yet confirmed"), a decision on who's allowed to trigger
+    it, and how a spot is marked free again — this is a real new feature,
+    not a small addition; scope it properly before building rather than
+    folding it into an existing stage.
 
 ## Gap tasks — no crit assigned yet
 
@@ -254,9 +314,20 @@ there; "gap" means nobody's claimed it yet.
 - Auto-assign (#11)
 - Push notifications for "it's your turn" (#2), if wanted beyond the spec
   minimum
+- Changing washing/drying type after reserving (#16)
+- Water temperature choice (#17)
+- Unclaimed laundry handed off to a numbered pickup spot (#18)
 
 (#12, cross-machine "earlier machine" offers, shipped in crit 9 — see the
 feature list above.)
+
+**A possible second-phase direction, not a scoped task:** the crit 10
+extension's fairness simulation (`/simulation`, `docs/adr/0011-reading-the-simulation-numbers.md`)
+surfaced that `moveBackOnePlace` has no cap on how many consecutive times
+one reservation can be swapped backward — worth asking in a future
+iteration whether a long run of bad luck should eventually route into
+the existing cross-machine offer (#12) instead of an indefinite in-place
+swap. Not committed to; just worth not forgetting.
 
 ## Mapping onto crits (summary — full detail in each crit's own plan file)
 

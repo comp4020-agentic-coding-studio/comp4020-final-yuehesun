@@ -175,7 +175,7 @@ the simulation compares rules.
 
 **Why:** two pieces of machinery would mean two places that could drift
 from the real queue code, and twice the build cost. One harness also
-means the numbers on `/fairness` come from exactly the code the tests
+means the numbers on `/simulation` come from exactly the code the tests
 check.
 
 **Backed by:** `docs/adr/0007-verification-harness.md`;
@@ -251,3 +251,90 @@ What it gets wrong is the next thing to check.
 (pending: plan commit); `prompt.md` (pending: plan commit; deleted by the
 run's last commit); `HANDOFF.md` and `research/design-review.md` (pending:
 the run).
+
+## Planning before code is a harness rule now, not just a stage-start habit
+
+**What happened:** building the fairness simulation's behaviour model
+(Stage 13), the agent wrote the day-by-day resident logic straight away.
+The first version gave each resident a single fixed lateness value,
+rolled once and reused every time they got a chance to claim. Under the
+move-back-one rule, a resident whose one fixed number happened to exceed
+the claim window missed every future chance in exactly the same way,
+forever — producing an endless front-two swap and absurd numbers (500+
+swaps from about 60 loads of laundry) that only showed up once the
+simulation actually ran, not from reading the code.
+
+**The obvious alternative:** let the agent keep going the way it was —
+write code, run it, notice something's off, fix it, re-run — since
+`CLAUDE.md`'s existing rule already says to refine a stage's plan before
+starting it.
+
+**What I decided instead:** that existing rule wasn't specific enough to
+stop this. "Refine the plan" didn't tell the agent *when* a piece of work
+inside a stage needs its design written down first versus when it's fine
+to just write the code — so it defaulted to writing code for something
+that needed a design decision made on paper first. I had it add a
+specific rule: before writing code for anything with a new algorithm or
+behaviour model, timing/concurrency logic, randomness, or a non-trivial
+test/harness, write the actual design choice and the failure mode it
+avoids into the plan first — not just "is this complex," which is too
+easy for the agent judging its own work to wave through.
+
+**Why it helped:** the bug here wasn't a typo — it was a design flaw
+(conflating "does this person ever act" with "how late are they this
+specific time") that's obvious once stated in a sentence, but invisible
+staring at the loop that implements it. A plan forces that sentence to
+get written, and read back, before the code exists to hide behind.
+
+**Backed by:** `CLAUDE.md` Workflow section's new bullet (pending: next
+commit); `plans/crit-10.md`'s Stage 13 detail, written after the bug was
+found and fixed, naming the design choice directly.
+
+## Keeping the behaviour simulation, once I knew what it actually was
+
+**What happened:** after the simulation hung the machine twice, I
+questioned whether it was worth keeping at all — ADR 0005 already argues
+in words why "move back one place" is fairer than ejecting, so a pile of
+simulated numbers chasing the same conclusion looked like exactly the
+kind of feature-for-its-own-sake the final-project brief marks down
+("features with no reason to exist"). My actual objection wasn't to
+simulation as an idea; it was to adding evidence a decision didn't need,
+dressed up as if it did.
+
+**The obvious alternative:** drop it. The agent's own earlier read agreed
+— it told me the brief doesn't ask for this, the quantitative case was
+redundant with the ADR's qualitative one, and kept it only as "your own
+small experiment," not load-bearing for anything graded.
+
+**What I decided instead:** have the agent research what this technique
+actually is in the field before deciding, rather than either of us
+guessing. It came back with a name — deterministic simulation testing
+(DST), the technique behind FoundationDB and TigerBeetle: a controlled
+clock and seeded randomness make a whole run reproducible from one
+number, and the real code runs inside the simulation instead of a copy of
+its rules. That reframed what I was actually arguing about: not "is this
+a redundant feature" but "is this a legitimate testing practice I used on
+my own project" — and it is, with a real find from the same family of
+technique already on record (the property tests this same harness backs,
+`spec/fairness-properties.test.ts`, caught an actual concurrency bug in
+`moveBackOnePlace` back in Stage 9, before this simulation or this
+decision existed). I kept it, written up as testing practice in
+`docs/adr/0010-simulation-as-testing.md`, named `/simulation` rather than
+`/fairness` since the practice itself, not the policy comparison it
+happens to produce, is the point — not as evidence for README's fairness
+argument, which was already settled in ADR 0005 and doesn't need
+re-proving.
+
+**Why it helped:** the thing that actually made this decision correctly
+wasn't either of our first instincts — mine (dropping it as scope creep)
+or the agent's (deferring to me without checking whether the field has a
+name for what I'd built). It was looking up whether a real engineering
+discipline already existed for what I was doing, before judging it by
+guesswork. A result from that research is going in `research-note.md`
+too, since "is simulating heavy, randomized use of code an AI agent wrote
+a legitimate verification practice" is exactly the kind of question that
+note is supposed to take a position on.
+
+**Backed by:** `docs/adr/0010-fairness-simulation-as-testing.md`
+(pending: next commit); `sim/results.json` (committed, this session);
+`research-note.md`'s DST section (pending: next commit).

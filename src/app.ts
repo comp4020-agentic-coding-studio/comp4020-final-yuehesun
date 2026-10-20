@@ -8,10 +8,11 @@ import * as logging from "./logging.ts";
 import * as queue from "./queue.ts";
 import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
+import { readSimulationResults } from "./simulation-results.ts";
 import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage } from "./views.ts";
+import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -35,6 +36,8 @@ app.use(async (c, next) => {
 });
 
 app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
+
+app.get("/simulation", (c) => c.html(simulationPage(readSimulationResults(), db.select().from(machines).all())));
 
 // Crit 9 Stage 3: pending offers aren't tied to a QueueRow — a pending
 // offer lives on the candidate's own reservation, not the idle machine's
@@ -95,8 +98,11 @@ app.get("/my-status", (c) => {
   const now = Date.now();
   const allMachines = db.select().from(machines).all();
   const mine = allMachines.flatMap((m) => {
-    const row = queue.queueFor(m.id, now).find((r) => r.person === identity);
-    return row ? [{ machine: m, row, dryerSuggestion: queue.suggestedDryer(row.reservationId) }] : [];
+    const rowsForMachine = queue.queueFor(m.id, now);
+    const row = rowsForMachine.find((r) => r.person === identity);
+    return row
+      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row, m.type), dryerSuggestion: queue.suggestedDryer(row.reservationId) }]
+      : [];
   });
   const myOffers = pendingOffersFor(identity, now);
   return c.html(myStatusBlock(mine, myOffers, now));

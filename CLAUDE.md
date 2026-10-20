@@ -87,6 +87,27 @@ Workflow below for that run only:
   instead of repeating it.
 - Before starting a stage, refine that stage's own plan section against the
   real situation (not the whole outline).
+- **Write the design down in the plan before writing code, not after,
+  whenever any of these is true** — don't rely on judging "is this complex
+  enough," since that call is too easy to skip under its own bias:
+  - the work needs a new algorithm, state machine, or simulation/behaviour
+    model (not just wiring an existing one to a new route or view);
+  - a bug in it would only surface by actually running it, not by reading
+    the diff (timing/concurrency logic, anything seeded/randomized, a
+    model with feedback loops);
+  - the test or harness for it is itself non-trivial (a property test's
+    invariants, a simulation's metrics, anything more involved than
+    asserting a single return value);
+  - it's a whole-project decision (`plan.md`) or a crit-level stage
+    (`plans/crit-N.md`) — these already require a plan by the Workflow
+    rules above; this bullet exists for the case *inside* a stage that
+    feels small enough to skip planning for, but isn't.
+  The plan section should name the actual design choice and the failure
+  mode it avoids, not just "build X" — e.g. "re-roll lateness per attempt,
+  not once per resident, because a fixed value above the window makes that
+  resident miss forever." Getting this wrong once already cost a working
+  session rewriting a simulation after the fact instead of catching the
+  bad design on paper first.
 - Verify each stage by hand: write the code, stop, show the user something
   they can check themselves, and wait for feedback. If something's wrong,
   don't edit yet — analyse the code and the user's description until you find

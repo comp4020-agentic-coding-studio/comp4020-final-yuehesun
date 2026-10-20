@@ -11,6 +11,23 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // from every other one running concurrently.
 const tagStorage = new AsyncLocalStorage<string>();
 
+// Crit 10 extension, Stage 9 (plans/crit-10.md "Extension"): the in-process
+// harness (sim/, spec/fairness-properties.test.ts) runs hundreds of
+// sequences through the real queue.ts, and every logged event/request line
+// would otherwise flood the test runner's own stdout with noise nobody
+// reads. A sink swap, not an env var or a route — nothing reachable from
+// the running app can silence its own logs (plans/crit-10.md's whole
+// point is that those lines are read at the crit).
+let sink: (line: string) => void = (line) => console.log(line);
+
+export function setSink(fn: (line: string) => void): void {
+  sink = fn;
+}
+
+export function useConsoleSink(): void {
+  sink = (line) => console.log(line);
+}
+
 export function genTag(): string {
   return Math.random().toString(16).slice(2, 8);
 }
@@ -55,12 +72,12 @@ function formatField(key: string, value: string | number): string {
 // prints with a one-off tag rather than throwing.
 export function logEvent(name: string, fields: Record<string, string | number> = {}): void {
   const parts = [`[${currentTag()}]`, name, ...Object.entries(fields).map(([k, v]) => formatField(k, v))];
-  console.log(parts.join(" "));
+  sink(parts.join(" "));
 }
 
 // The fixed request-line shape: [tag] METHOD path status XXms user=Y.
 // Only called for state-changing (POST) requests — see app.ts's logging
 // middleware and plans/crit-10.md's scope note on why GETs are excluded.
 export function logRequest(tag: string, method: string, path: string, status: number, ms: number, user: string): void {
-  console.log(`[${tag}] ${method} ${path} ${status} ${ms}ms user=${user}`);
+  sink(`[${tag}] ${method} ${path} ${status} ${ms}ms user=${user}`);
 }

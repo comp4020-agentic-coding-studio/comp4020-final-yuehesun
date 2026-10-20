@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — implementation pending (`plans/crit-10.md` Stage 11).
+Accepted.
 
 ## Context
 
