@@ -63,10 +63,11 @@ Option 3, used twice:
   7. no reservation disappears: each one is still active or has reached a
      final status.
   Plus direct tests for each timing rule on the virtual clock.
-- **Fairness simulation** (`scripts/simulate.ts`, `pnpm sim`): a seeded
-  Saturday in a 100-resident building, the same events run under three
+- **Behaviour simulation** (`scripts/simulate.ts`, `pnpm sim`; see ADR
+  0010 for why it's a testing practice, not a feature): a seeded Saturday
+  in a 100-resident building, the same events run under three
   missed-window policies (wait forever, eject, move back one), results in
-  `sim/results.json`, shown at `/fairness`.
+  `sim/results.json`, shown at `/simulation`.
 
 Both live on one harness in `sim/`: seeded PRNG, forward-only virtual
 clock, and a driver that calls the real `queue.ts` functions. The
@@ -82,7 +83,7 @@ missed-window policy can be switched only inside that harness.
   that only passes the cases a test author thought of.
 - ADR 0005's argument gets numbers. The numbers are only as good as the
   behaviour model (how late people are, how often they don't show), which
-  is assumed, not measured; `/fairness` says so.
+  is assumed, not measured; `/simulation` says so.
 - `queue.ts` gains a dependency on `src/clock.ts`, and `src/db.ts` gains
   a way to open an in-memory database. Both are small, and production
   behaviour is identical.
