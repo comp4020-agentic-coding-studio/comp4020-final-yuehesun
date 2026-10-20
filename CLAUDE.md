@@ -10,6 +10,49 @@ where it lives --- `fly.toml`, the `Dockerfile`, the CI workflow and
 publishes this deliverable's brief and spec. Read them before you plan or build;
 what the agent needs to carry from any of it is your call.
 
+## Unattended runs
+
+When `prompt.md` exists at the repo root, it is the brief for one
+unattended run, and these rules replace the stop-and-wait steps in
+Workflow below for that run only:
+
+- Nobody is available. Don't ask questions and don't wait for feedback.
+  Where Workflow says "show the user and wait", verify it yourself (a
+  spec, a scripted check, or Playwright screenshots) and record what you
+  checked in the commit message.
+- Where you would have asked for a decision, make the smallest reasonable
+  call, record it and why in the commit message and in `HANDOFF.md`, and
+  carry on. Never reopen a decision the prompt or an ADR marks as settled.
+- Commit after each finished step with a message saying what changed and
+  why. `pnpm check` is green before every commit.
+- If the same check fails twice after honest fixes, step back and rethink
+  the approach; if still stuck, write down what you tried in `HANDOFF.md`
+  and move to the next stage.
+- Never edit `README.md`, `PROCESS.md`, `process-notes.md` or
+  `reflections/`: those are mine. Suggestions for them go in `HANDOFF.md`.
+- Don't push and don't deploy. The last commit deletes `prompt.md`.
+- Every other rule in this file still applies.
+
+## Test harness rules
+
+- Queue logic reads the time only through `src/clock.ts`. Never call
+  `Date.now()` directly in `src/queue.ts`.
+- In-process tests and the simulator run on a fresh in-memory database.
+  They never touch `.data/app.db`, the app at `APP_URL`, or the deployed
+  app.
+- `sim/` drives the real `queue.ts` functions. Never copy queue logic into
+  a test or the simulator: a copy can pass while the real rules fail.
+- The simulator may switch the missed-window policy; the running app never
+  can. No env var, route, setting or default reachable in production
+  selects anything other than move-back-one (ADR 0005, ADR 0007).
+- A spec that starts its own server uses a port of 8090 or above, never
+  8080, and always kills it and confirms the port is free — on failure
+  too.
+- Never write conclusions about what the simulation's numbers mean into
+  `README.md` or `PROCESS.md`; report the numbers, the argument is mine.
+- When a test finds a real bug, the fix lands with a test that would have
+  caught it, or a rule in this file — not just a patched line.
+
 ## Language
 
 - Chat with me in Chinese. Everything that lands in the repo — code,
