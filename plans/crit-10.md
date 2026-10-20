@@ -357,9 +357,131 @@ usual stop-after-each-stage workflow: see `process-notes.md`.
 - **Stage 12** — home page redesign: Flighty reference
   (`research/flighty/`), design plan committed before CSS, scored
   screenshot review rounds at 390px and 1280px, before/after screenshots.
-- **Stage 13 (stretch)** — fairness simulation, `sim/results.json`,
-  `/fairness`.
+- **Stage 13 (stretch)** — behaviour simulation, `sim/results.json`,
+  `/simulation`. Refined below, after the unattended run, once Stage 5
+  (contention) and Stage 1's harness were already built and real enough
+  to build the simulation against.
 - Stage 8 (wrap-up) runs after the review of the run's branch.
+
+### Stage 13 detail (refined once actually attempted)
+
+**The policy switch** (`src/queue.ts`): a module-level
+`missedWindowPolicy`, default `"move-back-one"`, changed only by
+`setMissedWindowPolicy()` — a function `app.ts`/`realtime.ts` never
+import, so nothing reachable from the running app can call it (`CLAUDE.md`'s
+test harness rule). `moveBackOnePlace`'s two call sites inside
+`settleMachineInner` go through a new `applyMissedWindowPolicy` instead,
+which branches on the policy: `"move-back-one"` keeps calling the
+existing function unchanged, `"eject"` marks the reservation `"missed"`
+(the status already existed in the schema from crit 8, unused since ADR
+0005 — no schema change needed), `"wait-forever"` does nothing at all.
+
+**`scripts/simulate.ts`'s behaviour model, and a bug this plan exists to
+prevent next time:** residents are generated once per simulated day
+(Poisson-distributed loads per resident, arrival minute, washing/drying
+type, whether they ever claim/start at all). The first version also fixed
+*how late* each resident would be — a single number rolled once per
+resident and reused every time they got a chance to claim. That was
+wrong: under `move-back-one`, a resident whose one fixed lateness number
+happened to exceed the claim window would miss *every single future
+chance* the same way, forever, with whoever was swapped into their old
+spot immediately inheriting the exact same fate — producing an
+unbounded, pointless front-two ping-pong for the rest of the simulated
+day and absurd numbers (500+ swaps, a 524-minute wait, from ~60 loads of
+laundry). The fix: a resident's *trait* (do they ever claim/start at
+all — `neverClaims`/`neverStartsOnceClaimed`, fixed once) is separate
+from their lateness *on one particular attempt* (re-rolled fresh, from
+the shared seeded RNG, every time a claim/start window newly opens — see
+`scripts/simulate.ts`'s own comment on `ResidentPlan`). A real person
+doesn't miss a window by the identical margin twice in a row; modelling
+it that way isn't a simplification, it's a different (and badly behaved)
+model. **Caught by manually running `runOneDay` once per policy with
+console output before trusting the aggregate numbers** — worth doing
+again before trusting any future change to the behaviour model, not just
+running the full 50-seed batch straight into `sim/results.json` and
+eyeballing only the final aggregate.
+
+**Policy-event detection doesn't parse log lines.** The simulation needs
+to count "a reservation got moved back or ejected" without depending on
+`logging.ts`'s stdout format (that's for a person reading `flyctl logs`,
+not a stable data contract). Instead: snapshot each machine's front
+reservation before `advanceMinutes(1)`, and diff against the front after.
+If the `status` was `waiting`/`claimed` and the front `reservationId`
+changed, that's exactly one policy event (a legitimate claim/start
+succeeding, or a wash finishing on schedule, never changes who's at the
+front except through the resident's own action or a real completion —
+both leave the id unchanged mid-cycle). Whether the missed reservation is
+still present elsewhere in the queue (moved back) or gone entirely
+(ejected) tells the two cases apart without needing the policy value
+itself in this part of the code.
+
+**Performance, and a real incident this plan exists to prevent next
+time:** one full simulated day (840 one-minute ticks, 10 machines) takes
+~4-6 seconds on its own, measured in isolation. Running the real batch —
+50 seeds × 3 policies, 150 of those days back to back — hung the whole
+WSL2 machine hard enough to need a full Windows restart, twice, including
+once run from a plain terminal with no Claude Code session attached at
+all (ruling out the agent's own background-task handling as the cause).
+The actual defect: `runSimulation()` has no `await` anywhere in its
+150-iteration outer loop, each containing an 840-iteration inner loop,
+each doing several synchronous better-sqlite3 queries against
+unindexed tables (`src/schema.ts` has no indexes on `reservations` or
+`offers`) — around 126,000 total ticks and several times that many
+queries, all inside one synchronous JS call stack with no point where
+Node's event loop (or, under virtualization, the host scheduler) ever
+gets control back. A slow computation is not inherently dangerous; a
+*long, uninterruptible* one run inside a VM is a different and riskier
+thing, and this one ran uninterrupted for the entire 10-15 minutes.
+**Fix:** `runOneDay` becomes `async`, and yields control (`await new
+Promise(r => setImmediate(r))`) every 60 simulated minutes — enough
+yield points (14 per day × 150 runs ≈ 2,100) to keep the process
+genuinely interruptible and give the host a chance to breathe,
+without slowing the actual computation meaningfully (`setImmediate`
+costs microseconds, not milliseconds). `runSimulation`'s own seed loop
+also yields once per seed, so progress is visible and the process can be
+interrupted between seeds, not just at the very end.
+`spec/simulate-determinism.test.ts` calls `runOneDay` with `await` too —
+yielding control doesn't touch the RNG sequence or any decision the
+function makes, so determinism is unaffected, but the test (and its
+`it()` callback) needs to be `async` to await it correctly.
+**Verification is the user's own, deliberately — not re-run by the
+agent** given the hardware cost of being wrong twice already: build with
+no execution, hand the user the exact command and what to watch for, let
+them run it themselves with the resource monitor open.
+The arrival-time machine selection (which washer has the shortest queue)
+was also changed from calling `queueFor()` once per candidate machine per
+arrival (up to 8 extra `settleMachine()` calls a minute for no reason) to
+one `allReservations()` read reused for every arrival that minute — a
+real measured win, independent of the hang fix above, from the earlier
+performance pass.
+
+**Remaining steps, in order, each verified before the next starts:**
+
+1. `simulationPage` view + `/simulation` route, reading `sim/results.json`
+   fresh on every request (same pattern as `README.md` via
+   `src/readme.ts` — not cached at boot, so a re-run of `pnpm sim` shows
+   up without restarting the server). Handle the file not existing yet
+   with a plain message, not a crash.
+2. `spec/simulate-determinism.test.ts`: same seed and policy, run twice
+   on a freshly reset harness, expect byte-identical `RawMetrics`. Run in
+   isolation first (it's slow — two `runOneDay` calls — give it its own
+   timeout) before trusting it inside a full `pnpm check`.
+3. Full `pnpm sim` run (50 seeds × 3 policies, ~10-15 min) to produce the
+   real, committed `sim/results.json` — the one used above was a
+   deliberately small manual run for debugging the model, not the real
+   artifact.
+4. Look at `/simulation` rendered for real (both viewports), not just trust
+   the HTML — this is still a UI surface, and Stage 12's whole lesson was
+   that un-viewed output is how a plain/wrong design ships.
+5. `Dockerfile`: add `COPY sim/results.json ./sim/results.json` (or the
+   whole `sim/` output directory) so the deployed image actually has
+   something for `/simulation` to read — it currently only copies `src`,
+   `drizzle`, `README.md`.
+6. Full `pnpm check` on a scratch port, confirm green, confirm the port
+   freed, before committing.
+7. Report Stage 5's numbers as a neutral table in `HANDOFF.md`
+   only — never a conclusion about which policy is "better" anywhere in
+   `README.md`/`PROCESS.md` (`CLAUDE.md`'s test harness rule).
 
 ### What I check after the run
 
