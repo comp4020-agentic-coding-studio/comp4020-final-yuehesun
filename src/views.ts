@@ -20,29 +20,52 @@ type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
 // --- page shell --------------------------------------------------------
 
-// Palette: dataviz skill's reference palette (docs/adr/0003's "small,
-// plain CSS" — no framework, just custom properties). Status colours are
-// never used as text-on-fill (poor contrast for `warning`); they're
-// accents (icon, border, badge dot) beside a text label, per plans/crit-8.md's
-// accessibility rule — colour never carries meaning alone.
+// Crit 10 extension, Stage 12 (plans/crit-10.md "Extension";
+// research/design-plan.md): every colour, type size and space used below
+// is one of the tokens that plan names — nothing ad-hoc. Palette is 6
+// named colours with one role each; state colours are always paired with
+// a text label in the markup (plans/crit-8.md's rule: colour never
+// carries meaning alone). The old pale-cyan "--page" background, the
+// identical-white-rounded-card machine grid, and the single centred
+// column at any width are the three things research/design-plan.md's own
+// self-review flagged as the generic version of this page — all three
+// are gone below, replaced by a departure-board layout (research/flighty/
+// mapping.md), a warm paper background, and a 1280px layout that puts the
+// status block beside the board instead of above a narrower column.
 const STYLES = `
   :root {
+    /* palette (research/design-plan.md "Palette") */
+    --ink: #1c1a17;
+    --ink-muted: #6b6358;
+    --paper: #f6f3ec;
     --surface: #ffffff;
-    --page: #e3f4f7;
-    --ink: #0b0b0b;
-    --ink-muted: #52514e;
-    --ink-faint: #898781;
-    --border: rgba(11,11,11,0.1);
-    --good: #0ca30c;
-    --good-tint: #e9f7e9;
-    --warning: #c98500;
-    --warning-tint: #fff4de;
-    --info: #2a78d6;
-    --info-tint: #e8f1fb;
-    --mine: #4a3aa7;
-    --mine-tint: #efecfa;
+    --rule: #ded7c8;
+    --free: #1f6f5c;
+    --free-tint: #e3efe9;
+    --info: #2b5f8a;
+    --info-tint: #e5edf3;
+    --alert: #b5402a;
+    --alert-tint: #f5e6e1;
     --dryer: #b5461f;
-    --card-radius: 1.25rem;
+
+    /* type scale (research/design-plan.md "Type") */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 2rem;
+    --text-hero: 4.5rem;
+
+    /* spacing scale (research/design-plan.md "Spacing") */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+
+    --card-radius: 1rem;
   }
   * { box-sizing: border-box; }
   /* visually hidden but still read by a screen reader — used by the
@@ -55,170 +78,158 @@ const STYLES = `
   }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    max-width: 48rem; margin: 0 auto; padding: 1rem 1rem 3rem;
-    background: var(--page); color: var(--ink);
+    max-width: 72rem; margin: 0 auto; padding: var(--space-4) var(--space-4) var(--space-7);
+    background: var(--paper); color: var(--ink); font-size: var(--text-base);
   }
-  h1 { font-size: 2.25rem; font-weight: 800; margin: 0.75rem 0 1.25rem; letter-spacing: -0.02em; }
+  h1 { font-size: var(--text-xl); font-weight: 800; margin: var(--space-3) 0 var(--space-5); letter-spacing: -0.02em; }
   h1 a { color: inherit; text-decoration: none; }
-  h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+  h2 { font-size: var(--text-base); margin: 0 0 var(--space-2); }
   a { color: var(--info); }
-  /* the pale-cyan page background sits close to --info's hue, so the nav
-     — which lives directly on that background, not on a white card —
-     needs a darker, higher-contrast shade to actually stand out */
-  .topnav { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-  .topnav a { color: #0f4c81; text-decoration: none; font-weight: 600; }
+  .topnav { display: flex; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); font-size: var(--text-sm); }
+  .topnav a { color: var(--info); text-decoration: none; font-weight: 600; }
 
   /* buttons: the live action is loud, Cancel stays quiet (plans/crit-8.md) */
   button, .btn {
     font: inherit; border-radius: 0.5rem; padding: 0.55rem 1rem;
-    border: 1px solid var(--border); cursor: pointer;
+    border: 1px solid var(--rule); cursor: pointer;
     display: inline-block; text-decoration: none;
   }
-  .btn-primary { background: var(--warning); border-color: var(--warning); color: #241a00; font-weight: 700; }
-  .btn-mine { background: var(--mine); border-color: var(--mine); color: white; font-weight: 700; }
-  .btn-quiet { background: transparent; color: var(--ink-muted); font-size: 0.875rem; padding: 0.3rem 0.6rem; }
-  button:focus-visible, a:focus-visible, input:focus-visible {
-    outline: 3px solid var(--mine); outline-offset: 2px;
+  .btn-primary { background: var(--alert); border-color: var(--alert); color: white; font-weight: 700; }
+  .btn-quiet { background: transparent; color: var(--ink-muted); font-size: var(--text-sm); padding: 0.3rem 0.6rem; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--info); outline-offset: 2px;
   }
   form { display: inline-block; margin: 0.25rem 0.4rem 0 0; }
-  input[type="text"] { font: inherit; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border); }
+  input[type="text"], select { font: inherit; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
 
-  /* status badge: icon + text label always together, colour is never the only cue */
-  .badge {
-    display: inline-flex; align-items: center; gap: 0.3rem;
-    font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.55rem;
-    border-radius: 999px; white-space: nowrap;
-  }
-  .badge-good { background: var(--good-tint); color: #0a5c0a; }
-  .badge-info { background: var(--info-tint); color: #184f95; }
-  .badge-warning { background: var(--warning-tint); color: #7a5300; }
-  .badge-neutral { background: #eeede9; color: var(--ink-muted); }
+  /* tabular figures everywhere a time or countdown appears, so digits
+     never shift width as they tick (research/design-plan.md "Type") */
+  .num { font-variant-numeric: tabular-nums; }
 
-  /* round numbered queue-position badge, deli-ticket style — used only
-     inside a machine card's own numbered list, where the <ol> itself is
-     the context for what the number means */
-  .position {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 1.6rem; height: 1.6rem; border-radius: 50%;
-    background: #eeede9; color: var(--ink); font-weight: 700; font-size: 0.8rem;
-    flex: none;
-  }
-  .mine .position { background: var(--mine); color: white; }
+  /* state word + colour, always together (plans/crit-8.md: colour never
+     the only cue) — used for both a machine's board state and a
+     reservation's own status word in the status block. */
+  .state-word { font-weight: 700; }
+  .state-free { color: var(--free); }
+  .state-unclaimed, .state-alert { color: var(--alert); }
+  .state-running, .state-claimed { color: var(--info); }
+  .state-muted { color: var(--ink-muted); font-weight: 600; }
 
-  /* "#N in line" pill — the same badge pulled out on its own (only used
-     in the pinned "your status" block, where every row is already yours)
-     needs the words, not just a lone number, so it's one bordered pill
-     instead of a bare circle sitting next to separate text. Always the
-     "mine" colour, since everything in that block is the viewer's own. */
-  .position-line {
-    display: inline-flex; align-items: center; gap: 0.3rem;
-    background: var(--mine); color: white; font-weight: 700; font-size: 0.8rem;
-    border-radius: 999px; padding: 0.2rem 0.65rem;
-  }
-
-  /* time chip: clock time + relative time together; fixed = solid, estimate = dashed */
-  .chip {
-    display: inline-flex; flex-direction: column; align-items: flex-start;
-    border-radius: 0.6rem; padding: 0.3rem 0.6rem; margin: 0.15rem 0.3rem 0.15rem 0;
-    border: 1px solid var(--border); background: var(--surface);
-  }
-  .chip-fixed { border-style: solid; background: #f1f1ee; }
-  .chip-estimate { border-style: dashed; color: var(--ink-muted); }
-  .chip-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.02em; color: var(--ink-faint); }
-  .chip-time { font-weight: 700; font-size: 1.05rem; line-height: 1.2; }
-  .chip-relative { font-size: 0.78rem; color: var(--ink-muted); }
-  .chip-compact { flex-direction: row; gap: 0.3rem; align-items: baseline; padding: 0.1rem 0.5rem; }
-  .chip-compact .chip-label { font-size: 0.68rem; }
-  .chip-compact .chip-time { font-size: 0.85rem; }
-
-  /* pinned "my status" block: answers "am I up yet?" without hunting a grid */
-  .my-status {
-    background: var(--mine-tint); border: 1px solid var(--mine);
-    border-radius: var(--card-radius); padding: 0.9rem 1rem; margin-bottom: 1.25rem;
-  }
-  .my-status h2 { color: var(--mine); }
-  .my-status-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  /* "#N in line" — present but secondary (research/design-plan.md's
+     self-review: queue position is no longer the page's dominant figure,
+     remaining time is). */
+  .position-line { font-weight: 600; color: var(--ink-muted); font-size: var(--text-sm); }
 
   /* status-dot sequence: one reservation's own waiting -> claimed ->
      running -> done lifecycle, which is genuinely linear (unlike queue
      *position*, which moves back one place on a missed window — that
-     stays the existing "#N in line" text, never this). A filled dot with
-     a check mark means done; the current step is filled but hollow-ringed
-     to stand out; upcoming steps are a plain hollow ring. Colour/fill is
-     a shortcut, not the only signal — each dot also has visually-hidden
-     text a screen reader announces (plans/crit-8.md's accessibility rule). */
-  .status-dots { display: flex; align-items: center; margin: 0.5rem 0; }
+     stays the "#N in line" text, never this). Small and muted here —
+     secondary to the hero figure and reason line, not competing with
+     them. Colour/fill is a shortcut, not the only signal — each dot also
+     has visually-hidden text a screen reader announces. */
+  .status-dots { display: flex; align-items: center; margin: var(--space-2) 0; }
   .status-dots .dot {
-    width: 1.1rem; height: 1.1rem; border-radius: 50%; flex: none;
-    border: 2px solid var(--mine); display: flex; align-items: center; justify-content: center;
-    font-size: 0.65rem; font-weight: 700; color: var(--mine); background: var(--surface);
+    width: 0.9rem; height: 0.9rem; border-radius: 50%; flex: none;
+    border: 2px solid var(--ink-muted); display: flex; align-items: center; justify-content: center;
+    font-size: 0.6rem; font-weight: 700; color: var(--ink-muted); background: var(--surface);
   }
-  .status-dots .dot-line { flex: 1; height: 2px; background: var(--border); min-width: 0.75rem; }
-  .status-dots .dot-done { background: var(--mine); color: white; }
-  .status-dots .dot-done + .dot-line { background: var(--mine); }
-  .status-dots .dot-current { outline: 3px solid var(--mine-tint); }
+  .status-dots .dot-line { flex: 1; height: 2px; background: var(--rule); min-width: 0.6rem; }
+  .status-dots .dot-done { background: var(--info); border-color: var(--info); color: white; }
+  .status-dots .dot-done + .dot-line { background: var(--info); }
+  .status-dots .dot-current { border-color: var(--info); color: var(--info); outline: 3px solid var(--info-tint); }
 
-  /* machine cards: single column on phone, grid on a wide screen (no JS) */
-  .machines {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-    gap: 1rem;
+  /* --- the signature element: my own status --- */
+  .status-hero {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--card-radius); padding: var(--space-5) var(--space-4);
+    margin-bottom: var(--space-5);
   }
-  .machine {
-    border: 1px solid var(--border); border-radius: var(--card-radius); padding: 1rem;
-    background: var(--surface); border-left-width: 6px;
-    box-shadow: 0 1px 3px rgba(11,11,11,0.06);
+  .status-hero + .status-hero { margin-top: var(--space-4); }
+  .hero-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); font-weight: 700; margin: 0 0 var(--space-1); }
+  .hero-figure {
+    font-size: var(--text-hero); font-weight: 800; line-height: 1; letter-spacing: -0.02em;
+    margin: 0 0 var(--space-3);
   }
-  .machine-free { border-left-color: var(--good); }
-  .machine-running { border-left-color: var(--info); }
-  .machine-unclaimed { border-left-color: var(--warning); background: var(--warning-tint); }
-  .machine-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
-  .machine-head h2 { margin: 0; }
-  .machine-icon { flex: none; color: var(--ink-muted); }
+  .hero-figure-static { font-size: var(--text-xl); color: var(--ink-muted); }
+  .hero-meta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+  .hero-meta .machine-icon { width: 1.5rem; height: 1.5rem; }
+  .hero-reason { font-size: var(--text-base); margin: 0 0 var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+  .hero-reason form { margin: 0; }
+  .hero-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 
-  .queue-list { list-style: none; margin: 0.5rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
-  .queue-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-  .queue-row.mine { font-weight: 600; }
+  /* --- the board: one row per machine, departure-board style --- */
+  .board-section { margin-bottom: var(--space-6); }
+  .board-section h2 { font-size: var(--text-lg); color: var(--ink); margin-bottom: var(--space-3); }
+  .board { border-top: 1px solid var(--rule); }
+  .board-row {
+    display: grid; grid-template-columns: 2fr 1.3fr 1.3fr 1.3fr;
+    gap: var(--space-3); align-items: center;
+    padding: var(--space-3) 0; border-bottom: 1px solid var(--rule);
+  }
+  .board-head { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); font-weight: 700; }
+  .board-row-mine { background: rgba(28,26,23,0.035); margin: 0 calc(-1 * var(--space-3)); padding-left: var(--space-3); padding-right: var(--space-3); border-radius: 0.5rem; }
+  .board-cell-machine { display: flex; align-items: center; gap: var(--space-2); font-weight: 600; }
+  .board-cell-machine .machine-icon { flex: none; }
+  .board-label { display: none; }
+  .board-reserve { grid-column: 1 / -1; display: flex; gap: var(--space-2); align-items: center; margin-top: var(--space-2); }
+  .board-reserve form { margin: 0; display: flex; gap: var(--space-2); }
+  @media (max-width: 640px) {
+    .board-head { display: none; }
+    .board-row { grid-template-columns: 1fr; gap: var(--space-1); }
+    .board-label { display: inline; font-weight: 700; color: var(--ink-muted); margin-right: var(--space-1); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .board-row { transition: background-color 0.15s ease; }
+  }
 
-  .error { color: #8a1f1f; background: #fdeceb; border: 1px solid #e0a9a4; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; }
+  .error { color: var(--alert); background: var(--alert-tint); border: 1px solid var(--alert); border-radius: 0.5rem; padding: var(--space-3); margin-bottom: var(--space-4); }
+
+  /* offer card and dryer prompt: a decision to make (two buttons), not
+     just something to acknowledge — border marks it as something to act
+     on, reusing the hero-reason row's own layout. */
+  .decision-card { background: var(--free-tint); border: 1px solid var(--free); border-radius: var(--card-radius); padding: var(--space-4); margin-bottom: var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+  .decision-card form { margin: 0; }
+  .decision-card select { margin-right: var(--space-2); }
 
   /* crit 9: tells both sides of a move-back-one swap what happened and
      why — stays until dismissed, not a toast that fades on its own */
-  .notice { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: var(--info-tint); color: #184f95; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0.4rem 0; font-size: 0.9rem; }
-  .notice form { margin: 0; }
-  /* offer card: the same notice banner, but with a decision to make (two
-     buttons) rather than one to acknowledge — border marks it as
-     something to act on, not just read */
-  .offer-card { border: 1px solid var(--mine); flex-wrap: wrap; }
-  /* dryer prompt: same shape as the offer card (a decision, not just an
-     acknowledgement) — crit 9 Stage 8 */
-  .dryer-prompt { border: 1px solid var(--mine); flex-wrap: wrap; margin-top: 0.6rem; }
+  .notice-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); background: var(--alert-tint); color: var(--alert); border-radius: 0.5rem; padding: var(--space-3); margin: 0 0 var(--space-3); font-size: var(--text-sm); font-weight: 600; }
+  .notice-banner form { margin: 0; }
 
   /* crit 10 extension, Stage 10 (ADR 0008): a dropped SSE connection must
-     never leave a stale queue on screen silently — warning colour, not
-     info, since it's telling you the page might be behind right now. */
-  .connection-notice { background: var(--warning-tint); color: #7a5300; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin: 0 0 0.75rem; font-size: 0.9rem; font-weight: 600; }
+     never leave a stale queue on screen silently — alert colour, since
+     it's telling you the page might be behind right now. */
+  .connection-notice { background: var(--alert-tint); color: var(--alert); border-radius: 0.5rem; padding: var(--space-3); margin: 0 0 var(--space-4); font-size: var(--text-sm); font-weight: 600; }
 
   /* crit 10 extension, Stage 11 (ADR 0009): the dialog browsers focus
      automatically on showModal() — no extra focus-management script
      needed, and Escape closes it via the dialog element's own built-in
      behaviour (both captured by the "close" listener in TURN_ALERT_SCRIPT). */
-  .turn-alert { border: none; border-radius: var(--card-radius); padding: 1.25rem 1.5rem; max-width: 24rem; box-shadow: 0 8px 24px rgba(11,11,11,0.18); }
-  .turn-alert::backdrop { background: rgba(11,11,11,0.4); }
-  .turn-alert p { margin: 0 0 1rem; font-size: 1.05rem; }
+  .turn-alert { border: none; border-radius: var(--card-radius); padding: var(--space-5) var(--space-5); max-width: 24rem; box-shadow: 0 8px 24px rgba(28,26,23,0.18); }
+  .turn-alert::backdrop { background: rgba(28,26,23,0.4); }
+  .turn-alert p { margin: 0 0 var(--space-4); font-size: var(--text-lg); }
   .turn-alert form { margin: 0; display: block; }
 
   /* the landing page's app introduction */
-  .intro { line-height: 1.6; margin-bottom: 1.25rem; }
-  .intro p { margin: 0.6rem 0; }
+  .intro { line-height: 1.6; margin-bottom: var(--space-5); }
+  .intro p { margin: var(--space-3) 0; }
+
+  /* --- wide layout (research/design-plan.md's 1280px wireframe): status
+     beside the board, using the width, not one narrow centred column --- */
+  .page-layout { display: block; }
+  @media (min-width: 900px) {
+    .page-layout { display: grid; grid-template-columns: 22rem 1fr; gap: var(--space-7); align-items: start; }
+    .status-column { position: sticky; top: var(--space-4); }
+  }
 
   /* README.md, rendered in full at /readme/ */
-  .prose { line-height: 1.6; }
+  .prose { line-height: 1.6; max-width: 48rem; }
   .prose h1 { font-size: 1.5rem; }
-  .prose h2 { font-size: 1.2rem; margin-top: 1.5rem; }
-  .prose h3 { font-size: 1.05rem; margin-top: 1.25rem; }
-  .prose p, .prose ul, .prose ol { margin: 0.75rem 0; }
-  .prose li { margin: 0.25rem 0; }
-  .prose code { background: #eeede9; border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
+  .prose h2 { font-size: 1.2rem; margin-top: var(--space-5); }
+  .prose h3 { font-size: 1.05rem; margin-top: var(--space-5); }
+  .prose p, .prose ul, .prose ol { margin: var(--space-3) 0; }
+  .prose li { margin: var(--space-1) 0; }
+  .prose code { background: var(--rule); border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -489,7 +500,7 @@ function relativeTime(ms: number, now: number): string {
 // alone (plans/crit-8.md's rule: colour is never the only cue).
 function machineIcon(number: number, type: Machine["type"]): Html {
   const isDryer = type === "dryer";
-  const drumFill = isDryer ? "var(--dryer)" : "var(--mine)";
+  const drumFill = isDryer ? "var(--dryer)" : "var(--info)";
   const topDetail = isDryer
     ? `<path d="M6 4.3h1.8M9.1 4.3h1.8M12.2 4.3h1.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`
     : `<rect x="6" y="4.3" width="7" height="1.6" rx="0.8" stroke="currentColor" stroke-width="1.1"/>`;
@@ -506,38 +517,39 @@ function machineIcon(number: number, type: Machine["type"]): Html {
   );
 }
 
-function badge(kind: "good" | "info" | "warning" | "neutral", icon: string, label: string): Html {
-  return html`<span class="badge badge-${kind}"><span aria-hidden="true">${icon}</span> ${label}</span>`;
-}
-
 // One status vocabulary, used everywhere a reservation or a machine shows
-// up (plans/crit-8.md's status colours: good/info/warning, text label
-// always present, colour never the only cue).
+// up — a CSS class for the colour, the word itself always present in the
+// markup (research/design-plan.md's state table: colour never carries
+// meaning alone). Returns the class and the label separately so callers
+// can lay them out differently (a board cell's state-word span vs. the
+// status hero's own larger reason line).
+function stateWordFor(row: QueueRow, forOwner: boolean): { cls: string; label: string } {
+  if (row.status === "running") return { cls: "state-running", label: "Washing" };
+  if (row.status === "claimed") return { cls: "state-claimed", label: "Claimed" };
+  if (row.position === 1) return forOwner ? { cls: "state-alert", label: "Your turn" } : { cls: "state-unclaimed", label: "Unclaimed" };
+  if (row.position === 2) return { cls: "state-muted", label: "Nearly your turn" };
+  return { cls: "state-muted", label: "Waiting" };
+}
+
 function rowBadge(row: QueueRow, forOwner: boolean): Html {
-  if (row.status === "running") return badge("info", "↻", "Running");
-  if (row.status === "claimed") return badge("info", "✓", "Claimed");
-  if (row.position === 1) return badge("warning", "⚠", forOwner ? "Your turn" : "Unclaimed");
-  return badge("neutral", "…", "Waiting");
+  const { cls, label } = stateWordFor(row, forOwner);
+  return html`<span class="state-word ${cls}">${label}</span>`;
 }
 
-function positionBadge(n: number): Html {
-  return html`<span class="position">${n}</span>`;
-}
-
-// Bare `positionBadge` reads fine inside the machine card's numbered
-// queue list (reservationLine), where the <ol> itself is the context —
-// but pulled out on its own, in the pinned "your status" block or the
-// home page's own row for your reservation, a lone number has nothing
-// around it saying what it counts. One pill with "#N in line" replaces
-// the circle entirely here, rather than sitting a text label next to it —
-// a circled "1" and "#1 in line" are the same fact said twice.
+// "#N in line" — present but secondary now (research/design-plan.md's
+// self-review: the hero figure's remaining time is the page's dominant
+// number, queue position isn't).
 function positionLine(n: number): Html {
   return html`<span class="position-line">#${n} in line</span>`;
 }
 
-// mm:ss form for the one chip that actually ticks (the claim window) —
-// plans/crit-8.md calls for "an actual countdown, not static text", and a
-// deadline a few minutes out reads better to the second than "in 3 min".
+// mm:ss form for the countdown text — plans/crit-8.md calls for "an
+// actual countdown, not static text", and a deadline a few minutes out
+// reads better to the second than "in 3 min". Crit 10 extension, Stage 12
+// (research/design-plan.md "Type"): also used for the status hero's own
+// countdown to an estimated/fixed ready time, not just a claim window —
+// the live-ticking figure is itself the "remaining time" the hero's whole
+// job is to show.
 function countdownText(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -545,36 +557,6 @@ function countdownText(remainingMs: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function timeChip(label: string, ms: number, now: number, fixed: boolean, compact = false, countdown = false): Html {
-  const relative = countdown
-    ? html`<span class="chip-relative" data-countdown="${ms}">${countdownText(ms - now)}</span>`
-    : html`<span class="chip-relative">${relativeTime(ms, now)}</span>`;
-  return html`<div class="chip ${fixed ? "chip-fixed" : "chip-estimate"} ${compact ? "chip-compact" : ""}">
-    <span class="chip-label">${label}</span>
-    <span class="chip-time">${clockTime(ms)}</span>
-    ${relative}
-  </div>`;
-}
-
-// The one chip relevant to a given row: a countdown while it's unclaimed
-// and free, a finish time while running, or an estimated/fixed ready time
-// otherwise. The claim deadline also ticks client-side every second (see
-// the page shell's script) — plans/crit-8.md calls for an actual
-// countdown, not text that only updates when the card gets re-fetched.
-// The label itself says "Est." while unfixed, not just the chip's
-// dashed-vs-solid border — README.md argues uncertainty should be marked,
-// not just rendered subtly enough to miss (plans/crit-8.md's "estimated
-// vs. fixed" distinction is meant to be visible before you even read the
-// label, but it still needs the label to actually say so).
-//
-// Two labels deliberately avoid words the app uses for something else:
-// "Ready at" (not "Starts") is when the machine is yours to claim — not
-// when you actually start the wash, which is a separate tap after
-// claiming; "Ready" was picked over the earlier "Turn at" for being the
-// plainer, more everyday word, while still not colliding with "start."
-// "Finish at" (not "Free at") is when the current wash ends — "Free" is
-// the app's own word for a machine nobody's queued for, and a finished
-// machine with someone waiting goes to "unclaimed," not free.
 // Crit 10 extension, Stage 11 (plans/crit-10.md "Extension"; ADR 0009):
 // README's calm-technology argument names exactly two moments the queue
 // pulls you back for — one person ahead of you, and your turn. Computed
@@ -591,11 +573,21 @@ function alertStateFor(row: QueueRow): "one-ahead" | "my-turn" | undefined {
   return undefined;
 }
 
-function rowTimeChip(row: QueueRow, now: number, compact = false): Html {
-  if (row.status === "claimed") return raw("");
-  if (row.status === "running") return timeChip("Finish at", row.endMs, now, true, compact);
-  if (row.claimDeadlineMs != null) return timeChip("Claim by", row.claimDeadlineMs, now, false, compact, true);
-  return timeChip(row.fixed ? "Ready at" : "Est. ready at", row.scheduledStartMs, now, row.fixed, compact);
+// Crit 10 extension, Stage 12 (research/design-plan.md "Wireframes"): the
+// board's own "time left" column — one line, no label (the column header
+// already says what it is), tabular figures throughout. A countdown for
+// anything with a live deadline (the claim window); a plain finish clock
+// time for a running wash (nothing to count down to urgently mid-wash);
+// an em dash for "claimed" (no clock runs against you between claiming
+// and starting) or a genuinely free machine.
+function boardTimeCell(row: QueueRow | undefined, now: number): Html {
+  if (!row) return html`<span class="num state-muted">—</span>`;
+  if (row.status === "claimed") return html`<span class="num state-muted">—</span>`;
+  if (row.status === "running") return html`<span class="num">${clockTime(row.endMs)}</span>`;
+  if (row.claimDeadlineMs != null) {
+    return html`<span class="num" data-countdown="${row.claimDeadlineMs}">${countdownText(row.claimDeadlineMs - now)}</span>`;
+  }
+  return html`<span class="num state-muted">${relativeTime(row.scheduledStartMs, now)}</span>`;
 }
 
 // Crit 9 (plans/crit-9.md Stage 6): a reservation's own lifecycle really
@@ -642,9 +634,9 @@ function noticeBanner(row: QueueRow): Html {
   if (row.notice == null) return raw("");
   const text =
     row.notice === "moved_back"
-      ? "Your claim window passed, so you moved back one place."
+      ? "You moved back one place: no claim within 3 minutes."
       : "The person ahead of you missed their window — it's your turn now.";
-  return html`<div class="notice">
+  return html`<div class="notice-banner">
     <span>${text}</span>
     <form method="post" action="/reservations/${row.reservationId}/dismiss-notice">
       <button class="btn-quiet" type="submit">Got it</button>
@@ -720,62 +712,17 @@ export function identityPage(): Html {
   );
 }
 
-function reservationLine(row: QueueRow, identity: string, now: number): Html {
-  const mine = row.person === identity;
-  return html`<li class="queue-row ${mine ? "mine" : ""}">
-    ${positionBadge(row.position)}
-    <span>${mine ? "you" : row.person}</span>
-    ${rowBadge(row, mine)}
-    ${rowTimeChip(row, now, true)}
-  </li>`;
-}
-
-// The whole card is swapped as one unit (hx-swap="outerHTML") on its own
-// machine's SSE event, since the state class (free/unclaimed/running)
-// changes along with the content — the fetched replacement carries the
-// same id/trigger, so it keeps listening after every swap.
-export function machineCard(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
-  const mine = rows.find((r) => r.person === identity);
-  const front = rows[0];
-  const stateClass = !front ? "machine-free" : front.status === "waiting" ? "machine-unclaimed" : "machine-running";
-
-  return html`<div
-    class="machine ${stateClass}"
-    id="machine-${machine.id}"
-    hx-trigger="sse:machine-${machine.id}"
-    hx-get="/machines/${machine.id}/card"
-    hx-swap="outerHTML"
-  >
-    <div class="machine-head">
-      ${machineIcon(machine.id, machine.type)}
-      <h2>${machine.label}</h2>
-      ${!front ? badge("good", "✓", "Free") : raw("")}
-    </div>
-    ${rows.length === 0
-      ? raw("")
-      : html`<ol class="queue-list">
-          ${rows.map((r) => reservationLine(r, identity, now))}
-        </ol>`}
-    ${mine
-      ? html`<p>${actionButtons(mine)}</p>`
-      : html`<form method="post" action="/machines/${machine.id}/reservations">
-          <select name="washingType">${machine.type === "dryer" ? dryingTypeOptions() : washingTypeOptions()}</select>
-          <button class="btn-primary" type="submit">Reserve</button>
-        </form>`}
-  </div>`;
-}
-
 // Crit 9 (plans/crit-9.md Stage 3): "earlier machine" offer — accept
 // vacates the original reservation and claims the new machine directly;
 // decline leaves the original place untouched and hands it to the next
-// eligible person on the next tick. The countdown reuses the same
-// client-side ticking chip as a claim window, just against respondBy.
+// eligible person on the next tick. Crit 10 extension, Stage 12: reuses
+// the decision-card shape (free-tint, a border, two buttons) rather than
+// the old info-tint notice banner — this is a choice to make, not just
+// something to acknowledge, the same distinction the dryer prompt below
+// already drew.
 function offerCard(row: OfferRow, now: number): Html {
-  return html`<div class="notice offer-card">
-    <div>
-      <span>An earlier machine opened up: <strong>${row.machine.label}</strong>.</span>
-      ${timeChip("Respond by", row.offer.respondBy, now, false, true, true)}
-    </div>
+  return html`<div class="decision-card">
+    <span>An earlier machine opened up: <strong>${row.machine.label}</strong>. Respond by <span class="num" data-countdown="${row.offer.respondBy}">${countdownText(row.offer.respondBy - now)}</span> (${clockTime(row.offer.respondBy)}).</span>
     <div>
       <form method="post" action="/offers/${row.offer.id}/accept" style="display:inline">
         <button class="btn-primary" type="submit">Switch now</button>
@@ -793,7 +740,7 @@ function offerCard(row: OfferRow, now: number): Html {
 // resulting reservation doesn't start until this wash is done, so
 // there's no rush here the way there is with an offer's own countdown.
 function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Html {
-  return html`<div class="notice dryer-prompt">
+  return html`<div class="decision-card">
     <span>Want to queue <strong>${suggestion.label}</strong> for after this wash? It'll be ready when you are — the countdown doesn't start until your wash is done.</span>
     <div>
       <form method="post" action="/reservations/${washReservationId}/queue-dryer" style="display:inline">
@@ -807,35 +754,167 @@ function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Ht
   </div>`;
 }
 
+// A status hero's own clock-time figure, plain under the hero so a
+// glance at both tells you exactly when, not just "how long" — design
+// plan's wireframe keeps one plain-line reason, not a second number.
+function heroClockLine(row: QueueRow, now: number): Html {
+  if (row.status === "running") return html`ends at ${clockTime(row.endMs)}`;
+  if (row.status === "claimed" || row.status === "done") return raw(""); // no clock claim against either state
+  if (row.claimDeadlineMs != null) return html`claim by ${clockTime(row.claimDeadlineMs)}`;
+  return html`${row.fixed ? "" : "est. "}ready at ${clockTime(row.scheduledStartMs)}`;
+}
+
+// Crit 10 extension, Stage 12 (research/design-plan.md's signature
+// element): the remaining-time figure is the single largest thing on the
+// page (--text-hero, 4.5x body text — research/design-plan.md "Type"),
+// and the one plain-line reason underneath names *why*, the same move
+// 03-delay-reason.jpg makes (a headline that answers "why," not "what").
+// `aheadLabel` is the one piece of information this function can't derive
+// from `row` alone — who's actually running ahead of you — so the caller
+// (myStatusBlock, which already has every machine's full row list)
+// resolves it and passes a ready-made string in.
+// The hero figure only ever counts down to a moment the viewer is
+// actually waiting on: the claim window (front, waiting), the estimated
+// or fixed ready time (further back in the queue), or the wash's own end
+// (running). "Claimed" has no clock running against the viewer at all
+// (the start window exists, but plans/crit-8.md never surfaced it as a
+// countdown even before this redesign, and inventing one here would
+// overstate how much is actually known) and "done" has nothing left to
+// count — both get a plain static word instead of a stale or fabricated
+// number.
+function heroCountdownTarget(row: QueueRow): number | undefined {
+  if (row.status === "running") return row.endMs;
+  if (row.status === "waiting") return row.claimDeadlineMs ?? row.scheduledStartMs;
+  return undefined;
+}
+
+function statusHero(
+  machine: Machine,
+  row: QueueRow,
+  now: number,
+  aheadLabel: string | undefined,
+  dryerSuggestion: DryerOption | undefined,
+): Html {
+  const { cls, label } = stateWordFor(row, true);
+  const countdownTarget = heroCountdownTarget(row);
+  const figure =
+    countdownTarget != null
+      ? html`<p class="hero-figure num" data-countdown="${countdownTarget}">${countdownText(countdownTarget - now)}</p>`
+      : html`<p class="hero-figure hero-figure-static state-muted">${row.status === "claimed" ? "Claimed" : "Done"}</p>`;
+
+  const reason =
+    row.status === "running"
+      ? "Your wash is running."
+      : row.status === "claimed"
+        ? "Claimed — start the wash when you're ready."
+        : row.status === "done"
+          ? "Done — thanks for using this machine."
+          : row.notice === "moved_back"
+            ? "You moved back one place: no claim within 3 minutes."
+            : row.notice === "moved_up"
+              ? "The person ahead of you missed their window — it's your turn now."
+              : row.position === 1
+                ? "Your turn — claim before this runs out."
+                : (aheadLabel ?? "Waiting for your turn.");
+
+  return html`<div class="status-hero" data-reservation="${row.reservationId}" data-alert="${alertStateFor(row) ?? ""}">
+    <p class="hero-label">Your status</p>
+    ${figure}
+    <div class="hero-meta">
+      ${machineIcon(machine.id, machine.type)}
+      <strong>${machine.label}</strong>
+      <span class="state-word ${cls}">${label}</span>
+    </div>
+    <p class="hero-reason">
+      <span>${reason} <span class="num">${heroClockLine(row, now)}</span></span>
+      ${positionLine(row.position)}
+    </p>
+    ${statusDots(row.status)}
+    <div class="hero-actions">${actionButtons(row)}</div>
+    ${dryerSuggestion ? dryerPromptCard(row.reservationId, dryerSuggestion) : raw("")}
+  </div>`;
+}
+
 export function myStatusBlock(
-  mine: { machine: Machine; row: QueueRow; dryerSuggestion?: DryerOption }[],
+  mine: { machine: Machine; row: QueueRow; aheadLabel?: string; dryerSuggestion?: DryerOption }[],
   myOffers: OfferRow[],
   now: number,
 ): Html {
   if (mine.length === 0 && myOffers.length === 0) return raw("");
-  return html`<div class="my-status">
-    <h2>Your status</h2>
-    ${myOffers.map((o) => offerCard(o, now))}
-    ${mine.map(
-      ({ machine, row, dryerSuggestion }) => html`<div
-        class="my-status-row-wrap"
-        data-reservation="${row.reservationId}"
-        data-alert="${alertStateFor(row) ?? ""}"
-      >
-        ${noticeBanner(row)}
-        ${statusDots(row.status)}
-        <div class="my-status-row">
-          ${machineIcon(machine.id, machine.type)}
-          <strong>${machine.label}</strong>
-          ${positionLine(row.position)}
-          ${rowBadge(row, true)}
-          ${rowTimeChip(row, now)}
-          ${actionButtons(row)}
-        </div>
-        ${dryerSuggestion ? dryerPromptCard(row.reservationId, dryerSuggestion) : raw("")}
-      </div>`,
-    )}
+  return html`${myOffers.map((o) => offerCard(o, now))}
+    ${mine.map(({ machine, row, aheadLabel, dryerSuggestion }) =>
+      html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion)}`,
+    )}`;
+}
+
+// Crit 10 extension, Stage 12 (research/design-plan.md "Wireframes"): one
+// row per machine, departure-board style — machine, state (word+colour),
+// next room, time left, aligned in columns, washers then dryers (the
+// design plan's own grouping). Replaces the old per-machine card grid,
+// which research/design-plan.md's self-review named as the generic
+// version of this page. The whole row still listens for its own machine's
+// SSE event and swaps outerHTML, same mechanism as the old card.
+function boardRow(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
+  const front = rows[0];
+  const mine = rows.find((r) => r.person === identity);
+  const { cls, label } = front ? stateWordFor(front, front.person === identity) : { cls: "state-free", label: "Free" };
+  const nextRoom = front ? (front.person === identity ? "you" : front.person) : "—";
+
+  return html`<div
+    class="board-row ${mine ? "board-row-mine" : ""}"
+    id="machine-${machine.id}"
+    hx-trigger="sse:machine-${machine.id}"
+    hx-get="/machines/${machine.id}/card"
+    hx-swap="outerHTML"
+  >
+    <span class="board-cell-machine">${machineIcon(machine.id, machine.type)} ${machine.label}</span>
+    <span><span class="board-label">State</span><span class="state-word ${cls}">${label}</span></span>
+    <span><span class="board-label">Next</span>${nextRoom}</span>
+    <span><span class="board-label">Time left</span>${boardTimeCell(front, now)}</span>
+    ${!mine
+      ? html`<div class="board-reserve">
+          <form method="post" action="/machines/${machine.id}/reservations">
+            <select name="washingType">${machine.type === "dryer" ? dryingTypeOptions() : washingTypeOptions()}</select>
+            <button class="btn-primary" type="submit">Reserve</button>
+          </form>
+        </div>`
+      : raw("")}
   </div>`;
+}
+
+// Exported under its old name (machineCard) since app.ts's
+// GET /machines/:id/card fragment route — what every board row's own
+// hx-trigger re-fetches on its machine's SSE event — calls it by this
+// name; the row itself is what changed shape, not the wiring around it.
+export function machineCard(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
+  return boardRow(machine, rows, identity, now);
+}
+
+function boardSection(title: string, machinesOfType: Machine[], rowsByMachine: Map<number, QueueRow[]>, identity: string, now: number): Html {
+  if (machinesOfType.length === 0) return raw("");
+  return html`<div class="board-section">
+    <h2>${title}</h2>
+    <div class="board">
+      <div class="board-row board-head">
+        <span>Machine</span><span>State</span><span>Next</span><span>Time left</span>
+      </div>
+      ${machinesOfType.map((m) => boardRow(m, rowsByMachine.get(m.id) ?? [], identity, now))}
+    </div>
+  </div>`;
+}
+
+// Looks up who's actually running ahead of `row` on its own machine, for
+// the status hero's one-plain-line reason (research/design-plan.md: "the
+// reservation ahead is the cause", mirroring 05-wheres-my-plane.jpg's
+// upstream-dependency framing). Only meaningful while still waiting
+// behind someone — the front-of-queue and already-committed cases never
+// call this.
+export function aheadLabelFor(allRowsForMachine: QueueRow[], row: QueueRow): string | undefined {
+  const idx = allRowsForMachine.findIndex((r) => r.reservationId === row.reservationId);
+  if (idx <= 0) return undefined;
+  const ahead = allRowsForMachine[idx - 1];
+  if (ahead.status === "running") return `Waiting on ${ahead.person}'s wash, ends ${clockTime(ahead.endMs)}.`;
+  return `Waiting behind ${ahead.person}.`;
 }
 
 export function homePage(
@@ -847,20 +926,33 @@ export function homePage(
   getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
 ): Html {
   const mine = machines.flatMap((m) => {
-    const row = (rowsByMachine.get(m.id) ?? []).find((r) => r.person === identity);
-    return row ? [{ machine: m, row, dryerSuggestion: getDryerSuggestion(row.reservationId) }] : [];
+    const rowsForMachine = rowsByMachine.get(m.id) ?? [];
+    const row = rowsForMachine.find((r) => r.person === identity);
+    return row
+      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row), dryerSuggestion: getDryerSuggestion(row.reservationId) }]
+      : [];
   });
+  const washers = machines.filter((m) => m.type === "washer");
+  const dryers = machines.filter((m) => m.type === "dryer");
 
   return page(
     "Machines",
-    html`<p>Signed in as <strong>${identity}</strong>.
-      <form method="post" action="/identity/clear" style="display:inline">
-        <button class="btn-quiet" type="submit">Switch room</button>
-      </form></p>
-      <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
-        ${myStatusBlock(mine, myOffers, now)}
+    html`<div class="page-layout">
+      <div class="status-column">
+        <p>Signed in as <strong>${identity}</strong>.
+          <form method="post" action="/identity/clear" style="display:inline">
+            <button class="btn-quiet" type="submit">Switch room</button>
+          </form>
+        </p>
+        <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
+          ${myStatusBlock(mine, myOffers, now)}
+        </div>
       </div>
-      <div class="machines">${machines.map((m) => machineCard(m, rowsByMachine.get(m.id) ?? [], identity, now))}</div>`,
+      <div class="board-column">
+        ${boardSection("Washers", washers, rowsByMachine, identity, now)}
+        ${boardSection("Dryers", dryers, rowsByMachine, identity, now)}
+      </div>
+    </div>`,
   );
 }
 

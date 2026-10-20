@@ -11,7 +11,7 @@ import { renderReadme } from "./readme.ts";
 import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage } from "./views.ts";
+import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage } from "./views.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -95,8 +95,11 @@ app.get("/my-status", (c) => {
   const now = Date.now();
   const allMachines = db.select().from(machines).all();
   const mine = allMachines.flatMap((m) => {
-    const row = queue.queueFor(m.id, now).find((r) => r.person === identity);
-    return row ? [{ machine: m, row, dryerSuggestion: queue.suggestedDryer(row.reservationId) }] : [];
+    const rowsForMachine = queue.queueFor(m.id, now);
+    const row = rowsForMachine.find((r) => r.person === identity);
+    return row
+      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row), dryerSuggestion: queue.suggestedDryer(row.reservationId) }]
+      : [];
   });
   const myOffers = pendingOffersFor(identity, now);
   return c.html(myStatusBlock(mine, myOffers, now));
