@@ -1,0 +1,1633 @@
+{
+  "generatedBy": "scripts/simulate.ts",
+  "seedCount": 50,
+  "model": {
+    "simulatedMinutes": 840,
+    "residentCount": 100,
+    "meanLoadsPerResident": 0.6,
+    "washingTypeWeights": {
+      "quick": 0.3,
+      "normal": 0.5,
+      "heavy": 0.2
+    },
+    "dryingTypeWeights": {
+      "quick": 0.3,
+      "normal": 0.5,
+      "heavy": 0.2
+    },
+    "chanceNeverClaims": 0.05,
+    "chanceNeverStartsOnceClaimed": 0.03,
+    "maxClaimLatenessMinutes": 6,
+    "maxStartLatenessMinutes": 9,
+    "chanceQueuesDryerAfterWash": 0.4,
+    "chanceRespondsToOfferAtAll": 0.85,
+    "chanceAcceptsOfferGivenResponds": 0.7
+  },
+  "policies": [
+    {
+      "policy": "wait-forever",
+      "seeds": [
+        {
+          "seed": 1,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2211,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 2,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 28.999983333333333,
+          "joinToStartWaitMaxMinutes": 48,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 3955,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 3,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 44,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2809,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 4,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 30,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1491,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 5,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 16,
+          "joinToStartWaitMaxMinutes": 44,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 3795,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 6,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1275,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 7,
+          "joinToStartWaitMedianMinutes": 11.5,
+          "joinToStartWaitP90Minutes": 48,
+          "joinToStartWaitMaxMinutes": 61,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2709,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 8,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1826,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 9,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 39,
+          "joinToStartWaitMaxMinutes": 76,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1934,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 10,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 36,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1311,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 11,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 25,
+          "joinToStartWaitMaxMinutes": 39,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2523,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 12,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1494,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 13,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1392,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 14,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 39,
+          "joinToStartWaitMaxMinutes": 45,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 3370,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 15,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1807,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 16,
+          "joinToStartWaitMedianMinutes": 7.5,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1559,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 17,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 37,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 795,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 18,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 765,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 19,
+          "joinToStartWaitMedianMinutes": 11,
+          "joinToStartWaitP90Minutes": 24,
+          "joinToStartWaitMaxMinutes": 52,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2675,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 20,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2191,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 21,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 659,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 22,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 25,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1835,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 23,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 30,
+          "joinToStartWaitMaxMinutes": 39,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2034,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 24,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1677,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 25,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1536,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 26,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 16,
+          "joinToStartWaitMaxMinutes": 43,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1500,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 27,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1792,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 28,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 18,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1614,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 29,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1472,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 30,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 11,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1233,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 31,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 46,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1589,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 32,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1612,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 33,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 26,
+          "joinToStartWaitMaxMinutes": 46,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2091,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 34,
+          "joinToStartWaitMedianMinutes": 11,
+          "joinToStartWaitP90Minutes": 41,
+          "joinToStartWaitMaxMinutes": 46,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2817,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 35,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1526,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 36,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 13,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1569,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 37,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 28,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1028,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 38,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1551,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 39,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 18,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1872,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 40,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 37,
+          "joinToStartWaitMaxMinutes": 46,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2955,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 41,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1658,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 42,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2045,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 43,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 28,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1790,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 44,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1560,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 45,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1131,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 46,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 684,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 47,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1415,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 48,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 29,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 2440,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 49,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 32,
+          "joinToStartWaitMaxMinutes": 90,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 3904,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 50,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 0,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 1988,
+          "extraWaitCausedForOthersMinutes": 0,
+          "extraWaitPaidBySelfMinutes": 0
+        }
+      ],
+      "aggregate": {
+        "joinToStartWaitMedianMinutes": {
+          "mean": 8.95,
+          "stddev": 0.9013878188659972
+        },
+        "joinToStartWaitP90Minutes": {
+          "mean": 17.699999666666667,
+          "stddev": 9.178779464976383
+        },
+        "joinToStartWaitMaxMinutes": {
+          "mean": 28.16,
+          "stddev": 17.574253895969527
+        },
+        "movedBackOrEjectedCount": {
+          "mean": 0,
+          "stddev": 0
+        },
+        "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": {
+          "mean": 1889.28,
+          "stddev": 766.0944860785777
+        },
+        "extraWaitCausedForOthersMinutes": {
+          "mean": 0,
+          "stddev": 0
+        },
+        "extraWaitPaidBySelfMinutes": {
+          "mean": 0,
+          "stddev": 0
+        }
+      }
+    },
+    {
+      "policy": "eject",
+      "seeds": [
+        {
+          "seed": 1,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 4,
+          "movedBackOrEjectedCount": 59,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 211,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 2,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 4,
+          "movedBackOrEjectedCount": 51,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 189,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 3,
+          "joinToStartWaitMedianMinutes": 5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 62,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 226,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 4,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 62,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 230,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 5,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 52,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 190,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 6,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 51,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 179,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 7,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 53,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 181,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 8,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 50,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 174,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 9,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 57,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 217,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 10,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 60,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 218,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 11,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 50,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 184,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 12,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 41,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 141,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 13,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 45,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 163,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 14,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 42,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 156,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 15,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 47,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 169,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 16,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 43,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 149,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 17,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 57,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 197,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 18,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 42,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 150,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 19,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 48,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 164,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 20,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 55,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 195,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 21,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 40,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 142,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 22,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 56,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 194,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 23,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 47,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 167,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 24,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 42,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 150,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 25,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 51,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 177,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 26,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 50,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 178,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 27,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 45,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 163,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 28,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 39,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 145,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 29,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 42,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 156,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 30,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 36,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 130,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 31,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 47,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 169,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 32,
+          "joinToStartWaitMedianMinutes": 5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 39,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 143,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 33,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 56,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 194,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 34,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 53,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 191,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 35,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 4,
+          "movedBackOrEjectedCount": 48,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 178,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 36,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 43,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 151,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 37,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 50,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 178,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 38,
+          "joinToStartWaitMedianMinutes": 5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 40,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 144,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 39,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 51,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 189,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 40,
+          "joinToStartWaitMedianMinutes": 3,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 51,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 187,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 41,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 43,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 157,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 42,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 55,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 195,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 43,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 54,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 202,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 44,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 4,
+          "joinToStartWaitMaxMinutes": 4,
+          "movedBackOrEjectedCount": 59,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 207,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 45,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 43,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 157,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 46,
+          "joinToStartWaitMedianMinutes": 3.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 55,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 199,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 47,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 5,
+          "movedBackOrEjectedCount": 49,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 173,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 48,
+          "joinToStartWaitMedianMinutes": 2.5,
+          "joinToStartWaitP90Minutes": 5,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 60,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 208,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 49,
+          "joinToStartWaitMedianMinutes": 4,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 70,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 250,
+          "extraWaitPaidBySelfMinutes": 0
+        },
+        {
+          "seed": 50,
+          "joinToStartWaitMedianMinutes": 4.5,
+          "joinToStartWaitP90Minutes": 6,
+          "joinToStartWaitMaxMinutes": 6,
+          "movedBackOrEjectedCount": 56,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 206,
+          "extraWaitPaidBySelfMinutes": 0
+        }
+      ],
+      "aggregate": {
+        "joinToStartWaitMedianMinutes": {
+          "mean": 3.6,
+          "stddev": 0.58309518948453
+        },
+        "joinToStartWaitP90Minutes": {
+          "mean": 5.28,
+          "stddev": 0.6645299090334459
+        },
+        "joinToStartWaitMaxMinutes": {
+          "mean": 5.46,
+          "stddev": 0.6390618123468185
+        },
+        "movedBackOrEjectedCount": {
+          "mean": 49.94,
+          "stddev": 7.253716288910118
+        },
+        "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": {
+          "mean": 0,
+          "stddev": 0
+        },
+        "extraWaitCausedForOthersMinutes": {
+          "mean": 179.26,
+          "stddev": 26.228084184705523
+        },
+        "extraWaitPaidBySelfMinutes": {
+          "mean": 0,
+          "stddev": 0
+        }
+      }
+    },
+    {
+      "policy": "move-back-one",
+      "seeds": [
+        {
+          "seed": 1,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 15,
+          "joinToStartWaitMaxMinutes": 493,
+          "movedBackOrEjectedCount": 521,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1565,
+          "extraWaitPaidBySelfMinutes": 23285
+        },
+        {
+          "seed": 2,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 22,
+          "joinToStartWaitMaxMinutes": 446,
+          "movedBackOrEjectedCount": 588,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1804,
+          "extraWaitPaidBySelfMinutes": 21620
+        },
+        {
+          "seed": 3,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 16,
+          "joinToStartWaitMaxMinutes": 190,
+          "movedBackOrEjectedCount": 258,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 776,
+          "extraWaitPaidBySelfMinutes": 7725
+        },
+        {
+          "seed": 4,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 30,
+          "movedBackOrEjectedCount": 485,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1455,
+          "extraWaitPaidBySelfMinutes": 16960
+        },
+        {
+          "seed": 5,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 128,
+          "joinToStartWaitMaxMinutes": 440,
+          "movedBackOrEjectedCount": 356,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1134,
+          "extraWaitPaidBySelfMinutes": 15470
+        },
+        {
+          "seed": 6,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 247,
+          "movedBackOrEjectedCount": 243,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 731,
+          "extraWaitPaidBySelfMinutes": 9715
+        },
+        {
+          "seed": 7,
+          "joinToStartWaitMedianMinutes": 15,
+          "joinToStartWaitP90Minutes": 412,
+          "joinToStartWaitMaxMinutes": 488,
+          "movedBackOrEjectedCount": 134,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 476,
+          "extraWaitPaidBySelfMinutes": 3880
+        },
+        {
+          "seed": 8,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 424,
+          "movedBackOrEjectedCount": 497,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1497,
+          "extraWaitPaidBySelfMinutes": 17180
+        },
+        {
+          "seed": 9,
+          "joinToStartWaitMedianMinutes": 10.5,
+          "joinToStartWaitP90Minutes": 119,
+          "joinToStartWaitMaxMinutes": 522,
+          "movedBackOrEjectedCount": 303,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 971,
+          "extraWaitPaidBySelfMinutes": 11280
+        },
+        {
+          "seed": 10,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 16,
+          "joinToStartWaitMaxMinutes": 282,
+          "movedBackOrEjectedCount": 451,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1369,
+          "extraWaitPaidBySelfMinutes": 15585
+        },
+        {
+          "seed": 11,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 18,
+          "joinToStartWaitMaxMinutes": 263,
+          "movedBackOrEjectedCount": 509,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1537,
+          "extraWaitPaidBySelfMinutes": 17495
+        },
+        {
+          "seed": 12,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 487,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1461,
+          "extraWaitPaidBySelfMinutes": 21860
+        },
+        {
+          "seed": 13,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 439,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1317,
+          "extraWaitPaidBySelfMinutes": 19460
+        },
+        {
+          "seed": 14,
+          "joinToStartWaitMedianMinutes": 11,
+          "joinToStartWaitP90Minutes": 369,
+          "joinToStartWaitMaxMinutes": 670,
+          "movedBackOrEjectedCount": 342,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1060,
+          "extraWaitPaidBySelfMinutes": 14280
+        },
+        {
+          "seed": 15,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 56,
+          "joinToStartWaitMaxMinutes": 643,
+          "movedBackOrEjectedCount": 491,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1497,
+          "extraWaitPaidBySelfMinutes": 16915
+        },
+        {
+          "seed": 16,
+          "joinToStartWaitMedianMinutes": 7.5,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 500,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1500,
+          "extraWaitPaidBySelfMinutes": 17460
+        },
+        {
+          "seed": 17,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 53,
+          "movedBackOrEjectedCount": 457,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1375,
+          "extraWaitPaidBySelfMinutes": 15930
+        },
+        {
+          "seed": 18,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 452,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1356,
+          "extraWaitPaidBySelfMinutes": 18060
+        },
+        {
+          "seed": 19,
+          "joinToStartWaitMedianMinutes": 11.5,
+          "joinToStartWaitP90Minutes": 108,
+          "joinToStartWaitMaxMinutes": 632,
+          "movedBackOrEjectedCount": 534,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1660,
+          "extraWaitPaidBySelfMinutes": 22720
+        },
+        {
+          "seed": 20,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 50,
+          "movedBackOrEjectedCount": 256,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 768,
+          "extraWaitPaidBySelfMinutes": 5145
+        },
+        {
+          "seed": 21,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 14,
+          "movedBackOrEjectedCount": 349,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1047,
+          "extraWaitPaidBySelfMinutes": 12480
+        },
+        {
+          "seed": 22,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 39,
+          "movedBackOrEjectedCount": 467,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1405,
+          "extraWaitPaidBySelfMinutes": 23250
+        },
+        {
+          "seed": 23,
+          "joinToStartWaitMedianMinutes": 12,
+          "joinToStartWaitP90Minutes": 234,
+          "joinToStartWaitMaxMinutes": 595,
+          "movedBackOrEjectedCount": 383,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1237,
+          "extraWaitPaidBySelfMinutes": 16500
+        },
+        {
+          "seed": 24,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 99,
+          "movedBackOrEjectedCount": 490,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1470,
+          "extraWaitPaidBySelfMinutes": 19525
+        },
+        {
+          "seed": 25,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 499,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1499,
+          "extraWaitPaidBySelfMinutes": 14955
+        },
+        {
+          "seed": 26,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 33,
+          "joinToStartWaitMaxMinutes": 746,
+          "movedBackOrEjectedCount": 269,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 819,
+          "extraWaitPaidBySelfMinutes": 10490
+        },
+        {
+          "seed": 27,
+          "joinToStartWaitMedianMinutes": 9.5,
+          "joinToStartWaitP90Minutes": 15,
+          "joinToStartWaitMaxMinutes": 236,
+          "movedBackOrEjectedCount": 264,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 796,
+          "extraWaitPaidBySelfMinutes": 5320
+        },
+        {
+          "seed": 28,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 18,
+          "movedBackOrEjectedCount": 517,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1551,
+          "extraWaitPaidBySelfMinutes": 20680
+        },
+        {
+          "seed": 29,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 466,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1398,
+          "extraWaitPaidBySelfMinutes": 18640
+        },
+        {
+          "seed": 30,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 11,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 393,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1179,
+          "extraWaitPaidBySelfMinutes": 23580
+        },
+        {
+          "seed": 31,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 39,
+          "joinToStartWaitMaxMinutes": 533,
+          "movedBackOrEjectedCount": 291,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 879,
+          "extraWaitPaidBySelfMinutes": 13980
+        },
+        {
+          "seed": 32,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 415,
+          "movedBackOrEjectedCount": 452,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1360,
+          "extraWaitPaidBySelfMinutes": 15580
+        },
+        {
+          "seed": 33,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 113,
+          "joinToStartWaitMaxMinutes": 573,
+          "movedBackOrEjectedCount": 319,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 989,
+          "extraWaitPaidBySelfMinutes": 9370
+        },
+        {
+          "seed": 34,
+          "joinToStartWaitMedianMinutes": 11,
+          "joinToStartWaitP90Minutes": 177,
+          "joinToStartWaitMaxMinutes": 595,
+          "movedBackOrEjectedCount": 326,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1046,
+          "extraWaitPaidBySelfMinutes": 6785
+        },
+        {
+          "seed": 35,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 250,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 750,
+          "extraWaitPaidBySelfMinutes": 12480
+        },
+        {
+          "seed": 36,
+          "joinToStartWaitMedianMinutes": 9.5,
+          "joinToStartWaitP90Minutes": 117,
+          "joinToStartWaitMaxMinutes": 637,
+          "movedBackOrEjectedCount": 274,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 852,
+          "extraWaitPaidBySelfMinutes": 8335
+        },
+        {
+          "seed": 37,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 34,
+          "movedBackOrEjectedCount": 340,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1022,
+          "extraWaitPaidBySelfMinutes": 11750
+        },
+        {
+          "seed": 38,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 491,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1475,
+          "extraWaitPaidBySelfMinutes": 22065
+        },
+        {
+          "seed": 39,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 15,
+          "joinToStartWaitMaxMinutes": 481,
+          "movedBackOrEjectedCount": 454,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1366,
+          "extraWaitPaidBySelfMinutes": 20225
+        },
+        {
+          "seed": 40,
+          "joinToStartWaitMedianMinutes": 11.5,
+          "joinToStartWaitP90Minutes": 93,
+          "joinToStartWaitMaxMinutes": 150,
+          "movedBackOrEjectedCount": 437,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1347,
+          "extraWaitPaidBySelfMinutes": 13920
+        },
+        {
+          "seed": 41,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 234,
+          "movedBackOrEjectedCount": 466,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1402,
+          "extraWaitPaidBySelfMinutes": 11545
+        },
+        {
+          "seed": 42,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 557,
+          "movedBackOrEjectedCount": 536,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1622,
+          "extraWaitPaidBySelfMinutes": 15930
+        },
+        {
+          "seed": 43,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 14,
+          "joinToStartWaitMaxMinutes": 498,
+          "movedBackOrEjectedCount": 494,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1482,
+          "extraWaitPaidBySelfMinutes": 19200
+        },
+        {
+          "seed": 44,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 12,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 513,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1539,
+          "extraWaitPaidBySelfMinutes": 15460
+        },
+        {
+          "seed": 45,
+          "joinToStartWaitMedianMinutes": 8.5,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 398,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1194,
+          "extraWaitPaidBySelfMinutes": 19900
+        },
+        {
+          "seed": 46,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 16,
+          "movedBackOrEjectedCount": 376,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1128,
+          "extraWaitPaidBySelfMinutes": 11280
+        },
+        {
+          "seed": 47,
+          "joinToStartWaitMedianMinutes": 9,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 15,
+          "movedBackOrEjectedCount": 483,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1449,
+          "extraWaitPaidBySelfMinutes": 12040
+        },
+        {
+          "seed": 48,
+          "joinToStartWaitMedianMinutes": 10,
+          "joinToStartWaitP90Minutes": 44,
+          "joinToStartWaitMaxMinutes": 519,
+          "movedBackOrEjectedCount": 556,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1702,
+          "extraWaitPaidBySelfMinutes": 13865
+        },
+        {
+          "seed": 49,
+          "joinToStartWaitMedianMinutes": 12,
+          "joinToStartWaitP90Minutes": 137,
+          "joinToStartWaitMaxMinutes": 605,
+          "movedBackOrEjectedCount": 490,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1572,
+          "extraWaitPaidBySelfMinutes": 18760
+        },
+        {
+          "seed": 50,
+          "joinToStartWaitMedianMinutes": 8,
+          "joinToStartWaitP90Minutes": 13,
+          "joinToStartWaitMaxMinutes": 133,
+          "movedBackOrEjectedCount": 512,
+          "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": 0,
+          "extraWaitCausedForOthersMinutes": 1536,
+          "extraWaitPaidBySelfMinutes": 28140
+        }
+      ],
+      "aggregate": {
+        "joinToStartWaitMedianMinutes": {
+          "mean": 9.27,
+          "stddev": 1.3863982111933062
+        },
+        "joinToStartWaitP90Minutes": {
+          "mean": 53.24,
+          "stddev": 84.95023484370127
+        },
+        "joinToStartWaitMaxMinutes": {
+          "mean": 275.64,
+          "stddev": 248.49633880602747
+        },
+        "movedBackOrEjectedCount": {
+          "mean": 417.16,
+          "stddev": 102.54488968251903
+        },
+        "machineIdleMinutesWhileSomeoneWaitedBehindAbsentFront": {
+          "mean": 0,
+          "stddev": 0
+        },
+        "extraWaitCausedForOthersMinutes": {
+          "mean": 1268.44,
+          "stddev": 304.4285899845808
+        },
+        "extraWaitPaidBySelfMinutes": {
+          "mean": 15561.1,
+          "stddev": 5311.362940903212
+        }
+      }
+    }
+  ]
+}
