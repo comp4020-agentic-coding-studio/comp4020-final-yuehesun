@@ -10,6 +10,19 @@ where it lives --- `fly.toml`, the `Dockerfile`, the CI workflow and
 publishes this deliverable's brief and spec. Read them before you plan or build;
 what the agent needs to carry from any of it is your call.
 
+## Language
+
+- Chat with me in Chinese. Everything that lands in the repo — code,
+  comments, commit messages, docs, ADRs, `research-note.md`, everything —
+  is written in English, for an English-speaking reader.
+- Everything written in first person in the repo — `PROCESS.md`,
+  `README.md`, `process-notes.md`, reflections, commit messages — is
+  written in mine. I'm the one who decided what to build and what to fix;
+  the agent narrating its own actions in "I" (with me as "the student" or
+  "the user") doesn't belong there, even in a passage describing something
+  the agent itself did wrong. Write it as something I observed and
+  decided, not something the agent is confessing.
+
 ## Commits
 
 - Commit incrementally, and tell me after each commit — no batching.
