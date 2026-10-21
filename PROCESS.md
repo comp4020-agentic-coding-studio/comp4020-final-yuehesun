@@ -7,7 +7,8 @@ final project runs across three crits in this one repo: crit 8 shipped a
 working, persistent app with one machine type and a blunt fairness rule;
 crit 9 added real-time sync and a documented decision about what happens
 when several people use it at once; crit 10 added server-side logging,
-then an extension that made the fairness rules themselves checkable
+then an extension that made the fairness rules checkable by testing the
+system's behaviour at real-world scale with scripted, seeded scenarios,
 rather than just argued in words.
 
 # Process overview
@@ -44,28 +45,26 @@ their own status block
 ([`docs/adr/0005-fairness-escalation.md`](docs/adr/0005-fairness-escalation.md),
 [`8a73832`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8a73832)).
 Crit 8's blunt rule is the ADR's named rejected alternative, kept on
-record rather than just discarded.
+record.
 
-**Deleting something crit 8 deliberately built, and refusing to rebuild
-it a different way.** Using the app for real, the separate reservation
-detail page crit 8 built on purpose turned out to be a pointless extra
-click — the home page already showed every action directly. Cutting it
+**Deleting something crit 8 deliberately built.** Using the app for real,
+the separate reservation detail page crit 8 built on purpose turned out
+to be a pointless extra click — the home page already showed every
+action directly. Cutting it
 broke the "Reserve" button's own redirect, caught only by clicking it for
 real
 ([`4cae99e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/4cae99e)).
-The same commit closed a real gap (nothing let a running wash end early)
-but I turned down "pause" as the fix: this app never actually controls a
-machine, so a pause would mean inventing a frozen-duration concept for a
-real-world event that doesn't change when the machine is actually free
-again. "End the wash" closed the gap without the concept the app doesn't
-need.
+Same commit, same way of finding it: manual testing also showed nothing
+let a running wash end early, so I added "end the wash" — but scoped it
+tightly, turning down "pause" as unnecessary scope the app doesn't need.
 
 **A `prompt.md`-driven unattended run, and why it beat my usual pace.**
 Crit 9's visual pass left the app looking generic even with reference
 images, because the agent only ever worked from a text description of
-them and never looked at its own result. For crit 10's extension I
-changed the method instead of asking harder: write every decision down
-first (ADRs 0007–0009, an "Unattended runs" section in `CLAUDE.md`), then
+them and never looked at its own result. Watching crit 8 and crit 9's
+riff sessions gave me a new idea: for crit 10's extension, write every
+decision down first — identity, the harness, in-page alerts, no separate
+board — into ADRs and an "Unattended runs" section in `CLAUDE.md`, then
 hand the agent one `prompt.md` and let it run for about two hours with
 nobody answering questions, verifying its own work with specs and
 screenshots instead of asking me
@@ -76,19 +75,33 @@ considered — a real jump from crit 9's looser prompt and no forced
 design-review loop
 ([`8402c26`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8402c26)).
 Spending effort on the brief instead of on steering a live session turned
-out cheaper and better, not just different.
+out cheaper and better this time, not just different.
+
+**Why the simulation exists at all: a hundred-plus people using this app
+at once isn't something anyone can click through by hand.** Checking the
+fairness rules hold under real-scale, simultaneous use meant running the
+real queue code through a large number of randomized, seeded scenarios
+instead of a handful of manual clicks — a practice that turned out to
+have a name once I checked (deterministic simulation testing, the
+technique behind FoundationDB and TigerBeetle: real code, a seeded clock,
+a reproducible run), but the point was never the name. It was testing at
+a scale manual verification can't reach, and it found something a human
+reviewing the diff had already missed: a property test from the same
+harness caught a real concurrency bug in Stage 9
+([`8118424`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8118424),
+[`docs/adr/0010-simulation-as-testing.md`](docs/adr/0010-simulation-as-testing.md)).
 
 **A design bug the simulation's own model had, caught before the batch
-ever ran.** Building the fairness simulation's behaviour model, the agent
-first gave each resident one fixed lateness value, reused every time they
-missed a window — under the move-back-one rule, a resident whose number
-exceeded the window missed every future chance identically, forever,
-producing an endless swap loop and absurd numbers only visible once it
-actually ran. That was specific enough a design mistake that "refine the
-plan before a stage" wasn't stopping it, so I had the agent add a
-concrete trigger instead: before writing code for a new algorithm, timing
-logic, or anything randomised, write the design choice and the failure
-mode it avoids into the plan first
+ever ran.** Building its behaviour model, the agent first gave each
+resident one fixed lateness value, reused every time they missed a
+window — under the move-back-one rule, a resident whose number exceeded
+the window missed every future chance identically, forever, producing an
+endless swap loop and absurd numbers only visible once it actually ran.
+That was specific enough a design mistake that "refine the plan before a
+stage" wasn't stopping it, so I had the agent add a concrete trigger
+instead: before writing code for a new algorithm, timing logic, or
+anything randomised, write the design choice and the failure mode it
+avoids into the plan first
 ([`c2abbcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/c2abbcd)).
 
 **A crash I didn't accept the agent's first explanation for.** Running
@@ -102,21 +115,6 @@ point where it ever yielded control back, keeping the CPU pinned,
 uninterruptible, for the full 10-15 minutes — fixed by yielding
 periodically between seeds, not by rewriting the model
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
-
-**Keeping the simulation at all, once I checked what it actually was.**
-Once it ran cleanly, I nearly dropped it as redundant — ADR 0005 already
-argues in words why move-back-one is fairer than ejecting, so matching
-numbers looked like evidence a settled decision didn't need. Rather than
-guess, I had the agent check whether this was a real, named practice
-first: deterministic simulation testing (DST), the technique behind
-FoundationDB and TigerBeetle — run the real code through a seeded,
-reproducible clock instead of a copy of its rules. That reframed the
-question from "is this redundant" to "did I use a real verification
-method" — and a property test from the same harness had already found a
-real concurrency bug in Stage 9, proof it had caught something code
-review alone had missed
-([`8118424`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8118424),
-[`docs/adr/0010-simulation-as-testing.md`](docs/adr/0010-simulation-as-testing.md)).
 
 Automated checks (`pnpm check`) confirm the app builds and the invariants
 hold. They can't judge whether a decision honors the project's own
