@@ -285,6 +285,27 @@ const STYLES = `
   .laundry-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
   .laundry-hint { margin: var(--space-3) 0; color: var(--ink-muted); font-size: var(--text-sm); }
   .laundry-crosshair { position: absolute; top: 50%; left: 50%; width: 0.5rem; height: 0.5rem; margin: -0.25rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); pointer-events: none; }
+  /* Stage 7: a real call-to-action on the home page, not just the quiet
+     top-nav text link (research/design-review.md's own "generic version"
+     self-check would flag a feature's only entry point being a plain-
+     weight nav link as easy to miss entirely). display:block + margin so
+     it reads as its own standing action, not an inline word in the
+     "signed in as" sentence above it. */
+  .laundry-entry-cta { display: block; width: fit-content; margin: var(--space-3) 0 var(--space-5); }
+  /* Stage 7: the pointer-lock exit hint, shown only while actually locked
+     (toggled by JS) — persistent but unobtrusive, in a corner rather than
+     centered, so it informs without competing with the crosshair. */
+  .laundry-lock-hint { position: absolute; top: var(--space-3); right: var(--space-3); background: rgba(0,0,0,0.55); color: #fff; font-size: var(--text-xs); padding: 0.3rem 0.6rem; border-radius: 0.4rem; pointer-events: none; display: none; }
+  .laundry-lock-hint.is-visible { display: block; }
+  /* Stage 7: the examine overlay — a 2D HTML layer, deliberately not a
+     3D in-scene zoom, so the QR <img> renders at native pixel resolution
+     with no WebGL texture-filtering softness to fight (the real
+     scannability risk HANDOFF.md flagged from Stage 3/6's in-scene QR
+     plane). */
+  .laundry-examine-overlay { position: absolute; inset: 0; background: rgba(28,26,23,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #fff; }
+  .laundry-examine-overlay.is-hidden { display: none; }
+  .laundry-examine-overlay img { width: 12rem; height: 12rem; background: #fff; padding: var(--space-3); border-radius: 0.5rem; }
+  .laundry-examine-overlay .btn-quiet { color: #fff; border-color: rgba(255,255,255,0.4); }
   /* Touch controls: a joystick (left) for movement, a drag-look zone
      (right, everywhere else) for camera — only shown on a touch-capable
      viewport (toggled by JS, not CSS media query, since touch capability
@@ -1121,6 +1142,7 @@ export function homePage(
             <button class="btn-quiet" type="submit">Switch room</button>
           </form>
         </p>
+        <a class="btn-primary laundry-entry-cta" href="/laundry">Go to the laundry</a>
         <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
           ${myStatusBlock(mine, myOffers, now)}
         </div>
