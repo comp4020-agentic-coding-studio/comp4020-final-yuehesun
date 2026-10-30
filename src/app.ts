@@ -66,7 +66,8 @@ app.get("/", (c) => {
   const allMachines = db.select().from(machines).all();
   const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
   const myOffers = pendingOffersFor(identity, now);
-  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer));
+  const pendingPickups = queue.doneUnacknowledgedFor(identity);
+  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer, pendingPickups));
 });
 
 // plans/3d-walkthrough.md Stage 8.1: the real CC0 GLTF models (washer,
@@ -197,7 +198,8 @@ app.get("/my-status", (c) => {
       : [];
   });
   const myOffers = pendingOffersFor(identity, now);
-  return c.html(myStatusBlock(mine, myOffers, now));
+  const pendingPickups = queue.doneUnacknowledgedFor(identity);
+  return c.html(myStatusBlock(mine, myOffers, now, pendingPickups));
 });
 
 // plans/3d-walkthrough.md Stage 3: an optional `redirect` field, sent only
@@ -317,6 +319,27 @@ actionRoute("/reservations/:id/dismiss-notice", "notice_dismissed", queue.dismis
 actionRoute("/reservations/:id/dismiss-dryer-prompt", "dryer_prompt_dismissed", queue.dismissDryerPrompt);
 actionRoute("/offers/:id/accept", "offer_accepted", queue.acceptOffer);
 actionRoute("/offers/:id/decline", "offer_declined", queue.declineOffer);
+// Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): the original owner
+// confirming they've collected their laundry — loadOwned-gated exactly
+// like every other per-reservation action, so actionRoute's shape fits
+// unchanged.
+actionRoute("/reservations/:id/acknowledge-pickup", "laundry_pickup_acknowledged", queue.acknowledgePickup);
+
+// Stage 8.4: the pickup-and-place action. Not actionRoute's shape — a
+// successful handoff needs to report back *which* spot the server picked
+// (JSON, read by the 3D scene's own JS), not just redirect to "/" — and
+// logging already happens inside queue.handoffLaundry itself (it needs
+// the chosen spot in the log line, which actionRoute's generic wrapper
+// doesn't have visibility into).
+app.post("/machines/:id/handoff", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.json({ error: "sign in first" }, 400);
+
+  const machineId = Number(c.req.param("id"));
+  const result = queue.handoffLaundry(machineId, identity);
+  if (!result.ok) return c.json({ error: result.message }, result.status);
+  return c.json({ spot: result.spot });
+});
 
 // Crit 9 (plans/crit-9.md Stage 8): queues a dryer reservation alongside
 // an existing washer reservation — needs its own route rather than

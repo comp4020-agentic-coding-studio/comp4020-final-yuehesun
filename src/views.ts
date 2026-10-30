@@ -3,7 +3,7 @@ import type { HtmlEscapedString } from "hono/utils/html";
 import type { Machine, Offer, Reservation } from "./schema.ts";
 import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
-import type { DryerOption, QueueRow } from "./queue.ts";
+import type { DoneUnacknowledged, DryerOption, QueueRow } from "./queue.ts";
 import type { SimulationResults } from "../scripts/simulate.ts";
 import { BOARD_STATE_CLASS, boardStateFor, boardStateLabel, boardTimeLeftSeconds } from "./board-state.ts";
 
@@ -820,6 +820,25 @@ function noticeBanner(row: QueueRow): Html {
   </div>`;
 }
 
+// Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): a done reservation
+// has already left queueFor()'s waiting/claimed/running set, so it can
+// never reach noticeBanner/statusHero above (both take a QueueRow) — this
+// is why the "laundry_moved" notice needs its own card, built from
+// queue.doneUnacknowledgedFor's direct query instead. Only rendered when
+// pickupSpot is actually set (someone moved it) — the ordinary "I washed
+// my own clothes and haven't collected them yet" case needs no banner at
+// all, since nothing unusual happened; 8.4a's basket-visibility check
+// handles that case silently via the 3D scene alone.
+function pendingPickupCard(item: DoneUnacknowledged): Html {
+  if (item.pickupSpot == null) return raw("");
+  return html`<div class="notice-banner">
+    <span>Your laundry was moved to <strong>Shelf ${item.pickupSpot}</strong> — collect it when you can.</span>
+    <form method="post" action="/reservations/${item.reservationId}/acknowledge-pickup">
+      <button class="btn-quiet" type="submit">Got it</button>
+    </form>
+  </div>`;
+}
+
 function washingTypeOptions(): Html {
   return html`${Object.entries(WASHING_TYPES).map(
     ([value, type]) => html`<option value="${value}">${type.label} (${type.minutes} min)</option>`,
@@ -1036,9 +1055,10 @@ export function myStatusBlock(
   mine: { machine: Machine; row: QueueRow; aheadLabel?: string; dryerSuggestion?: DryerOption }[],
   myOffers: OfferRow[],
   now: number,
+  pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
-  if (mine.length === 0 && myOffers.length === 0) return raw("");
-  return html`${myOffers.map((o) => offerCard(o, now))}
+  if (mine.length === 0 && myOffers.length === 0 && pendingPickups.length === 0) return raw("");
+  return html`${pendingPickups.map((p) => pendingPickupCard(p))}${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(({ machine, row, aheadLabel, dryerSuggestion }) =>
       html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion)}`,
     )}`;
@@ -1122,6 +1142,7 @@ export function homePage(
   myOffers: OfferRow[],
   now: number,
   getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
+  pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
   const mine = machines.flatMap((m) => {
     const rowsForMachine = rowsByMachine.get(m.id) ?? [];
@@ -1144,7 +1165,7 @@ export function homePage(
         </p>
         <a class="btn-primary laundry-entry-cta" href="/laundry">Go to the laundry</a>
         <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
-          ${myStatusBlock(mine, myOffers, now)}
+          ${myStatusBlock(mine, myOffers, now, pendingPickups)}
         </div>
       </div>
       <div class="board-column">

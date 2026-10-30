@@ -3,6 +3,7 @@ import { now as clockNow } from "./clock.ts";
 import { db } from "./db.ts";
 import * as logging from "./logging.ts";
 import { machines, type Machine, type Offer, offers, type Reservation, reservations } from "./schema.ts";
+import { PICKUP_SPOTS } from "./pickup-spots.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
 // A claimed-but-never-started machine would otherwise sit blocked forever —
@@ -734,4 +735,151 @@ export function finish(reservationId: number, personName: string): ActionResult 
   db.update(reservations).set({ status: "done" }).where(eq(reservations.id, row.id)).run();
   settleMachine(row.machineId); // the next person may now be free to claim
   return { ok: true };
+}
+
+// --- Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): the real
+// unclaimed-laundry handoff (plan.md feature #18). A deliberate, narrow
+// exception to loadOwned's "only the reservation's own owner may act on
+// it" rule — the whole point of this feature is letting someone act on a
+// *different* room's reservation, which is why it's a new, separate
+// function rather than a change to loadOwned itself (which stays exactly
+// as strict as it is today for every other action). ---------------------
+
+export type HandoffResult = { ok: true; spot: string } | { ok: false; status: 403 | 404 | 409; message: string };
+
+// Who may trigger a handoff: whoever currently holds the front, waiting
+// reservation on this exact machine — i.e. the person this handoff is
+// *for*, per plan.md's own description ("if the next person needs the
+// machine before the previous owner has collected their clothes"). Not
+// any room, not staff, not whoever's nearby in the 3D scene.
+function isFrontWaitingHolder(machineId: number, personName: string): boolean {
+  const [front] = activeReservations(machineId);
+  return front != null && front.status === "waiting" && front.personName === personName;
+}
+
+// The done-but-unacknowledged reservation this machine is actually
+// holding up, if any — not part of activeReservations' waiting/claimed/
+// running set (it's already "done"), so a direct query, not a reuse of
+// that helper.
+function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
+  return db
+    .select()
+    .from(reservations)
+    .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .get();
+}
+
+// First free spot from the fixed list (PICKUP_SPOTS) — a simple linear
+// scan, same "correctness over cleverness" spirit as nextJoinedAt's own
+// tie-avoidance logic above. A spot is occupied exactly when some
+// reservation has it set with pickedUpAt still null; checked across every
+// reservation, not scoped to one machine, since one shared shelf serves
+// the whole room.
+function firstFreeSpot(): string | undefined {
+  const occupied = new Set(
+    db
+      .select({ spot: reservations.pickupSpot })
+      .from(reservations)
+      .where(and(isNull(reservations.pickedUpAt)))
+      .all()
+      .map((r) => r.spot)
+      .filter((s): s is string => s != null),
+  );
+  return PICKUP_SPOTS.find((s) => !occupied.has(s));
+}
+
+// The pickup-and-place action: picks the first free spot automatically
+// and returns which one — the resident doing the moving never chooses a
+// spot (a user-chosen dropdown would reopen exactly the "two people pick
+// the same free slot at once" race nextJoinedAt's own comment already
+// identifies as a real failure mode for a shared-pool UI like this one,
+// for no real benefit, since physically identical numbered spots give
+// nobody a reason to prefer one over another).
+export function handoffLaundry(machineId: number, personName: string): HandoffResult {
+  if (!isFrontWaitingHolder(machineId, personName)) {
+    return { ok: false, status: 403, message: "only the next room in line for this machine can move its laundry" };
+  }
+
+  const laundry = unacknowledgedLaundryOn(machineId);
+  if (!laundry) return { ok: false, status: 404, message: "no unclaimed laundry on this machine" };
+
+  const spot = firstFreeSpot();
+  if (!spot) return { ok: false, status: 409, message: "every drop-off spot is full" };
+
+  db.update(reservations)
+    .set({ pickupSpot: spot, notice: "laundry_moved" })
+    .where(eq(reservations.id, laundry.id))
+    .run();
+  logging.logEvent("laundry_handed_off", {
+    reservation: laundry.id,
+    room: laundry.personName,
+    machine: machineId,
+    spot,
+    movedBy: personName,
+  });
+  return { ok: true, spot };
+}
+
+// The original owner confirming they've collected their laundry —
+// loadOwned-gated exactly like every other per-reservation action, since
+// this one really is the owner acting on their own reservation (no
+// exception needed here, unlike handoffLaundry above). Two cases, not
+// just one: pickupSpot is set (someone else moved it to a numbered spot —
+// setting pickedUpAt is what frees that spot for reuse, since
+// firstFreeSpot() only ever looks at pickedUpAt IS NULL) or pickupSpot is
+// null (the ordinary case — the owner collected it straight from the
+// machine, nobody needed to move it). Both are "this reservation's
+// laundry is no longer sitting around uncollected" — the same fact,
+// whether or not a handoff happened — so 8.4a's "done, not yet collected
+// -> basket visible again" check only needs one field either way.
+export function acknowledgePickup(reservationId: number, personName: string): ActionResult {
+  const row = loadOwned(reservationId, personName);
+  if ("ok" in row) return row;
+  if (row.status !== "done" || row.pickedUpAt != null) {
+    return { ok: false, status: 409, message: "no pending pickup to acknowledge" };
+  }
+
+  db.update(reservations).set({ pickedUpAt: clockNow(), notice: null }).where(eq(reservations.id, row.id)).run();
+  logging.logEvent("laundry_pickup_acknowledged", { reservation: row.id, room: personName, spot: row.pickupSpot ?? "-" });
+  return { ok: true };
+}
+
+// --- 8.4a: the viewer's own basket visibility, and done-unacknowledged
+// lookups generally. Deliberately NOT built on queueFor()/
+// activeReservations() — both are scoped to the waiting/claimed/running
+// set and a "done" reservation (whether or not someone handed its laundry
+// off) has already left that set entirely, which is exactly why this
+// needs its own direct query rather than reusing either. ---------------
+
+export interface DoneUnacknowledged {
+  reservationId: number;
+  machineId: number;
+  pickupSpot: string | null;
+}
+
+// Every reservation of this room's that's finished but not yet
+// acknowledged collected — at most a couple in practice (MAX_ACTIVE_PER_TYPE
+// caps how many machines one room can be using at once), used by the 3D
+// scene to decide whether "your own basket" should be showing again
+// (8.4a) and by the scan/handoff UI to know a machine still has someone's
+// laundry sitting in it.
+export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] {
+  return db
+    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot })
+    .from(reservations)
+    .where(and(eq(reservations.personName, personName), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .all();
+}
+
+// The done-but-unacknowledged reservation sitting on this machine, if
+// any — used by the handoff UI to show "room123's laundry is still here"
+// and by handoffLaundry's own unacknowledgedLaundryOn (which duplicates
+// this query shape rather than calling this function, since that one
+// needs the full Reservation row, not just this display-shaped subset).
+export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
+  return db
+    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot })
+    .from(reservations)
+    .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .get();
 }

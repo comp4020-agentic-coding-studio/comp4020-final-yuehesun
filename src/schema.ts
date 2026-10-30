@@ -62,7 +62,11 @@ export const reservations = sqliteTable("reservations", {
   // can be told, not just silently repositioned. One outstanding notice
   // at a time — a new one replaces the old rather than stacking a history,
   // since this reports current truth, not a log. Cleared by dismissing it.
-  notice: text("notice", { enum: ["moved_back", "moved_up"] }),
+  // Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013) adds "laundry_moved":
+  // set on the *original owner's* reservation when someone else hands its
+  // finished laundry off to a numbered drop-off spot — same "one
+  // outstanding notice at a time" shape as the other two values.
+  notice: text("notice", { enum: ["moved_back", "moved_up", "laundry_moved"] }),
   // Crit 9 (plans/crit-9.md Stage 3): set only on the reservation created
   // by accepting an offer — this is what gives it a 10-minute claim
   // window instead of the normal 3 minutes once it's the front of its
@@ -83,6 +87,21 @@ export const reservations = sqliteTable("reservations", {
   // boolean); a dryer reservation already queued for this one also hides
   // the prompt, so this column only matters for "no, don't ask again."
   dryerPromptDismissed: int("dryer_prompt_dismissed").notNull().default(0),
+  // Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): set on a `done`
+  // reservation once a different room (whoever's next in line for this
+  // same machine) hands its owner's finished laundry off to a numbered
+  // drop-off spot. One fact about an existing reservation, not a new
+  // table — the same shape as dryerPromptDismissed above. One of a fixed
+  // list (src/pickup-spots.ts), never free text, same discipline as room
+  // numbers. A spot is "occupied" exactly when some reservation has this
+  // set and pickedUpAt still null — isIdle()/activeReservations() already
+  // derive machine occupancy the same way, from reservation rows rather
+  // than a separate state table.
+  pickupSpot: text("pickup_spot"),
+  // Stage 8.4: set when the original owner confirms they've collected
+  // their laundry from pickupSpot — this is what frees the spot for
+  // reuse. Null while still sitting in the spot.
+  pickedUpAt: int("picked_up_at"),
 });
 
 export type Machine = typeof machines.$inferSelect;
