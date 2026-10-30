@@ -18,7 +18,7 @@ export interface OfferRow {
 
 // `html` template results can resolve async (if an interpolated value does),
 // so every view function's return type needs to allow for that.
-type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
+export type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
 // --- page shell --------------------------------------------------------
 
@@ -276,6 +276,22 @@ const STYLES = `
   .simulation-reading li { margin: var(--space-2) 0; }
   .simulation-reading code { background: var(--rule); border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
   .simulation-closing { margin-top: var(--space-5); color: var(--ink-muted); font-size: var(--text-sm); }
+
+  /* /laundry — the first-person 3D walkthrough (plans/3d-walkthrough.md).
+     The canvas fills whatever space is left under the page's own nav/h1,
+     rather than taking over the whole viewport, so the walkthrough still
+     reads as a page of this app, not a separate full-screen app. */
+  .laundry-canvas-wrap { position: relative; width: 100%; height: 70vh; min-height: 24rem; background: #000; border-radius: var(--card-radius); overflow: hidden; touch-action: none; }
+  .laundry-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+  .laundry-hint { margin: var(--space-3) 0; color: var(--ink-muted); font-size: var(--text-sm); }
+  .laundry-crosshair { position: absolute; top: 50%; left: 50%; width: 0.5rem; height: 0.5rem; margin: -0.25rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); pointer-events: none; }
+  /* Touch controls: a joystick (left) for movement, a drag-look zone
+     (right, everywhere else) for camera — only shown on a touch-capable
+     viewport (toggled by JS, not CSS media query, since touch capability
+     and screen size aren't the same thing). */
+  .laundry-joystick-base { position: absolute; left: var(--space-5); bottom: var(--space-5); width: 6rem; height: 6rem; border-radius: 50%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); touch-action: none; }
+  .laundry-joystick-nub { position: absolute; top: 50%; left: 50%; width: 2.5rem; height: 2.5rem; margin: -1.25rem; border-radius: 50%; background: rgba(255,255,255,0.5); pointer-events: none; }
+  .laundry-look-zone { position: absolute; inset: 0; }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -565,7 +581,12 @@ const REPLAY_SCRIPT = `
 // re-fetches its own small, identity-aware fragment on its own trigger
 // (plans/crit-9.md Stage 1), rather than the server pushing rendered HTML
 // to every connection regardless of whose cookie it is.
-function page(title: string, body: Html): Html {
+// Exported so src/laundry-view.ts (the 3D walkthrough, a separate file per
+// plans/3d-walkthrough.md Stage 1 — kept out of this already-large file the
+// same way src/board-state.ts was split out) can wrap its own page in the
+// exact same shell/nav/styles as every other page, instead of hand-rolling
+// a second `<head>`.
+export function page(title: string, body: Html): Html {
   return html`<!doctype html>
     <html lang="en">
       <head>
@@ -579,6 +600,7 @@ function page(title: string, body: Html): Html {
       <body hx-ext="sse" sse-connect="/events">
         <nav class="topnav">
           <a href="/">Machines</a>
+          <a href="/laundry">Go to the laundry</a>
           <a href="/readme/">What good means here</a>
           <a href="/simulation">Simulation</a>
         </nav>

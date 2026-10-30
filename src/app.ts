@@ -13,6 +13,7 @@ import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
+import { laundryPage } from "./laundry-view.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -63,6 +64,19 @@ app.get("/", (c) => {
   const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
   const myOffers = pendingOffersFor(identity, now);
   return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer));
+});
+
+// plans/3d-walkthrough.md Stage 1: the first-person 3D room. Same "no
+// cookie -> identity page" guard as GET / above, reused verbatim rather
+// than a second, slightly-different check — and deliberately *not* gated
+// on holding a reservation (docs/adr/0012's sibling decision: a resident
+// can walk into the room to look around before deciding to queue).
+app.get("/laundry", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(identityPage());
+
+  const allMachines = db.select().from(machines).all();
+  return c.html(laundryPage(allMachines));
 });
 
 // Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
