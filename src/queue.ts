@@ -782,14 +782,14 @@ function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
     .get();
 }
 
-// First free spot from the fixed list (PICKUP_SPOTS) — a simple linear
-// scan, same "correctness over cleverness" spirit as nextJoinedAt's own
-// tie-avoidance logic above. A spot is occupied exactly when some
-// reservation has it set with pickedUpAt still null; checked across every
-// reservation, not scoped to one machine, since one shared shelf serves
-// the whole room.
-function firstFreeSpot(): string | undefined {
-  const occupied = new Set(
+// Every pickup spot currently holding unacknowledged laundry — a spot is
+// occupied exactly when some reservation has it set with pickedUpAt still
+// null; checked across every reservation, not scoped to one machine, since
+// one shared shelf serves the whole room. Exported for the 3D scene's own
+// drop-off shelf display (Stage 8.4's "the shelf's own numbered-spot-
+// occupied visual state," distinct from the pending-pickup notice).
+export function occupiedPickupSpots(): Set<string> {
+  return new Set(
     db
       .select({ spot: reservations.pickupSpot })
       .from(reservations)
@@ -798,6 +798,13 @@ function firstFreeSpot(): string | undefined {
       .map((r) => r.spot)
       .filter((s): s is string => s != null),
   );
+}
+
+// First free spot from the fixed list (PICKUP_SPOTS) — a simple linear
+// scan, same "correctness over cleverness" spirit as nextJoinedAt's own
+// tie-avoidance logic above.
+function firstFreeSpot(): string | undefined {
+  const occupied = occupiedPickupSpots();
   return PICKUP_SPOTS.find((s) => !occupied.has(s));
 }
 

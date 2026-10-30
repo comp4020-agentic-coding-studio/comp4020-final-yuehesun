@@ -364,6 +364,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   scene.add(dropoffGroup);
   addCollisionBox(eastX, dropoffZ, 0.85, 0.45);
   var dropoffSpotMeshes = {}; // spot name -> Mesh, recoloured when occupied
+  var SPOT_FREE_COLOR = 0xe3efe9; // --free-tint
+  var SPOT_OCCUPIED_COLOR = 0xd68a3a; // --warn-tint, distinct from the free tint and from every STATE_COLOR value
+  var lastKnownOccupiedSpots = null; // the table.glb load is async, so a machines-state fetch can resolve before the markers exist — re-applied once they do
+  function applySpotOccupancy(occupiedSpots) {
+    lastKnownOccupiedSpots = occupiedSpots || [];
+    var occupied = {};
+    lastKnownOccupiedSpots.forEach(function (s) { occupied[s] = true; });
+    Object.keys(dropoffSpotMeshes).forEach(function (spot) {
+      dropoffSpotMeshes[spot].material.color.setHex(occupied[spot] ? SPOT_OCCUPIED_COLOR : SPOT_FREE_COLOR);
+    });
+  }
   var dropoffAnchor = new THREE.Object3D();
   dropoffAnchor.position.set(-0.6, GENERIC_WAIST_HEIGHT * 0.5, 0);
   dropoffGroup.add(dropoffAnchor);
@@ -388,6 +399,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       dropoffGroup.add(marker);
       dropoffSpotMeshes[spot] = marker;
     });
+    applySpotOccupancy(lastKnownOccupiedSpots);
   });
   window.__laundryDropoffSpotMeshes = dropoffSpotMeshes;
 
@@ -855,6 +867,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
         if (!data) return;
         applyMachineState(data.machines || []);
         applyBasketState(data.myBasketVisible);
+        applySpotOccupancy(data.occupiedSpots);
       })
       .catch(function () { /* a transient fetch failure just leaves the last-known state showing */ });
   }

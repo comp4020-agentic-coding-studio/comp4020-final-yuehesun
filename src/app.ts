@@ -145,7 +145,11 @@ app.get("/laundry/machines-state", (c) => {
   // folded into the loop without querying twice anyway).
   const activeMine = allMachines.some((m) => queue.queueFor(m.id, now).some((r) => r.person === identity && r.status !== "running"));
   const doneMine = queue.doneUnacknowledgedFor(identity);
-  return c.json({ machines: result, myBasketVisible: activeMine || doneMine.length > 0 });
+  // Stage 8.4: the drop-off shelf's own numbered-spot-occupied display —
+  // which of the fixed spots currently hold someone's unacknowledged
+  // laundry, independent of whose laundry it is or who's viewing.
+  const occupiedSpots = Array.from(queue.occupiedPickupSpots());
+  return c.json({ machines: result, myBasketVisible: activeMine || doneMine.length > 0, occupiedSpots });
 });
 
 // plans/3d-walkthrough.md Stage 3: a real, server-rendered QR code per
