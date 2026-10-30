@@ -101,6 +101,21 @@ app.get("/laundry", (c) => {
 // one request rather than one route per machine, since the scene refetches
 // this on every relevant SSE event and 10 small requests per tick would be
 // wasteful for no benefit over one.
+//
+// Stage 8.3/8.4 (plans/3d-walkthrough.md): extended beyond Stage 2's
+// original {id, state, label, nextRoom} shape with what the 3D scene's
+// interaction layer needs: whether the viewer holds the front waiting
+// reservation on this machine (isMyTurn — drives whether a free-machine
+// interaction opens the examine overlay vs. nothing), and whether this
+// machine has a done-and-unacknowledged reservation sitting on it
+// (unclaimedLaundry — drives Stage 8.4's handoff indicator, distinct from
+// the normal state/colour, since a "done" reservation has already left
+// boardStateFor's own waiting/claimed/running vocabulary entirely — see
+// the Stage 8.4b commit's note on queueFor() never returning "done" rows).
+// The top-level myBasket field is 8.4a's own data point: whether the
+// viewer's own basket should currently be visible, computed once here
+// rather than re-derived per-machine, since it depends on the viewer's
+// reservations as a whole, not any one machine.
 app.get("/laundry/machines-state", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.json({ error: "sign in first" }, 400);
@@ -111,14 +126,26 @@ app.get("/laundry/machines-state", (c) => {
     const rows = queue.queueFor(m.id, now);
     const front = rows[0];
     const state = boardStateFor(front, front?.person === identity);
+    const unclaimed = queue.doneUnacknowledgedOnMachine(m.id);
     return {
       id: m.id,
       state,
       label: boardStateLabel(state, m.type),
       nextRoom: front ? (front.person === identity ? "you" : front.person) : undefined,
+      isMyTurn: front?.person === identity && front.status === "waiting",
+      unclaimedLaundry: unclaimed ? { room: unclaimed.reservationId, canHandOff: front?.person === identity && front.status === "waiting" } : undefined,
     };
   });
-  return c.json(result);
+  // 8.4a: a basket is "carried" whenever the viewer has a reservation not
+  // yet started (waiting/claimed — clothes still with them) or done but
+  // not yet collected (going back for it) — running is the one state with
+  // no basket, since the clothes are in the machine. A separate query from
+  // the per-machine loop above (queueFor()'s active set and
+  // doneUnacknowledgedFor's done set are disjoint, so this can't be
+  // folded into the loop without querying twice anyway).
+  const activeMine = allMachines.some((m) => queue.queueFor(m.id, now).some((r) => r.person === identity && r.status !== "running"));
+  const doneMine = queue.doneUnacknowledgedFor(identity);
+  return c.json({ machines: result, myBasketVisible: activeMine || doneMine.length > 0 });
 });
 
 // plans/3d-walkthrough.md Stage 3: a real, server-rendered QR code per
