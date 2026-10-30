@@ -16,6 +16,7 @@ import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatus
 import { laundryPage, scanIdentityPage, scanPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
 import QRCode from "qrcode";
+import { serveStatic } from "@hono/node-server/serve-static";
 
 const IDENTITY_COOKIE = "person";
 
@@ -67,6 +68,15 @@ app.get("/", (c) => {
   const myOffers = pendingOffersFor(identity, now);
   return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer));
 });
+
+// plans/3d-walkthrough.md Stage 8.1: the real CC0 GLTF models (washer,
+// dryer, sink, table, ceiling lamp, character — see public/models/SOURCES.md
+// for exactly which asset and license each one is) are downloaded once and
+// committed into the repo rather than fetched from a third-party host at
+// runtime, matching ADR 0003's "no outbound dependency" shape the rest of
+// the app already follows. Served as plain static files, no dependency on
+// anything else in this route table.
+app.use("/models/*", serveStatic({ root: "./public" }));
 
 // plans/3d-walkthrough.md Stage 1: the first-person 3D room. Same "no
 // cookie -> identity page" guard as GET / above, reused verbatim rather
