@@ -13,8 +13,9 @@ import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
-import { laundryPage } from "./laundry-view.ts";
+import { laundryPage, scanIdentityPage, scanPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
+import QRCode from "qrcode";
 
 const IDENTITY_COOKIE = "person";
 
@@ -109,6 +110,43 @@ app.get("/laundry/machines-state", (c) => {
   return c.json(result);
 });
 
+// plans/3d-walkthrough.md Stage 3: a real, server-rendered QR code per
+// machine, encoding this machine's scan URL. The origin is computed from
+// the incoming request itself (not a hardcoded deployed hostname), so the
+// same code works against localhost during verification and against the
+// real deployed host in production. docs/adr/0012: the payload is a plain
+// machine-id URL, no token — exactly as trusted as a sticker on a real
+// machine, matching how identity is unverified everywhere else in this
+// app (ADR 0002).
+app.get("/machines/:id/qrcode.png", async (c) => {
+  const machineId = Number(c.req.param("id"));
+  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
+  if (!machine) return c.notFound();
+
+  const origin = new URL(c.req.url).origin;
+  const scanUrl = `${origin}/laundry/scan/${machineId}`;
+  const png = await QRCode.toBuffer(scanUrl, { type: "png", margin: 1 });
+  return c.body(new Uint8Array(png), 200, { "content-type": "image/png" });
+});
+
+// plans/3d-walkthrough.md Stage 3: the scan landing page — three branches
+// (plus the logged-out redirect-through-identity case, handled by
+// scanIdentityPage below), built entirely from existing queue.ts reads
+// and existing action routes (POST /reservations/:id/claim,
+// POST /machines/:id/reservations both already exist and are unchanged).
+app.get("/laundry/scan/:id", (c) => {
+  const machineId = Number(c.req.param("id"));
+  const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
+  if (!machine) return c.html(errorPage("no such machine", 404), 404);
+
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(scanIdentityPage(machineId));
+
+  const now = Date.now();
+  const rows = queue.queueFor(machineId, now);
+  return c.html(scanPage(machine, rows, identity, now));
+});
+
 // Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
 // carries only change signals, named per machine, so each fragment below
 // re-fetches itself with the viewer's own cookie rather than the server
@@ -152,14 +190,30 @@ app.get("/my-status", (c) => {
   return c.html(myStatusBlock(mine, myOffers, now));
 });
 
+// plans/3d-walkthrough.md Stage 3: an optional `redirect` field, sent only
+// by the scan landing page's identity form, sends a just-scanned visitor
+// back to the machine they scanned instead of always to "/". Validated
+// against a narrow allowlist shape — a same-origin path starting exactly
+// with "/laundry/scan/" — so this can't become an open redirect; anything
+// else (a full URL, a protocol-relative "//host" path, any other path)
+// is silently ignored and falls back to "/", the same as not sending the
+// field at all.
+function safeScanRedirect(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!value.startsWith("/laundry/scan/")) return undefined;
+  if (value.startsWith("//")) return undefined; // protocol-relative, would leave this origin
+  return value;
+}
+
 app.post("/identity", async (c) => {
   const body = await c.req.parseBody();
   const room = normalizeRoom(typeof body.room === "string" ? body.room : "");
+  const redirectTo = safeScanRedirect(body.redirect) ?? "/";
   if (!room) return c.html(errorPage("enter your room number as roomXXX, e.g. room304", 400), 400);
 
   setCookie(c, IDENTITY_COOKIE, room, { path: "/", httpOnly: true, sameSite: "Lax" });
   logging.logEvent("identity_set", { room });
-  return c.redirect("/", 303);
+  return c.redirect(redirectTo, 303);
 });
 
 // Lets a visitor get back to the room-number prompt — there was otherwise

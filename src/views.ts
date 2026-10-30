@@ -843,7 +843,14 @@ function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
 
 // --- pages ---------------------------------------------------------------
 
-export function identityPage(): Html {
+// plans/3d-walkthrough.md Stage 3: `redirect` is only ever set by the scan
+// landing page (src/laundry-view.ts's scanPage) when a scanning phone has
+// no `person` cookie yet — carries "where to come back to" through the
+// identity form as a hidden field, so POST /identity can send a
+// just-scanned visitor back to the machine they scanned instead of always
+// to "/". Every existing call site (GET / and GET /laundry with no
+// cookie) omits it and gets the exact same page as before.
+export function identityPage(redirect?: string): Html {
   return page(
     "Room number",
     html`<div class="intro">
@@ -862,6 +869,7 @@ export function identityPage(): Html {
       the number is fine (e.g. <strong>304</strong>). No account, nothing
       else is stored, no name.</p>
       <form method="post" action="/identity">
+        ${redirect ? html`<input type="hidden" name="redirect" value="${redirect}" />` : raw("")}
         <input type="text" name="room" placeholder="e.g. 304 or room304" inputmode="numeric" required maxlength="12" />
         <button class="btn-primary" type="submit">Continue</button>
       </form>`,

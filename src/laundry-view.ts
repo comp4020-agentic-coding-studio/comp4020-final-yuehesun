@@ -1,6 +1,9 @@
 import { html, raw } from "hono/html";
 import type { Machine } from "./schema.ts";
-import { page, type Html } from "./views.ts";
+import type { QueueRow } from "./queue.ts";
+import { DRYING_TYPES } from "./drying-types.ts";
+import { WASHING_TYPES } from "./washing-types.ts";
+import { identityPage, machineCard, page, type Html } from "./views.ts";
 
 // plans/3d-walkthrough.md Stage 1: a first-person 3D walkthrough of the
 // laundry room, reachable from the home page at any time (not gated on
@@ -123,6 +126,18 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
   var PLAYER_RADIUS = 0.35;
   var washerMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b0 });
   var dryerMat = new THREE.MeshStandardMaterial({ color: 0xb08a6a });
+  // plans/3d-walkthrough.md Stage 3: a real, server-rendered QR code
+  // textured onto each machine's aisle-facing side (not the mesh's own
+  // "facing" rotation above, which only matters cosmetically for a
+  // symmetric box — the QR plane's orientation is computed directly from
+  // which row the machine is in, so it always faces into the walkable
+  // aisle where someone would actually stand to scan it). MeshBasicMaterial
+  // (unlit) so scene lighting/shadows never make the code harder to read —
+  // a QR code's whole point is being reliably decodable, not atmospheric.
+  var textureLoader = new THREE.TextureLoader();
+  var QR_SIZE = 0.6; // generous per the plan's own "err generous" note — Stage 4's real phone test is the actual check on whether this is scannable in practice
+  var qrMeshes = {};
+
   machines.forEach(function (m, i) {
     var mPos = positionFor(i);
     var mesh = new THREE.Mesh(
@@ -140,8 +155,28 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
       minZ: mPos.z - MACHINE_D / 2 - PLAYER_RADIUS,
       maxZ: mPos.z + MACHINE_D / 2 + PLAYER_RADIUS,
     });
+
+    var facesPositiveZ = mPos.z < 0; // row 0 (negative z) has the aisle in the +Z direction; row 1, the reverse
+    var qrGeometry = new THREE.PlaneGeometry(QR_SIZE, QR_SIZE);
+    var qrMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    var qrMesh = new THREE.Mesh(qrGeometry, qrMaterial);
+    qrMesh.position.set(
+      mPos.x,
+      MACHINE_H * 0.65,
+      mPos.z + (facesPositiveZ ? MACHINE_D / 2 + 0.01 : -(MACHINE_D / 2 + 0.01)),
+    );
+    qrMesh.rotation.y = facesPositiveZ ? 0 : Math.PI;
+    scene.add(qrMesh);
+    qrMeshes[m.id] = qrMesh;
+
+    textureLoader.load("/machines/" + m.id + "/qrcode.png", function (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      qrMaterial.map = texture;
+      qrMaterial.needsUpdate = true;
+    });
   });
   window.__laundryMachineMeshes = machineMeshes; // Playwright-inspectable escape hatch for verification
+  window.__laundryQrMeshes = qrMeshes; // Stage 3's own verification hook — confirms a texture actually loaded, not just that a plane exists
 
   // --- Stage 2: live machine state, via GET /laundry/machines-state and
   // the existing /events SSE stream. Colours mirror the exact hex values
@@ -359,9 +394,9 @@ export function laundryPage(machines: Machine[]): Html {
     html`<p class="laundry-hint">
       Walk around with <strong>WASD</strong> and look around by clicking the
       scene then moving your mouse (or use the on-screen controls on a
-      touch device). This is the same laundry room as the board above —
-      look for Stage 2+3 of this feature for live machine status and
-      scan-to-claim.
+      touch device). Each machine's colour matches its real status on the
+      board. Scan a machine's code with your phone's camera to claim or
+      reserve it directly.
     </p>
     <div class="laundry-canvas-wrap" id="laundry-canvas-wrap">
       <div class="laundry-crosshair"></div>
@@ -371,4 +406,73 @@ export function laundryPage(machines: Machine[]): Html {
     )}</script>
     <script type="module">${raw(LAUNDRY_SCRIPT)}</script>`,
   );
+}
+
+// --- Stage 3: the scan landing page -------------------------------------
+//
+// plans/3d-walkthrough.md Stage 3 / docs/adr/0012: GET /laundry/scan/:id
+// branches into exactly the cases plan.md's own User story describes for
+// "walk up and scan a machine's code on site" — built entirely from
+// existing queue.ts reads (queueFor) and existing action routes
+// (POST /reservations/:id/claim, POST /machines/:id/reservations); no new
+// queue.ts function, no new way to join/claim beyond what the home page's
+// own buttons already call.
+
+function washingTypeOptionsFor(machineType: Machine["type"]): Html {
+  const types = machineType === "dryer" ? DRYING_TYPES : WASHING_TYPES;
+  return html`${Object.entries(types).map(([value, type]) => html`<option value="${value}">${type.label} (${type.minutes} min)</option>`)}`;
+}
+
+// Case: this room is the front, waiting reservation on this machine —
+// Bill's own "confirm" case (plans/3d-walkthrough.md's background).
+function scanClaimConfirm(machine: Machine, reservationId: number): Html {
+  return html`<p>You're up for <strong>${machine.label}</strong>.</p>
+    <form method="post" action="/reservations/${reservationId}/claim">
+      <button class="btn-primary" type="submit">Claim ${machine.label}</button>
+    </form>`;
+}
+
+// Case: machine is fully idle and this room has no reservation on it —
+// ships plan.md's own long-standing, never-built-until-now User story
+// line: "walk up and scan a machine's code on site... opens that
+// machine's reservation directly."
+function scanReservationForm(machine: Machine): Html {
+  return html`<p><strong>${machine.label}</strong> is free.</p>
+    <form method="post" action="/machines/${machine.id}/reservations">
+      <select name="washingType">${washingTypeOptionsFor(machine.type)}</select>
+      <button class="btn-primary" type="submit">Reserve ${machine.label}</button>
+    </form>`;
+}
+
+// Case: anything else (occupied by someone else, or this room is queued
+// elsewhere on it but not at the front) — read-only, reusing the exact
+// same boardRow rendering the 2D board already uses for this machine,
+// rather than inventing a third way to render queue state.
+function scanReadOnly(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
+  return html`<div class="board">
+    <div class="board-row board-head"><span>Machine</span><span>State</span><span>Next</span><span>Time left</span></div>
+    ${machineCard(machine, rows, identity, now)}
+  </div>`;
+}
+
+export function scanPage(machine: Machine, rows: QueueRow[], identity: string, now: number): Html {
+  const front = rows[0];
+  const mine = rows.find((r) => r.person === identity);
+  const body =
+    front && front.person === identity && front.status === "waiting"
+      ? scanClaimConfirm(machine, front.reservationId)
+      : !mine && rows.length === 0
+        ? scanReservationForm(machine)
+        : scanReadOnly(machine, rows, identity, now);
+
+  return page(`Scan — ${machine.label}`, html`<h2>${machine.label}</h2>${body}<p><a href="/laundry">← Back to the laundry</a></p>`);
+}
+
+// Case: no `person` cookie on this device yet — the existing identity
+// page, with `redirect` set to come straight back to this machine's scan
+// URL once a room number is entered, per docs/adr/0012/the plan's Decision
+// 2 (this is the "log-in page" shape Bill described, without inventing a
+// second identity mechanism — ADR 0004 stays exactly as it was).
+export function scanIdentityPage(machineId: number): Html {
+  return identityPage(`/laundry/scan/${machineId}`);
 }
