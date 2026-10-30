@@ -757,15 +757,28 @@ function isFrontWaitingHolder(machineId: number, personName: string): boolean {
   return front != null && front.status === "waiting" && front.personName === personName;
 }
 
-// The done-but-unacknowledged reservation this machine is actually
-// holding up, if any — not part of activeReservations' waiting/claimed/
-// running set (it's already "done"), so a direct query, not a reuse of
-// that helper.
+// The done, still-in-the-machine, not-yet-handed-off reservation this
+// machine is actually holding up, if any — not part of activeReservations'
+// waiting/claimed/running set (it's already "done"), so a direct query,
+// not a reuse of that helper. Excludes pickupSpot IS NOT NULL on purpose:
+// once a reservation has been handed off, its laundry already left the
+// machine for a numbered spot — it's waiting on the owner's own
+// acknowledgement, not on a second handoff. Without this, a repeated
+// handoff call (a double-click, or two different front-of-queue rooms in
+// quick succession) would silently reassign the same laundry a second
+// spot instead of reporting there's nothing left on the machine to move.
 function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
   return db
     .select()
     .from(reservations)
-    .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        isNull(reservations.pickupSpot),
+      ),
+    )
     .get();
 }
 
