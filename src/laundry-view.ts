@@ -141,7 +141,58 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
       maxZ: mPos.z + MACHINE_D / 2 + PLAYER_RADIUS,
     });
   });
-  window.__laundryMachineMeshes = machineMeshes; // Stage 2 hook point, and a Playwright-inspectable escape hatch for verification
+  window.__laundryMachineMeshes = machineMeshes; // Playwright-inspectable escape hatch for verification
+
+  // --- Stage 2: live machine state, via GET /laundry/machines-state and
+  // the existing /events SSE stream. Colours mirror the exact hex values
+  // src/views.ts's .state-* CSS classes use for the same BoardState
+  // values (src/board-state.ts), so the 3D scene and the 2D board never
+  // disagree about what a colour means — not a second, independently
+  // invented colour language for the same states. ---
+  var STATE_COLOR = {
+    "free": 0x1f6f5c, // --free
+    "running": 0x2b5f8a, // --info
+    "claimed": 0x2b5f8a, // --info
+    "your-turn": 0xb5402a, // --alert
+    "unclaimed": 0xb5402a, // --alert
+    "nearly-your-turn": 0x6b6358, // --ink-muted
+    "waiting": 0x6b6358, // --ink-muted
+  };
+  var lastKnownState = {}; // machineId -> state string, for Stage 6's "did this just become claimed" transition check
+  window.__laundryLastKnownState = lastKnownState;
+
+  function applyMachineState(entries) {
+    entries.forEach(function (entry) {
+      var mesh = machineMeshes[entry.id];
+      if (!mesh) return;
+      var color = STATE_COLOR[entry.state];
+      if (color != null) mesh.material.color.setHex(color);
+      lastKnownState[entry.id] = entry.state;
+    });
+  }
+
+  function refetchMachineState() {
+    fetch("/laundry/machines-state", { headers: { accept: "application/json" } })
+      .then(function (res) { return res.ok ? res.json() : []; })
+      .then(applyMachineState)
+      .catch(function () { /* a transient fetch failure just leaves the last-known colour showing */ });
+  }
+  window.__laundryRefetchMachineState = refetchMachineState; // exposed for Stage 2/6's own scripted verification, so a test can await one refetch deterministically instead of guessing a timeout
+
+  refetchMachineState(); // initial paint, before the first SSE event ever arrives
+
+  // A second, independent EventSource on the same /events stream the
+  // htmx SSE extension already opens for the rest of the page (see
+  // src/views.ts's page() wrapper / hx-ext="sse") — the 3D scene isn't an
+  // htmx page section, so it can't reuse that wiring, but the server
+  // doesn't know or care how many listeners read one broadcast stream.
+  // No new server-side broadcast logic: src/realtime.ts's tick already
+  // emits these same named events for the 2D board.
+  var laundrySource = new EventSource("/events");
+  laundrySource.addEventListener("changed", refetchMachineState);
+  machines.forEach(function (m) {
+    laundrySource.addEventListener("machine-" + m.id, refetchMachineState);
+  });
 
   // --- camera control state ---
   var yaw = 0, pitch = 0;

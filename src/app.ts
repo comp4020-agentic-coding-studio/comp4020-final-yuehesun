@@ -14,6 +14,7 @@ import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
 import { laundryPage } from "./laundry-view.ts";
+import { boardStateFor, boardStateLabel } from "./board-state.ts";
 
 const IDENTITY_COOKIE = "person";
 
@@ -77,6 +78,35 @@ app.get("/laundry", (c) => {
 
   const allMachines = db.select().from(machines).all();
   return c.html(laundryPage(allMachines));
+});
+
+// plans/3d-walkthrough.md Stage 2: the 3D scene's own data source for live
+// machine state — a second consumer of the exact same board-state.ts
+// logic the 2D board already renders with (boardStateFor/boardStateLabel),
+// not a re-derivation of "what does this state mean." Identity-aware (like
+// GET /machines/:id/card) since boardStateFor's "your-turn" vs "unclaimed"
+// distinction depends on whose cookie is asking. Covers every machine in
+// one request rather than one route per machine, since the scene refetches
+// this on every relevant SSE event and 10 small requests per tick would be
+// wasteful for no benefit over one.
+app.get("/laundry/machines-state", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.json({ error: "sign in first" }, 400);
+
+  const now = Date.now();
+  const allMachines = db.select().from(machines).all();
+  const result = allMachines.map((m) => {
+    const rows = queue.queueFor(m.id, now);
+    const front = rows[0];
+    const state = boardStateFor(front, front?.person === identity);
+    return {
+      id: m.id,
+      state,
+      label: boardStateLabel(state, m.type),
+      nextRoom: front ? (front.person === identity ? "you" : front.person) : undefined,
+    };
+  });
+  return c.json(result);
 });
 
 // Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
