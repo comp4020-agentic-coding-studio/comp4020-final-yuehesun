@@ -571,6 +571,74 @@ Replaces Stage 1's "two rows of 5 against the layout" entirely:
   discipline `research/design-plan.md` already established for the 2D
   UI, applied here to a 3D layout instead of a wireframe.
 
+##### 8.2 floor-plan sketch (written before the layout code, per the note above)
+
+Top-down, not to scale. `+Z` is "south" (toward the entrance/spawn), `-Z`
+is "north" (the far wall), `+X` is "east," `-X` is "west" — arbitrary but
+fixed, so every coordinate below reads unambiguously against it.
+
+```
+                              -Z (north / far wall)
+        ┌─────────────────────────────────────────────────────┐
+        │  [W1][W2][W3][W4][W5]     [W6][W7][W8]  [D1][D2]     │  <- washer bank, then dryer
+        │   (one continuous row, a visible gap between          │     bank, same wall,
+        │    washers and dryers — they're still two machine     │     set back from the
+        │    TYPES even if they share a wall)                   │     wall, aisle in front
+        │                                                        │
+        │                                                        │
+-X      │                  w a l k a b l e   a i s l e           │      +X
+(west,  │                                                        │  (east,
+ short  │                                                        │   short
+ wall)  │                                                        │   wall)
+        │  [Sink]   [Ironing table            [Drop-off table    │
+        │   table]   + small "iron" box prop]  + N numbered       │
+        │                                       spots]            │
+        │                                                        │
+        │                                                        │
+        │              (entry / player spawn point,               │
+        │               roughly centered on this wall)            │
+        └─────────────────────────────────────────────────────┘
+                              +Z (south / entrance wall)
+```
+
+- **Washer/dryer bank**: one continuous row along the north wall (`-Z`),
+  not two facing rows as Stage 1 had — Stage 1's *aisle-and-collision*
+  concept (a walkable gap, per-axis AABB collision) is kept, but with all
+  10 machines on one wall and the full room depth as open floor in front
+  of them, there's room for the other zones on the remaining three walls
+  without the room becoming oddly deep. Washers (8) and dryers (2) sit in
+  the same row, in that order, with roughly one `SPACING` unit of visible
+  gap between the last washer and the first dryer so the two types read
+  as grouped, not interleaved.
+- **Sink and ironing area**: against the west wall (`-X`), sink closer to
+  the corner shared with the machine bank (mirroring how a real laundry
+  room's wet fixtures cluster near each other), ironing table further
+  along the same wall. Both pulled in from the wall by the same margin
+  machines use, so their collision boxes don't touch it either.
+- **Drop-off area**: against the east wall (`+X`), deliberately on the
+  opposite side of the room from the sink/ironing cluster — per
+  `plans/3d-walkthrough.md`'s own reasoning, this is the "first thing you
+  see coming in" zone, so it sits closer to the entrance (south wall) than
+  the machine bank does, at the room's south-east.
+- **Entry/spawn point**: the south wall (`+Z`), roughly centered in `X`.
+  The character's initial position (`pos.x = 0, pos.z` near the south
+  wall) replaces Stage 1's spawn at the room's exact center, since a
+  real room is entered from a doorway, not materialized in the middle of
+  the floor.
+- **Room dimensions, relative to existing constants**: width (`X`) driven
+  by the 10-machine row's total span (`SPACING * 10`, plus the washer/
+  dryer gap and wall margins) — wider than Stage 1's room, since all 10
+  machines now share one wall instead of splitting across two. Depth
+  (`Z`) is generous enough to comfortably fit the aisle plus the sink/
+  ironing/drop-off zones' own footprint without crowding them against
+  the machine bank — concretely, at least `AISLE` (Stage 1's existing
+  6-unit constant) plus enough extra depth for a table-sized zone (~1.5
+  units) near each side wall, decided precisely once real table/sink
+  bounding boxes (confirmed in Stage 8.1's isolated preview) are placed.
+- **Ceiling lamps**: 2-3 `lampSquareCeiling` models spaced along the
+  room's centerline in `X`, hung from the new ceiling plane — enough to
+  light the aisle and both side zones without needing one lamp per zone.
+
 #### 8.3 Third-person camera and a real walking character
 
 Replaces the first-person camera entirely, per
