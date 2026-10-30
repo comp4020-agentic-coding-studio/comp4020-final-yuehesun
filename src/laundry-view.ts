@@ -69,13 +69,20 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
 
   // --- renderer / scene / camera ---
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xdcdcdc);
+  // Stage 6 visual pass: the app's own warm "paper" background
+  // (--paper: #f6f3ec in src/views.ts's STYLES) instead of Stage 1's flat
+  // placeholder grey, so the 3D scene reads as part of the same product
+  // rather than a generic demo dropped on top of it.
+  scene.background = new THREE.Color(0xf6f3ec);
+  scene.fog = new THREE.Fog(0xf6f3ec, 10, 26);
 
   var camera = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
   var EYE_HEIGHT = 1.6;
   camera.position.set(0, EYE_HEIGHT, 0);
 
   var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   wrap.appendChild(renderer.domElement);
 
   function resize() {
@@ -86,26 +93,37 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
   }
   window.addEventListener("resize", resize);
 
-  // --- lighting (flat-ish shading is fine for Stage 1 — plans/
-  // 3d-walkthrough.md's "visual style" note; Stage 6 revisits this) ---
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  var sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  // --- lighting (Stage 6 visual pass: soft shadows + a warmer key light,
+  // replacing Stage 1's flat unshadowed placeholder lighting, per
+  // research/3d-booking/ideas.md's own warning that a rushed, flatly-lit
+  // room is what makes a 3D feature read as "a generic demo" rather than
+  // belonging to this app) ---
+  scene.add(new THREE.AmbientLight(0xfff4e0, 0.55));
+  var sun = new THREE.DirectionalLight(0xfff0d8, 0.9);
   sun.position.set(5, 10, 5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -roomHalfWidth - 2;
+  sun.shadow.camera.right = roomHalfWidth + 2;
+  sun.shadow.camera.top = roomHalfDepth + 2;
+  sun.shadow.camera.bottom = -roomHalfDepth - 2;
   scene.add(sun);
 
   // --- room shell ---
   var floor = new THREE.Mesh(
     new THREE.PlaneGeometry(roomHalfWidth * 2, roomHalfDepth * 2),
-    new THREE.MeshStandardMaterial({ color: 0xb8b2a4 }),
+    new THREE.MeshStandardMaterial({ color: 0xded7c8, roughness: 0.9 }), // --rule, the app's own hairline/surface tone
   );
   floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
   scene.add(floor);
 
-  var wallMat = new THREE.MeshStandardMaterial({ color: 0xe8e4da });
+  var wallMat = new THREE.MeshStandardMaterial({ color: 0xf6f3ec, roughness: 0.95 }); // --paper
   var wallHeight = 3;
   function addWall(x, z, w, d) {
     var wall = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight, d), wallMat);
     wall.position.set(x, wallHeight / 2, z);
+    wall.receiveShadow = true;
     scene.add(wall);
   }
   addWall(0, -roomHalfDepth, roomHalfWidth * 2, 0.2);
@@ -135,8 +153,22 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
   // (unlit) so scene lighting/shadows never make the code harder to read —
   // a QR code's whole point is being reliably decodable, not atmospheric.
   var textureLoader = new THREE.TextureLoader();
-  var QR_SIZE = 0.6; // generous per the plan's own "err generous" note — Stage 4's real phone test is the actual check on whether this is scannable in practice
+  var QR_SIZE = 0.45; // generous per the plan's own "err generous" note (Stage 4's real phone test is the actual check on real-world scannability), sized to fit fully under the machine's top edge at its own vertical placement below — found by this stage's own close-up screenshot showing an earlier, larger size poking past the box's top edge
   var qrMeshes = {};
+
+  // Stage 6 visual pass: a dark door-ring on each machine's aisle-facing
+  // side, echoing src/views.ts's own 2D machineIcon (a circular drum ring
+  // is that icon's whole visual identity) so the 3D machines read as the
+  // same product's machines, not generic boxes. Placed low on the face,
+  // under the QR code — the two vertical placements below (0.25 and 0.72,
+  // as a fraction of MACHINE_H) were checked numerically before writing,
+  // then corrected once by this stage's own close-up screenshot (an
+  // earlier, larger QR size poked past the box's physical top edge):
+  // ring spans [0.083, 0.417]*MACHINE_H, QR spans [0.533, 0.907]*MACHINE_H,
+  // both fully within the box's own [0, 1]*MACHINE_H height with real
+  // clearance between the two.
+  var ringMat = new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 0.6, side: THREE.DoubleSide });
+  var RING_RADIUS = 0.2;
 
   machines.forEach(function (m, i) {
     var mPos = positionFor(i);
@@ -147,6 +179,8 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
     mesh.position.set(mPos.x, MACHINE_H / 2, mPos.z);
     mesh.rotation.y = mPos.facing;
     mesh.userData.machineId = m.id;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
     machineMeshes[m.id] = mesh;
     machineBoxes.push({
@@ -157,15 +191,19 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
     });
 
     var facesPositiveZ = mPos.z < 0; // row 0 (negative z) has the aisle in the +Z direction; row 1, the reverse
+    var faceZ = mPos.z + (facesPositiveZ ? MACHINE_D / 2 + 0.01 : -(MACHINE_D / 2 + 0.01));
+    var faceRotationY = facesPositiveZ ? 0 : Math.PI;
+
+    var ring = new THREE.Mesh(new THREE.RingGeometry(RING_RADIUS * 0.78, RING_RADIUS, 32), ringMat);
+    ring.position.set(mPos.x, MACHINE_H * 0.25, faceZ);
+    ring.rotation.y = faceRotationY;
+    scene.add(ring);
+
     var qrGeometry = new THREE.PlaneGeometry(QR_SIZE, QR_SIZE);
     var qrMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
     var qrMesh = new THREE.Mesh(qrGeometry, qrMaterial);
-    qrMesh.position.set(
-      mPos.x,
-      MACHINE_H * 0.65,
-      mPos.z + (facesPositiveZ ? MACHINE_D / 2 + 0.01 : -(MACHINE_D / 2 + 0.01)),
-    );
-    qrMesh.rotation.y = facesPositiveZ ? 0 : Math.PI;
+    qrMesh.position.set(mPos.x, MACHINE_H * 0.72, faceZ);
+    qrMesh.rotation.y = faceRotationY;
     scene.add(qrMesh);
     qrMeshes[m.id] = qrMesh;
 
@@ -193,17 +231,55 @@ import * as THREE from "${THREE_BASE}/build/three.module.js";
     "nearly-your-turn": 0x6b6358, // --ink-muted
     "waiting": 0x6b6358, // --ink-muted
   };
-  var lastKnownState = {}; // machineId -> state string, for Stage 6's "did this just become claimed" transition check
+  var lastKnownState = {}; // machineId -> state string, for the claim-success flash's transition check
   window.__laundryLastKnownState = lastKnownState;
+  var stateEverPainted = false; // first paint must never flash — see below
+
+  // Stage 6: a brief, clearly-visible flash on the exact machine that just
+  // transitioned *into* "claimed" (from anything else), on top of Stage
+  // 2's existing colour change — so "I just claimed this" reads as an
+  // event, the same reasoning ADR 0009's in-page turn alert already
+  // applies to the 2D page. Fires once per real transition, never on a
+  // machine that's simply sitting at "claimed" on initial page load
+  // (stateEverPainted guards the very first refetch; after that, only an
+  // actual old-state -> "claimed" change flashes) and never re-triggers
+  // from an unrelated SSE event for a *different* machine, since this only
+  // ever looks at entries this specific refetch actually returned.
+  var FLASH_COLOR = 0xffd54a;
+  var FLASH_MS = 700;
+  var flashingUntil = {}; // machineId -> timestamp; a color write from applyMachineState is deferred while a flash is in progress, so the two never fight
+  var flashCount = {}; // machineId -> number of times flashed, Stage 6's own verification hook
+
+  function flashClaimed(machineId) {
+    var mesh = machineMeshes[machineId];
+    if (!mesh) return;
+    var realColor = STATE_COLOR["claimed"];
+    mesh.material.color.setHex(FLASH_COLOR);
+    flashingUntil[machineId] = Date.now() + FLASH_MS;
+    flashCount[machineId] = (flashCount[machineId] || 0) + 1;
+    setTimeout(function () {
+      flashingUntil[machineId] = 0;
+      if (realColor != null) mesh.material.color.setHex(realColor);
+    }, FLASH_MS);
+  }
+  window.__laundryFlashCount = flashCount; // Stage 6's own verification hook
 
   function applyMachineState(entries) {
     entries.forEach(function (entry) {
       var mesh = machineMeshes[entry.id];
       if (!mesh) return;
+
+      var previous = lastKnownState[entry.id];
+      var justClaimed = stateEverPainted && previous !== "claimed" && entry.state === "claimed";
+
       var color = STATE_COLOR[entry.state];
-      if (color != null) mesh.material.color.setHex(color);
+      var flashActive = (flashingUntil[entry.id] || 0) > Date.now();
+      if (color != null && !flashActive) mesh.material.color.setHex(color);
+
       lastKnownState[entry.id] = entry.state;
+      if (justClaimed) flashClaimed(entry.id);
     });
+    stateEverPainted = true;
   }
 
   function refetchMachineState() {

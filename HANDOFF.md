@@ -244,3 +244,171 @@ immediately after each check — including the server left running from
 the prior screenshot-capture session at the start of this continuation
 (port 8090, confirmed free before any further work began). No server is
 listening on any port this run used as of this commit.
+
+---
+
+# Handoff — 3D walkthrough, one unattended run (branch `3d-walkthrough`)
+
+Written by the agent at the end of the run `prompt.md` (this run's own
+copy, at the repo root) describes, per its section 8. Read alongside
+`plans/3d-walkthrough.md` and `docs/adr/0012-3d-walkthrough.md`. This
+section is appended after the prior crit-10-extension run's own handoff
+above — a separate run, a separate branch, not a continuation of it.
+
+## What shipped, per stage, with commit hashes
+
+Commits run oldest to newest on `3d-walkthrough` (off `main` at `75aa7b0`,
+which already carried the plan/ADR/research/`prompt.md` written before
+this run started):
+
+- `b5ecda6` — **Stage 1**: `GET /laundry`, a first-person three.js scene
+  (pinned CDN ES module, no bundler), a room with 10 machine
+  placeholders, WASD + pointer-lock mouse-look (desktop) and an on-screen
+  joystick + drag-look (touch). Found and fixed a real defect via this
+  stage's own verification, not assumed: the camera had no collision
+  against machine geometry at all, visibly clipping through a machine's
+  box on sustained forward movement (confirmed by a before/after
+  screenshot pair where the view went solid grey). Fixed with per-axis
+  AABB collision against each machine's bounding box.
+- `e0a8bce` — **Stage 2**: `GET /laundry/machines-state` (reuses
+  `board-state.ts`'s exact logic, no second state->colour mapping); the
+  scene opens its own `EventSource("/events")` on the exact same stream
+  the 2D board's htmx SSE extension already uses. Verified end-to-end
+  against the real app: free -> your-turn -> claimed, each transition
+  polled for and confirmed via the actual rendered mesh colour, not a
+  fixed sleep.
+- `f063fa0` — **Stage 3**: `qrcode` npm dependency; `GET /machines/:id/
+  qrcode.png` (a real PNG, origin read from the request itself); `GET
+  /laundry/scan/:id`'s three branches, built entirely from existing
+  `queue.ts` reads/actions; `POST /identity`'s new `redirect` field with
+  open-redirect rejection. `spec/laundry-scan.test.ts` (5 tests). One
+  real bug the spec file itself caught before committing: an early
+  version of the read-only-case assertion wrongly assumed a non-owner
+  should see no reservation form at all, when `boardRow` (correctly)
+  lets a stranger queue behind the current holder — fixed by claiming
+  the existing reservation first and asserting the one thing that
+  actually matters, no claim form for someone else's reservation id.
+- **Stage 6 (non-phone parts)**: visual pass (warm lighting matching the
+  app's own palette, soft shadows, a drum-ring detail echoing the 2D
+  machine icon) and a claim-success flash cue, committed together with
+  this `HANDOFF.md`/`plan.md` update — see the commit immediately
+  following this file's own commit in `git log` for the exact hash,
+  since it's written in the same step as this handoff per the prompt's
+  own Stage 7/8 sequencing.
+
+## Calls made without being asked, and why
+
+- **Exact room/aisle layout**: two rows of 5 machines with a 6-unit-wide
+  aisle between them, computed from whatever machine count the server
+  actually returns (not hardcoded to 10) — a reasonable, simple floor
+  plan per the plan's own "fixed, hand-authored layout... no procedural
+  generation" note.
+- **File split**: `src/laundry-view.ts`, separate from `src/views.ts` —
+  matches the plan's own suggestion and the precedent `src/board-state.ts`
+  already set for splitting out a growing `views.ts`.
+- **`page()` and the `Html` type in `src/views.ts` made exported** (both
+  were module-private before) — the smallest change that let
+  `laundry-view.ts` share the real page shell/nav instead of hand-rolling
+  a second one. No existing caller's behaviour changed.
+- **Nav link placement**: "Go to the laundry" was added to the shared
+  `page()` wrapper's top nav (visible on every page), not only on the
+  home page specifically as the prompt's literal wording said — this is
+  a strict superset of "visible on the home page" and keeps the entry
+  point reachable from `/laundry/scan/:id` and `/readme/` too, which
+  seemed better than matching the prompt's wording exactly at the cost
+  of a less useful result.
+- **Scan page's three-branch logic lives in `src/laundry-view.ts`**
+  (`scanPage`/`scanClaimConfirm`/`scanReservationForm`/`scanReadOnly`/
+  `scanIdentityPage`), not `src/views.ts` — keeps the whole 3D-walkthrough
+  feature's view code in one file, consistent with the Stage 1 file-split
+  decision above.
+- **QR code size and vertical placement were tuned twice**, both times
+  because a screenshot actually showed a problem a code review wouldn't
+  have caught: first, Stage 3's initial placement was fine at the normal
+  walking distance tested there; then Stage 6's own closer-distance
+  screenshot showed the QR plane's edge poking past the machine box's
+  physical top edge. Fixed by shrinking `QR_SIZE` from 0.6 to 0.45 (scene
+  units) and adjusting its vertical ratio from 0.85 to 0.72 of
+  `MACHINE_H`, checked numerically (not just re-eyeballed) before
+  re-verifying with another screenshot.
+- **Claim-flash colour and duration**: a saturated gold (`0xffd54a`) for
+  700ms — distinct from every real state colour already in use
+  (free/claimed/running/alert/muted), so it reads unambiguously as a
+  transient event rather than a new, permanent state.
+- **Image-generation API**: not used at all this run. Stage 1's simple
+  box/cylinder geometry plus Stage 6's lighting/shadow pass were judged
+  sufficient without spending any of the shared course image budget —
+  zero calls made, so there's nothing to report on download/commit
+  discipline for this run.
+- **Machine ids for `spec/laundry-scan.test.ts`**: 9 and 10 (both
+  dryers) — the only pair no other spec file touches, confirmed by
+  grepping every existing `spec/*.test.ts` for its own reserved machine
+  ids before picking these.
+- **Playwright/WebGL environment fix**: already in place before this run
+  started (see the next section) — not something this run had to solve,
+  but worth recording that it held up for the entire run with no
+  degradation.
+
+## The Playwright/WebGL environment fix (prompt.md section 1)
+
+Held up for the whole run with no issues: every `LD_LIBRARY_PATH`-prefixed
+Playwright invocation launched cleanly and produced real, visually
+correct screenshots (SwiftShader software rendering — no GPU, but a
+genuinely correct WebGL context throughout). Nothing fell back to
+non-visual verification at any point in this run.
+
+One real, separate environment issue found and worked around, unrelated
+to the Playwright fix: a `pnpm check` run collided with
+`spec/restart.test.ts`'s own hardcoded port 8091, because this run's own
+verification server happened to also be using 8091 at the time. Not a
+code defect — `spec/restart.test.ts` has reserved 8091 for its own
+server since before this run started (`const PORT = 8091` in that file).
+Every verification server after that first collision used 8092 instead;
+worth noting in case a future run picks a scratch port without first
+checking for this one hardcoded exception.
+
+## Image-generation API
+
+Not used. See "Calls made without being asked" above.
+
+## What's weak or worth a second pass — flagged for the user's own Stage 4 work
+
+- **QR code scannability at a real phone's actual working distance is
+  still unverified by an actual phone** — Stage 3/6's screenshots confirm
+  the code is crisp and correctly decodes when extracted and run through
+  a real QR decoder (jsQR) programmatically, and that it's legible at a
+  realistic in-scene walking distance in a screenshot, but a screenshot
+  is not the same lighting/camera/focus conditions a real phone's camera
+  will see on a real screen showing this scene. Worth the first thing to
+  check in Stage 4, before anything else.
+- **The claim-success flash fires only while the `/laundry` tab is
+  already open** — if a resident claims from their phone (the scan page)
+  while a *different* device/tab has `/laundry` open and idle in the
+  background, that second device's flash will still fire correctly (it's
+  driven by the same SSE stream, not by who performed the action), but
+  this hasn't been exercised with a genuinely separate, physically
+  distant second device — only two Playwright request contexts on one
+  machine, same as every other stage's own verification shape in this
+  run.
+- **Touch controls (joystick + drag-look) are verified via Playwright's
+  touch-event emulation, never a real finger on a real touchscreen** —
+  the same category of gap `HANDOFF.md`'s crit-10-extension section
+  above already flagged for the 2D UI's own touch interactions.
+- **Room/aisle proportions and camera eye height were picked by
+  judgement, not measured against a real laundry room** — reasonable
+  defaults, not derived from any real-world reference.
+
+## Docker check
+
+Not attempted this run — out of scope for Stages 1-3/6, and the prior
+crit-10-extension handoff above already documents this WSL2 environment's
+Docker limitation in detail. Nothing in this run's changes affects that
+finding either way (no Dockerfile changes were made).
+
+## Ports and servers
+
+Every verification server this run started used port 8092 (after the one
+8091 collision noted above, found and corrected within the same stage).
+Each was killed and its port's freedom confirmed via `ss -tlnp`
+immediately after every check, including the one collision. No server is
+listening on any port this run used as of this commit.
