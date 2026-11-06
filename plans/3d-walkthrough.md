@@ -1285,6 +1285,79 @@ and centered, machine counts/positions match the confirmed split above,
 east-wall collision is walked along and confirmed not to clip or
 phantom-block) — not just "does it still run."
 
+### Stage 9.3 (debug, deferred to a future session) — the character doesn't visibly move, and the first frame looks like a wall of fog
+
+**Explicitly deferred.** The user's own direction for this session was to
+spend it on Stage 9.2's layout, not open-ended debugging; this section
+records real evidence from a short investigation so the next session
+doesn't start from zero, not a finished diagnosis — **do not assume
+either root cause below without re-confirming it first.**
+
+**Symptom 1, user-reported: "the character is still stuck in the middle
+of the room and doesn't move."**
+
+Real evidence gathered this session, against the Stage 8 build running
+locally (scratch port 8095, a throwaway scratch database, both cleaned up
+afterward): dispatching a genuine `page.keyboard.down("KeyW")` (not the
+`window.__laundryDebug.pressKey()` test hook) for ~2 seconds moved
+`pos.z` from `3.9` to `-0.43` to `-0.52` across two separate runs — **the
+underlying position state does change**, both with and without first
+clicking the canvas to focus it. This means the bug is not "keyboard
+input is ignored." The likely real bug is downstream of that: either the
+character mesh isn't visually tracking `characterRoot.position` on
+screen (a rendering/camera problem, the same family as the already-fixed
+Stage 9.1 bug, but not confirmed to be the same cause), or whatever the
+user actually saw was a different interaction path than a plain
+"load the page and press W" — e.g. pointer lock's own `NotAllowedError`
+(seen in every automated run here too, expected per Stage 7.2's own
+"best-effort" design) leaving some input-handling state stuck. **Next
+session's concrete next step**: repeat this exact repro in a real browser
+(not Playwright) while watching the canvas, and/or extend
+`_debugCharacter()`'s live comparison of `characterRoot.position` against
+each mesh's actual world position across several seconds of continuous
+movement, the same method that found Stage 9.1's two causes — don't
+guess past this point without that comparison.
+
+**Symptom 2, user's hypothesis: "possibly because the ceiling is too low,
+the view clips through it the moment the scene loads."**
+
+Real evidence gathered this session: the very first rendered frame after
+navigating to `/laundry` (captured at `page.waitForTimeout(0)`, i.e. as
+early as a screenshot can be taken) shows a **plain, textureless beige
+gradient filling the whole canvas — no walls, no machines, no ceiling
+geometry at all**, with the on-screen crosshair the only visible UI
+element. This is consistent with the scene's GLTF models
+(`loadModel()`'s async `gltfLoader.load()` calls — walls are actually
+plain `BoxGeometry`/`PlaneGeometry` built synchronously, but the lamps,
+drop-off table, and machines/sink/ironing table are all async-loaded
+GLTFs) simply not having loaded/attached yet at that exact first frame,
+combined with the scene's own `fog` and ambient lighting producing a
+flat, hazy, undifferentiated colour that could easily be *mistaken* for
+"the camera is embedded inside a low ceiling," without actually being
+that. **This was not conclusively distinguished from a real
+low-ceiling/spawn-point clipping bug in this session** — only the "first
+frame is visually blank" fact is confirmed; whether that blankness is
+"nothing has loaded yet" (a harmless, brief loading-order artifact) or
+"the camera's actual steady-state position clips geometry" is still
+open. **Next session's concrete next step**: use `_debugScene()`'s
+`cameraPos` alongside a direct read of `wallHeight`/the character's spawn
+`CAM_HEIGHT` to check numerically whether the resting camera position
+ever sits inside/above the ceiling plane, *and* separately confirm via a
+screenshot taken a full 2+ seconds after load (once every model has had
+time to load) whether the "wall of fog" symptom persists once geometry
+is actually in the scene — if it clears up once models load, this was
+model-loading order, not a ceiling-height bug, and Stage 9.2's own new,
+smaller room dimensions are a reasonable moment to re-check this fresh
+rather than chasing it against the soon-to-be-replaced Stage 8.2
+geometry.
+
+**Scope note**: both symptoms are investigate-and-fix work against
+Stage 8's existing movement/camera code, explicitly out of Stage 9.2's
+own scope (Stage 9.2 is layout-constants-only, per that section's own
+"nothing here touches... movement/camera code" line). Fixing either one
+is real work for a dedicated stage of its own, not a drive-by fix bundled
+into the layout commit.
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual
