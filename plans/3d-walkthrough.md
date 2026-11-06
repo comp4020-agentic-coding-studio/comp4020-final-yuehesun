@@ -1146,17 +1146,134 @@ entirely for the next implementation pass:
   small-residence laundry room, not a room sized to comfortably fit four
   separate zones with generous walking space around each, which is what
   Stage 8.2 actually produced.
-- **Not yet decided / needs a fresh design pass before coding, not just
-  a parameter tweak**: the exact new `roomHalfWidth`/`roomHalfDepth`
-  formula, the drop-off zone's exact footprint/model (the existing
-  `table.glb` reused at a much larger scale, multiple `table.glb`
-  instances side by side, or a different Furniture Kit model entirely —
-  re-check `research/3d-booking/asset-sourcing.md`/the Furniture Kit pack
-  for a shelving-unit model before assuming `table.glb` scaled up is the
-  right call), and the exact text-label implementation technique. **A
-  future session should treat this as "redo Stage 8.2's sketch and
-  layout code from scratch against this new confirmed plan," not "patch
-  the existing constants."**
+#### 9.2 implementation plan (written before any layout code, confirmed with the user)
+
+This replaces the "not yet decided" placeholder above — every open
+question there is now resolved. Scope is `src/laundry-view.ts` only
+(layout constants, collision boxes, and the new drop-off-zone build
+block); nothing here touches `src/queue.ts`, `src/pickup-spots.ts`,
+realtime/SSE wiring, movement/camera code, or the examine/QR interaction
+logic — all of that is reused exactly as Stage 8 built it, per this
+file's own "What I check after this stage" section below.
+
+**1. Machine split, data-driven (replaces the single-wall layout
+entirely).** Not hardcoded to "5 north, 3+2 east" — computed from
+whatever `{id, label, type}` list the server actually returns, the same
+principle the file's own top-of-file comment already states:
+
+```
+var dryers = machines.filter(isDryer);
+var washers = machines.filter(not isDryer);
+var eastSlotCount = Math.round(machines.length / 2);
+var eastDryerCount = Math.min(dryers.length, eastSlotCount);
+var eastWasherCount = eastSlotCount - eastDryerCount;
+// east wall gets eastWasherCount washers + eastDryerCount dryers (dryers last, closest to the corner)
+// north wall gets the remaining washers
+```
+
+Against the real seeded data (8 washers, 2 dryers) this resolves to north
+wall = 5 washers, east wall = 3 washers + 2 dryers — exactly the
+confirmed split — but the formula holds if the seed data ever changes,
+rather than silently drifting out of sync with it the way a hardcoded 5/3
+split would.
+
+**2. East-wall machines need a real orientation fix, not just a position
+change.** `machinePositionFor` currently only ever returns `facing:
+Math.PI` (every machine on one wall, facing the same way). East-wall
+machines face **west** (into the room) instead, and `addCollisionBox(cx,
+cz, w, d)` is axis-aligned in world space — a machine rotated 90° has its
+local `w`/`d` swapped in world X/Z. **The specific risk this plan writes
+down in advance, per `CLAUDE.md`'s "name the failure mode" rule**: if the
+east-wall branch reuses `footprint.w`/`footprint.d` unswapped when calling
+`addCollisionBox`, the collision box is built the wrong shape — not
+visibly wrong in a static screenshot (the box is invisible), only wrong
+once someone actually walks along the east wall and either clips through
+a machine or hits a wall of invisible collision several units from the
+model. This is exactly the kind of bug `CLAUDE.md`'s planning rule exists
+to catch on paper, not by shipping and hoping a screenshot happens to
+include that angle. Fix: `addCollisionBox` for an east-wall machine gets
+`(footprint.d, footprint.w)` — swapped — not `(footprint.w,
+footprint.d)`. The exact rotation sign (`+Math.PI/2` vs. `-Math.PI/2`)
+will be picked by the same trial-and-screenshot method every other
+facing/orientation constant in this file was tuned by (`MODEL_BBOX`,
+`QR_SIZE`, the status-light post) — written down here as a known
+to-verify step, not pre-computed and assumed correct.
+
+**3. Drop-off zone: real sourced shelving models, not a `table.glb`
+reuse.** Confirmed via `poly.pizza`'s bundle listing for Kenney's
+Furniture Kit (the same pack `SOURCES.md` already cites): the pack
+includes **"Bookcase Open"**, **"Bookcase Open Low"**, and **"Bookcase
+Closed"** models, CC0, real named entries in the bundle — not a
+substitution. "Bookcase Open" (no doors, open shelving) is the closest
+match to the reference image's floor-to-ceiling open-shelf unit and to
+what this zone actually needs to show (clothes sitting visibly on a
+shelf, at a glance, from across the room). This needs **new asset work**,
+same shape as Stage 8.1's own model sourcing:
+   - Download the itch.io GLB pack (`SOURCES.md`'s existing source), find
+     the actual bookcase file name inside it (the itch.io page doesn't
+     list individual file names, so this has to be confirmed by unzipping
+     and looking, not assumed from the poly.pizza listing's own name
+     string), and add it to `public/models/` with a `SOURCES.md` entry
+     matching the existing per-model entries' format.
+   - Verify it in an isolated preview exactly the way Stage 8.1 did before
+     building the room around it (one `GLTFLoader.load()`, one
+     screenshot) — confirm it reads as "a shelving unit you could set a
+     laundry basket on," not something that turns out tiny, oddly
+     textured, or closed-door once actually opened.
+   - Measure its real bbox the `footprintOf`/`MODEL_BBOX` way (this file's
+     own documented lesson: a guessed footprint silently misplaces things
+     that look fine numerically but are invisible or wrong in a real
+     screenshot) before placing the 6 pickup-spot markers on/in it.
+   - Place **2-3 instances side by side** spanning a meaningful fraction
+     of the west wall (matching the user's explicit rejection of a
+     single small table-sized footprint) — not one scaled-up instance,
+     which risks a visibly wrong aspect ratio (thin legs stretched to
+     cover a wide span) the way a single enlarged `table.glb` would.
+   - `dropoffSpotMeshes`'s existing recolour-on-occupancy logic
+     (`SPOT_FREE_COLOR`/`SPOT_OCCUPIED_COLOR`) is unchanged — only the
+     6 markers' `(x, z)` placement moves onto the new shelving geometry's
+     real measured surface height(s), not the old single-table's `topY`.
+
+**4. Drop-off text label: a billboard sprite, not 3D geometry.** A
+`THREE.Sprite` with a `THREE.CanvasTexture` (text drawn onto an offscreen
+`<canvas>`, used as the sprite's map) — a sprite always faces the camera
+regardless of approach angle, which a flat plane of 3D text would not
+without extra per-frame billboarding code. This needs zero new
+dependencies (no font-loading library, matching `docs/adr/0003`'s no-build-
+step constraint) and is a well-established three.js pattern, not a novel
+technique. Text: **"DROP-OFF"** (confirmed with the user; kept short and
+legible rather than a full sentence, matching this app's existing habit
+of short, plain UI copy over explanatory paragraphs). Mounted above the
+shelving units, large enough to read at the room's new, smaller approach
+distance — tuned by screenshot, same as every other size constant in this
+file.
+
+**5. Sink + ironing table merge into one free-standing island.**
+`sinkZ`/`ironZ` (currently two separate west-wall positions) are replaced
+by one group positioned in open floor space (not against any wall),
+holding both the existing `kitchenSink.glb` and `table.glb` (+ the
+existing box "iron" prop) placed adjacent to each other inside that one
+group — reusing both models and both already-tuned collision footprints
+(sink 0.5×0.5, table 0.85×0.45) exactly as measured in Stage 8.2, just
+recombined under one group transform instead of two independent world
+positions.
+
+**6. Room size.** `roomHalfWidth`/`roomHalfDepth` stay computed from
+content (not hardcoded), but the inputs change: with both long walls now
+carrying machines (5 on north, 5 on east — tighter than one wall carrying
+all 10), the natural `rowWidth`-driven half-width comes out close to half
+of Stage 8.2's built result on its own, which is what "within half the
+current width" asked for — not a separate arbitrary shrink factor bolted
+on afterward. Exact aisle/margin constants (`AISLE_DEPTH`, `WALL_MARGIN`,
+the island's own clearance from the walls) are tuned by the same
+screenshot method as every other constant here, not pre-computed.
+
+**7. Ceiling lamps.** The existing `lampRowZ` grid is built for a
+one-long-wall layout (two rows along Z only). The new near-square room
+with machines on two different walls needs a general room-covering grid
+(rows along both X and Z, or a simple N×M grid sized to
+`roomHalfWidth`/`roomHalfDepth` directly) rather than a layout tied to
+one wall's width.
 
 **Verification approach once implemented**: the same Playwright
 screenshot-overview pattern Stage 8.2 already used
@@ -1164,8 +1281,9 @@ screenshot-overview pattern Stage 8.2 already used
 shots of the drop-off zone specifically), explicitly re-checked against
 this section's requirements (room reads as smaller, drop-off zone reads
 as large/obviously-for-laundry with visible text, island is free-standing
-and centered, machine counts/positions match the confirmed split above)
-— not just "does it still run."
+and centered, machine counts/positions match the confirmed split above,
+east-wall collision is walked along and confirmed not to clip or
+phantom-block) — not just "does it still run."
 
 ## What I check after this stage
 
