@@ -21,6 +21,26 @@ of citing sources throughout `research/3d-booking/`.
   Stage 8.2 — no separate ironing-board or shelf model exists in the pack by
   name, and none is needed).
 
+## bookcaseOpen.glb
+
+- **Source asset**: Kenney's "Furniture Kit" (same pack as the models
+  above — not a separate sourcing effort)
+- **Original page**: <https://kenney.nl/assets/furniture-kit>
+- **License**: CC0 1.0 Universal (<https://creativecommons.org/publicdomain/zero/1.0/>)
+- **Downloaded via**: the same itch.io GLB mirror as the other models
+  above; confirmed present in the pack by name on poly.pizza's bundle
+  listing (<https://poly.pizza/bundle/Furniture-Kit-NoG1sEUD1z>) before
+  downloading, alongside sibling variants `bookcaseClosed.glb`,
+  `bookcaseClosedDoors.glb`, `bookcaseClosedWide.glb`, and
+  `bookcaseOpenLow.glb` (not used).
+- Used for Stage 9.2's drop-off/public zone (`plans/3d-walkthrough.md`):
+  the open (no-door) variant was picked specifically because the
+  drop-off zone needs to show laundry sitting visibly on a shelf at a
+  glance, which a closed-door cabinet wouldn't.
+- Measured bbox (local space, corner-origin like every other model
+  here): min `(0, 0, -0.25)`, max `(0.4, 0.88, 0)` — i.e. 0.4 wide, 0.25
+  deep, 0.88 tall.
+
 ## character.glb + Textures/colormap.png
 
 - **Source asset**: Kenney's "Mini Characters"

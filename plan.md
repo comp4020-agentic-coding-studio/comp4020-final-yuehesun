@@ -315,21 +315,51 @@ and the offer moves to the next person instead.
   root-motion track fighting the code's own position control, and a
   stale bind-pose bounding sphere defeating frustum culling on the
   animated skeleton — see commit `f34d80a` for the full root-cause
-  writeup). **9.2 (the room's floor plan needs a redo — smaller room, a
-  much larger labeled drop-off zone, sink+ironing merged into a
-  free-standing island) is still open**, fully specified with a
-  user-confirmed replacement layout in `plans/3d-walkthrough.md` Stage
-  9.2 — not yet implemented. The `3d-walkthrough` branch (all of Stages
-  1-9.1) was merged into `main` (merge commit `060c6f7`) and pushed;
-  CI's `check` job (a real `docker build`, the first real verification
-  of this branch's Dockerfile changes — WSL2 here can't run Docker
-  locally) and `deploy` job both passed, and
-  `https://comp4020-final-yuehesun.fly.dev/` is confirmed live with the
-  3D walkthrough (checked directly: `/` returns 200 and links to
-  `/laundry`, `/machines/1/qrcode.png` returns a real 200). **Stage 4
-  (a real two-device phone-scan rehearsal) still hasn't happened** — it
-  needs a physical second phone, which now that the real deployment
-  exists is finally possible; do this by hand, not the agent's job.
+  writeup). The `3d-walkthrough` branch (all of Stages 1-9.1) was merged
+  into `main` (merge commit `060c6f7`) and pushed; CI's `check` job (a
+  real `docker build`, the first real verification of this branch's
+  Dockerfile changes — WSL2 here can't run Docker locally) and `deploy`
+  job both passed, and `https://comp4020-final-yuehesun.fly.dev/` is
+  confirmed live with the 3D walkthrough (checked directly: `/` returns
+  200 and links to `/laundry`, `/machines/1/qrcode.png` returns a real
+  200). **Stage 4 (a real two-device phone-scan rehearsal) still hasn't
+  happened** — it needs a physical second phone, which now that the real
+  deployment exists is finally possible; do this by hand, not the agent's
+  job.
+- **Stage 9.2 (floor-plan redo) implemented and verified locally, not yet
+  deployed.** Full design-before-code plan and build detail in
+  `plans/3d-walkthrough.md` Stage 9.2/"9.2 built and verified": machines
+  split data-driven across north (5 washers) and east (3 washers + 2
+  dryers) walls, matching the user-confirmed layout exactly; the whole
+  west wall is now the drop-off/public zone, three real sourced
+  `bookcaseOpen.glb` shelving units (new CC0 asset, confirmed and
+  measured the same way Stage 8.1 verified its own models — see
+  `public/models/SOURCES.md`) replacing the old single small table, with
+  a `THREE.Sprite`/`CanvasTexture` "DROP-OFF" billboard label; sink +
+  ironing table merged into one free-standing island in open floor;
+  ceiling lamps now a room-covering grid instead of a one-wall layout.
+  Room width came out to almost exactly half of Stage 8.2's own built
+  value (9.4 vs. 19.4), matching "within half the current width."
+  `pnpm check` green (13 files, 30 tests) against a scratch server;
+  `src/queue.ts` untouched throughout, confirmed by diff. **A real bug
+  this stage's own verification found and fixed**: splitting the old
+  single `dropoffGroup` into three bookcase groups left one proximity-
+  highlight function still referencing the deleted variable — an uncaught
+  exception inside the per-frame render loop that silently stopped the
+  whole scene from ever redrawing again once triggered, a symptom
+  indistinguishable from "the character stopped moving." Full detail,
+  including the misleading-verification lesson this one produced (a
+  crashed render loop makes every later test point in the same browser
+  session look "stuck" regardless of its own correctness), is in the plan
+  file. **Stage 9.3 (debug: the character sometimes doesn't visibly move;
+  the very first frame looks like a blank fog wall) is separately
+  recorded but explicitly deferred** — real evidence gathered, two
+  concrete next steps written down, not yet investigated to a root cause;
+  see `plans/3d-walkthrough.md` Stage 9.3. **Not yet done for Stage
+  9.2**: a fresh round of Playwright screenshots specifically re-checked
+  against the Stage 9.2 plan's own verification checklist end-to-end in
+  one pass (individual requirements were spot-checked during build, but
+  not yet gathered as one dedicated final review), and deploying.
 
 ## Final project deadline — read this before planning further work
 

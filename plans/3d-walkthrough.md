@@ -1285,6 +1285,69 @@ and centered, machine counts/positions match the confirmed split above,
 east-wall collision is walked along and confirmed not to clip or
 phantom-block) — not just "does it still run."
 
+#### 9.2 built and verified
+
+Implemented per the plan above, with one asset substitution and one real
+bug found during verification — both real-world fit details worth
+recording, not silent deviations.
+
+- **`bookcaseOpen.glb` sourced for real**: downloaded the actual itch.io
+  GLB pack (the free "name your own price, $0 is fine" flow needed a real
+  Playwright-driven download — the page's own download-token endpoint
+  expects a browser session, not a bare `curl`), confirmed CC0 by the
+  pack's own bundled license text, and measured its real bbox the
+  `footprintOf`/`MODEL_BBOX` way before placing anything: min `(0, 0,
+  -0.25)`, max `(0.4, 0.88, 0)`. `public/models/SOURCES.md` records the
+  exact source and the sibling variants not used.
+- **Machine-count formula confirmed against the real seed data**: north
+  wall = 5 washers, east wall = 3 washers + 2 dryers, exactly as planned.
+- **Room size confirmed by the actual numbers, not just the arithmetic
+  sketch above**: `roomHalfWidth` came out to 4.7 (full width 9.4) against
+  Stage 8.2's own built 19.4 — almost exactly half, matching "within half
+  the current width." Depth stayed close to Stage 8.2's own, as predicted
+  (the request was specifically about width).
+- **East-wall collision-box axis swap confirmed correct** by walking a
+  real (non-teleported) path into both a washer on the east wall and the
+  west-wall bookcases (whose 0.4x0.25 footprint, unlike a washer's
+  near-square one, actually exercises the swap) — both stop cleanly at
+  the model's edge, no clipping, no phantom block short of the model.
+- **A real bug this stage's own verification found and fixed**: rewriting
+  the drop-off zone from one `dropoffGroup` into three separate bookcase
+  groups left `ensureRingFor()` (the proximity-highlight-ring code, called
+  every frame via `setHighlight()`) still referencing the now-deleted
+  `dropoffGroup` variable. Walking near the drop-off zone threw an
+  uncaught `ReferenceError` inside the `requestAnimationFrame` callback —
+  since nothing catches it, the callback never reschedules its own next
+  frame, so the *entire render loop silently stops forever* the instant
+  anyone gets close enough to the drop-off zone to trigger a highlight.
+  This produced a symptom indistinguishable from "the character doesn't
+  move" (position state was still updating under the hood; nothing was
+  redrawn to show it) — worth noting as a *class* of bug (an uncaught
+  exception inside `requestAnimationFrame` silently kills the whole render
+  loop) even though it isn't the same bug Stage 9.3 investigated: this
+  one only exists because today's own Stage 9.2 rewrite deleted
+  `dropoffGroup`, so it can't explain the user's original Stage 8 report,
+  which predates this change entirely. Fixed by
+  reading `dropoffAnchor.position` directly (a real scene child with its
+  own position) instead of a group that no longer exists as one object.
+  **Caught by**: walking a real (non-teleported) path toward the
+  drop-off zone with a `page.on("pageerror", ...)` listener attached —
+  not by the typecheck (a dynamically-scoped `var` reference inside a
+  template-string client script is invisible to `tsc`), and not by any
+  single-point `teleportTo()` test run in isolation (those never
+  triggered `setHighlight()`'s "newly in range" code path from outside
+  the zone). **Lesson for future verification of this file**: a batch of
+  `teleportTo()`-based point tests run back-to-back can produce confusing,
+  seemingly-contradictory "stuck" results for two unrelated reasons — (1)
+  teleporting a point *inside* a collision box's padded bounds (the box
+  already includes `PLAYER_RADIUS`) looks identical to "collision is
+  broken," when real walking from outside would simply never reach that
+  point to begin with; (2) if an earlier point in the same browser session
+  already crashed the render loop, every later point in that same
+  `page` session will also read as "stuck," regardless of whether that
+  specific point has any real problem — always re-run a suspicious result
+  in a fresh `page`/fresh navigation before concluding it's real.
+
 ### Stage 9.3 (debug, deferred to a future session) — the character doesn't visibly move, and the first frame looks like a wall of fog
 
 **Explicitly deferred.** The user's own direction for this session was to

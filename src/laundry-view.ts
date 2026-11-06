@@ -50,11 +50,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   if (!wrap || !dataEl) return;
   var machines = JSON.parse(dataEl.textContent || "[]");
 
-  // --- Stage 8.2 floor plan (plans/3d-walkthrough.md's own sketch,
-  // written before this code): all machines on one wall (north, -Z),
-  // washers then dryers in one row with a visible gap between the two
-  // types; sink/ironing on the west wall (-X); drop-off on the east wall
-  // (+X), closer to the entrance; spawn/entry at the south wall (+Z). ---
+  // --- Stage 9.2 floor plan (plans/3d-walkthrough.md's own
+  // user-confirmed sketch, replacing Stage 8.2's single-wall layout
+  // entirely): machines split across two walls (north -Z, east +X); the
+  // whole west wall (-X) is the drop-off/public zone; sink+ironing merge
+  // into one free-standing island in open floor, not against any wall;
+  // spawn/entry at the south wall (+Z). The split is computed from the
+  // real {id, label, type} list, not hardcoded to any specific count
+  // (this file's own long-standing principle) — against the real seeded
+  // data (8 washers, 2 dryers) this resolves to north=5 washers, east=3
+  // washers+2 dryers, matching the user-confirmed layout, but the
+  // formula holds if the seed data ever changes. ---
   var SPACING = 1.6;
   // A rough waist-ish height for things that aren't the machine models
   // themselves (the drop-off anchor, the unclaimed-laundry marker above a
@@ -62,36 +68,78 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   // each model's real measured bbox (footprintOf) instead, per this
   // stage's own bbox-measurement fix below.
   var GENERIC_WAIST_HEIGHT = 0.9;
-  var TYPE_GAP = 1.0; // extra gap between the washer group and the dryer group
-  var washers = machines.filter(function (m) { return m.type !== "dryer"; });
   var dryers = machines.filter(function (m) { return m.type === "dryer"; });
-  var rowWidth = washers.length * SPACING + (dryers.length > 0 ? TYPE_GAP + dryers.length * SPACING : 0);
+  var allWashers = machines.filter(function (m) { return m.type !== "dryer"; });
+  var eastSlotCount = Math.round(machines.length / 2);
+  var eastDryerCount = Math.min(dryers.length, eastSlotCount);
+  var eastWasherCount = Math.max(0, eastSlotCount - eastDryerCount);
+  var northWashers = allWashers.slice(0, allWashers.length - eastWasherCount);
+  var eastWashers = allWashers.slice(allWashers.length - eastWasherCount);
+  // Washers nearest the shared corner with the north wall (continuing the
+  // washer run visually around the bend), dryers nearest the south end of
+  // the east wall — any leftover dryers beyond what the east wall can
+  // take (not the case for the real seeded data: 2 dryers, 5 east slots)
+  // fall back to the north wall rather than being silently dropped.
+  var eastMachines = eastWashers.concat(dryers.slice(0, eastDryerCount));
+  var northMachines = northWashers.concat(dryers.slice(eastDryerCount));
 
-  var WALL_MARGIN = 0.9; // machines pulled in from the back wall by this much
-  var AISLE_DEPTH = 7; // open floor between the machine wall and the south wall — generous enough that the third-person camera (CAM_DISTANCE behind the spawn point) still has room inside the walls; found to matter by this stage's own screenshot check (see CAM_WALL_MARGIN's clamp below for the belt-and-braces fix)
-  var ZONE_DEPTH = 1.6; // how far sink/ironing/drop-off project from their side walls
+  var WALL_MARGIN = 0.9; // machines pulled in from the wall by this much, unchanged from Stage 8.2
+  var CORNER_MARGIN = 0.7; // gap from the shared north/east corner before the first machine on either wall
+  var SOUTH_OPEN_DEPTH = 2.2; // open floor between the east wall's row and the south (entrance) wall — tighter than Stage 8.2's 7-unit aisle, since this room is meant to read as smaller, but still enough for the third-person follow camera (see CAM_WALL_MARGIN's clamp below); tuned by screenshot like every other constant in this file, not derived
+  var WEST_ZONE_DEPTH = 0.5; // how far the drop-off shelving projects from the west wall (a bookcase's own measured depth, see MODEL_BBOX.bookcase)
+  var ISLAND_CLEARANCE = 2.4; // the sink+iron island's own footprint plus walking room around it
+  // With 5 machines now on each of two walls instead of 10 on one long
+  // wall, the room becomes close to square rather than one long wide
+  // rectangle. Worked out against the real seeded counts (8 washers, 2
+  // dryers): northRowWidth/eastRowDepth both come out to 5*SPACING=8.0,
+  // giving roomHalfWidth ≈ 4.7 (full width ≈ 9.4) against Stage 8.2's own
+  // built full width of 19.4 — almost exactly half, which is what "within
+  // half the current width" asked for, confirmed by this stage's own
+  // screenshot check below rather than assumed from the arithmetic alone.
+  // Depth stays close to Stage 8.2's own (an east wall of 5 machines
+  // needs roughly the same minimum run a 10-wide single wall did), which
+  // is expected and fine — the request was specifically about width.
 
-  var roomHalfWidth = Math.max(rowWidth / 2 + 1.2, ZONE_DEPTH + 2);
-  var roomHalfDepth = AISLE_DEPTH / 2 + WALL_MARGIN + 1;
+  var northRowWidth = northMachines.length * SPACING;
+  var eastRowDepth = eastMachines.length * SPACING;
+
+  var roomHalfWidth = Math.max(northRowWidth / 2 + CORNER_MARGIN, WEST_ZONE_DEPTH + ISLAND_CLEARANCE);
+  var roomHalfDepth = (CORNER_MARGIN + eastRowDepth + SOUTH_OPEN_DEPTH) / 2;
   var northZ = -roomHalfDepth + WALL_MARGIN;
+  var eastX = roomHalfWidth - WALL_MARGIN;
+  var westX = -roomHalfWidth + WALL_MARGIN;
   var southZ = roomHalfDepth - 1.5; // spawn point, with enough clearance behind it for the follow camera
 
-  function machinePositionFor(index) {
-    var isDryer = index >= washers.length;
-    var x;
-    if (!isDryer) {
-      x = -rowWidth / 2 + SPACING / 2 + index * SPACING;
-    } else {
-      var dryerIndex = index - washers.length;
-      x = -rowWidth / 2 + washers.length * SPACING + TYPE_GAP + SPACING / 2 + dryerIndex * SPACING;
-    }
-    return { x: x, z: northZ, facing: Math.PI }; // faces +Z, into the aisle (room sits at +Z of the machines)
-  }
-  // machines[] is washers-then-dryers already (seedMachinesIfEmpty's own
-  // insertion order, confirmed against src/db.ts) — but computed from the
-  // filtered arrays above rather than assumed, so a reorder upstream can't
-  // silently misplace a machine.
-  var orderedMachines = washers.concat(dryers);
+  // East-wall machines face -X (into the room). The exact rotation sign
+  // was picked by this stage's own screenshot check (this file's
+  // established method for every orientation/size constant below), not
+  // derived from first principles against the north wall's own Math.PI
+  // convention.
+  var EAST_FACING = -Math.PI / 2;
+
+  var placedMachines = [];
+  northMachines.forEach(function (m, i) {
+    placedMachines.push({
+      m: m,
+      x: -northRowWidth / 2 + SPACING / 2 + i * SPACING,
+      z: northZ,
+      facing: Math.PI, // faces +Z, into the room — unchanged from Stage 8.2
+      wall: "north",
+    });
+  });
+  eastMachines.forEach(function (m, i) {
+    placedMachines.push({
+      m: m,
+      x: eastX,
+      z: northZ + CORNER_MARGIN + SPACING / 2 + i * SPACING,
+      facing: EAST_FACING,
+      wall: "east",
+    });
+  });
+  // placedMachines is north-wall-then-east-wall, not machines[]'s own id
+  // order — every lookup below keys off p.m.id, never array index, so
+  // this reordering can't misplace a machine's live state or QR link.
+  var orderedMachines = placedMachines.map(function (p) { return p.m; });
 
   // --- renderer / scene / camera ---
   var scene = new THREE.Scene();
@@ -206,6 +254,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var MODEL_BBOX = {
     washer: { min: [0, 0, -0.35], max: [0.39, 0.47, 0.04] },
     dryer: { min: [0, 0, -0.35], max: [0.39, 0.47, 0.03] },
+    bookcase: { min: [0, 0, -0.25], max: [0.4, 0.88, 0] }, // bookcaseOpen.glb, measured the same way (Stage 9.2)
   };
   function footprintOf(type) {
     var b = MODEL_BBOX[type] || MODEL_BBOX.washer;
@@ -237,16 +286,26 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var statusLights = {}; // machineId -> Mesh, the thing live state actually recolours
   var qrAnchors = {}; // machineId -> THREE.Object3D, the point the examine overlay's "you are here" check uses
 
-  orderedMachines.forEach(function (m, i) {
-    var mPos = machinePositionFor(i);
+  placedMachines.forEach(function (p) {
+    var m = p.m;
     var type = m.type === "dryer" ? "dryer" : "washer";
     var bbox = MODEL_BBOX[type];
     var footprint = footprintOf(type);
-    addCollisionBox(mPos.x, mPos.z, footprint.w, footprint.d);
+    // A machine rotated 90° (the east wall) has its local w/d swapped in
+    // world X/Z — addCollisionBox is axis-aligned in world space, so the
+    // east-wall branch below passes (d, w), not (w, d). Written down in
+    // plans/3d-walkthrough.md's own Stage 9.2 section before this code was
+    // written, as the one orientation bug that wouldn't show up in a
+    // static screenshot, only once someone actually walks that wall.
+    if (p.wall === "east") {
+      addCollisionBox(p.x, p.z, footprint.d, footprint.w);
+    } else {
+      addCollisionBox(p.x, p.z, footprint.w, footprint.d);
+    }
 
     var group = new THREE.Group();
-    group.position.set(mPos.x, 0, mPos.z);
-    group.rotation.y = mPos.facing;
+    group.position.set(p.x, 0, p.z);
+    group.rotation.y = p.facing;
     group.userData.machineId = m.id;
     scene.add(group);
     machineGroups[m.id] = group;
@@ -319,25 +378,27 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   window.__laundryMachineGroups = machineGroups; // Playwright-inspectable escape hatch
   window.__laundryStatusLights = statusLights;
 
-  // --- sink, ironing table (+ a simple box "iron" prop), drop-off table
-  // (Stage 8.2 zones — west wall for sink/ironing, east wall for
-  // drop-off, per the plan's own floor-plan sketch). ---
-  var westX = -roomHalfWidth + WALL_MARGIN;
-  var eastX = roomHalfWidth - WALL_MARGIN;
-  var sinkZ = northZ + 1.4;
-  var ironZ = sinkZ + 1.6;
-  var dropoffZ = southZ - 1.8;
+  // --- Stage 9.2: sink + ironing table merge into one free-standing
+  // island in open floor (replacing Stage 8.2's two separate west-wall
+  // positions — the west wall is now the drop-off zone, below), roughly
+  // centered in the room. Both models and their already-measured
+  // collision footprints (sink 0.5x0.5, table 0.85x0.45) are unchanged
+  // from Stage 8.2, just recombined under one shared placement. ---
+  var islandX = 0;
+  var islandZ = (northZ + southZ) / 2;
+  var sinkLocalX = -0.55;
+  var ironLocalX = 0.5;
 
-  addCollisionBox(westX, sinkZ, 0.5, 0.5);
+  addCollisionBox(islandX + sinkLocalX, islandZ, 0.5, 0.5);
   loadModel("/models/kitchenSink.glb", function (model) {
-    model.position.set(westX - 0.25, 0, sinkZ - 0.25);
+    model.position.set(islandX + sinkLocalX - 0.25, 0, islandZ - 0.25);
     model.traverse(function (n) { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
     scene.add(model);
   });
 
-  addCollisionBox(westX, ironZ, 0.85, 0.45);
+  addCollisionBox(islandX + ironLocalX, islandZ, 0.85, 0.45);
   loadModel("/models/table.glb", function (model) {
-    model.position.set(westX - 0.42, 0, ironZ - 0.22);
+    model.position.set(islandX + ironLocalX - 0.42, 0, islandZ - 0.22);
     model.traverse(function (n) { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
     scene.add(model);
     // a plain box "iron" prop on top — the plan's own "no need to source
@@ -347,26 +408,35 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       new THREE.BoxGeometry(0.14, 0.08, 0.22),
       new THREE.MeshStandardMaterial({ color: 0x6b6358 }),
     );
-    iron.position.set(westX, tableBox.max.y + 0.04, ironZ);
+    iron.position.set(islandX + ironLocalX, tableBox.max.y + 0.04, islandZ);
     iron.castShadow = true;
     scene.add(iron);
   });
 
-  // --- Stage 8.4: the drop-off area — a table plus PICKUP_SPOTS.length
-  // numbered markers on it, one per fixed spot. Matches src/pickup-spots.ts's
-  // PICKUP_SPOTS list exactly (A1..A6) — kept in sync by hand since the
-  // client script has no import access to that module; mismatched counts
-  // would just mean some spots never show a 3D marker, not a correctness
-  // bug server-side. ---
+  // --- Stage 9.2: the drop-off/public zone, the whole west wall — real
+  // sourced shelving (bookcaseOpen.glb, public/models/SOURCES.md),
+  // replacing Stage 8.2's single small table entirely (the user's own
+  // explicit rejection: "how's this supposed to fit clothes"). Three
+  // instances side by side read as one real shelving run, not a single
+  // small prop; PICKUP_SPOTS.length (6) splits evenly across the 3 units
+  // at 2 shelf heights each. ---
   var PICKUP_SPOTS = ["A1", "A2", "A3", "A4", "A5", "A6"];
-  var dropoffGroup = new THREE.Group();
-  dropoffGroup.position.set(eastX, 0, dropoffZ);
-  scene.add(dropoffGroup);
-  addCollisionBox(eastX, dropoffZ, 0.85, 0.45);
+  var bookcaseFootprint = footprintOf("bookcase");
+  var BOOKCASE_COUNT = 3;
+  var BOOKCASE_GAP = 0.08;
+  var bookcaseSpacing = bookcaseFootprint.w + BOOKCASE_GAP;
+  var bookcaseRunWidth = BOOKCASE_COUNT * bookcaseFootprint.w + (BOOKCASE_COUNT - 1) * BOOKCASE_GAP;
+  var dropoffCenterZ = (northZ + southZ) / 2;
+  // Facing +X, into the room from the west wall — mirrors the east-wall
+  // machines' -X facing (both face toward the room's open floor). Picked
+  // by this stage's own screenshot check, like every other facing/size
+  // constant in this file, not derived from first principles.
+  var BOOKCASE_FACING = Math.PI / 2;
+
   var dropoffSpotMeshes = {}; // spot name -> Mesh, recoloured when occupied
   var SPOT_FREE_COLOR = 0xe3efe9; // --free-tint
   var SPOT_OCCUPIED_COLOR = 0xd68a3a; // --warn-tint, distinct from the free tint and from every STATE_COLOR value
-  var lastKnownOccupiedSpots = null; // the table.glb load is async, so a machines-state fetch can resolve before the markers exist — re-applied once they do
+  var lastKnownOccupiedSpots = null; // bookcase loads are async, so a machines-state fetch can resolve before the markers exist — re-applied once they do
   function applySpotOccupancy(occupiedSpots) {
     lastKnownOccupiedSpots = occupiedSpots || [];
     var occupied = {};
@@ -375,49 +445,102 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       dropoffSpotMeshes[spot].material.color.setHex(occupied[spot] ? SPOT_OCCUPIED_COLOR : SPOT_FREE_COLOR);
     });
   }
+
+  // Single proximity anchor for the whole zone (not one per bookcase) —
+  // the interact action ("hand off this laundry" / "place it here") is a
+  // single zone-wide action, matching Stage 8.4's existing one-anchor
+  // convention for the drop-off area.
   var dropoffAnchor = new THREE.Object3D();
-  dropoffAnchor.position.set(-0.6, GENERIC_WAIST_HEIGHT * 0.5, 0);
-  dropoffGroup.add(dropoffAnchor);
+  dropoffAnchor.position.set(westX + bookcaseFootprint.d / 2 + 0.3, GENERIC_WAIST_HEIGHT * 0.5, dropoffCenterZ);
+  scene.add(dropoffAnchor);
   window.__laundryDropoffAnchor = dropoffAnchor;
 
-  loadModel("/models/table.glb", function (model) {
-    model.rotation.y = Math.PI / 2;
-    model.position.set(0.42, 0, -0.22);
-    model.traverse(function (n) { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
-    dropoffGroup.add(model);
-    var tableBox = new THREE.Box3().setFromObject(model);
-    var topY = tableBox.max.y;
-    PICKUP_SPOTS.forEach(function (spot, i) {
-      var cols = 3;
-      var sx = -0.3 + (i % cols) * 0.3;
-      var sz = -0.15 + Math.floor(i / cols) * 0.3;
-      var marker = new THREE.Mesh(
-        new THREE.BoxGeometry(0.22, 0.04, 0.22),
-        new THREE.MeshStandardMaterial({ color: 0xe3efe9 }), // --free-tint: empty by default
-      );
-      marker.position.set(sx, topY + 0.02, sz);
-      dropoffGroup.add(marker);
-      dropoffSpotMeshes[spot] = marker;
-    });
-    applySpotOccupancy(lastKnownOccupiedSpots);
-  });
+  for (var bi = 0; bi < BOOKCASE_COUNT; bi++) {
+    (function (bi) {
+      var bz = dropoffCenterZ - bookcaseRunWidth / 2 + bookcaseFootprint.w / 2 + bi * bookcaseSpacing;
+      // Rotated 90° off the north-wall convention, so the bookcase's local
+      // w/d footprint is swapped in world X/Z — the same axis-swap this
+      // stage's own plan named in advance for the east-wall machines.
+      addCollisionBox(westX, bz, bookcaseFootprint.d, bookcaseFootprint.w);
+
+      var group = new THREE.Group();
+      group.position.set(westX, 0, bz);
+      group.rotation.y = BOOKCASE_FACING;
+      scene.add(group);
+
+      loadModel("/models/bookcaseOpen.glb", function (modelRoot) {
+        var b = MODEL_BBOX.bookcase;
+        modelRoot.position.set(-b.min[0] - bookcaseFootprint.w / 2, 0, -b.min[2] - bookcaseFootprint.d / 2);
+        modelRoot.traverse(function (node) {
+          if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; }
+        });
+        group.add(modelRoot);
+
+        // Two markers per bookcase (6 total across 3 units), at two
+        // approximate shelf heights within the model's own measured
+        // height — an approximation (the model's exact shelf-board Y
+        // positions weren't individually measured), not a claim of
+        // exact shelf alignment.
+        var heights = [bookcaseFootprint.h * 0.35, bookcaseFootprint.h * 0.68];
+        heights.forEach(function (hY, hi) {
+          var spot = PICKUP_SPOTS[bi * 2 + hi];
+          var marker = new THREE.Mesh(
+            new THREE.BoxGeometry(bookcaseFootprint.w * 0.7, 0.03, bookcaseFootprint.d * 0.7),
+            new THREE.MeshStandardMaterial({ color: SPOT_FREE_COLOR }),
+          );
+          marker.position.set(bookcaseFootprint.w / 2, hY, bookcaseFootprint.d / 2);
+          group.add(marker);
+          dropoffSpotMeshes[spot] = marker;
+        });
+        applySpotOccupancy(lastKnownOccupiedSpots);
+      });
+    })(bi);
+  }
   window.__laundryDropoffSpotMeshes = dropoffSpotMeshes;
 
-  // --- ceiling lamps: Stage 8.2 replaces Stage 6's single directional
-  // "sun" with real point lights at each lamp fixture's position. A real
-  // problem this stage's own screenshot check found and fixed: a single
-  // row of lamps down the room's center (z=0) left the machine wall
-  // (northZ, several units away) and the south half both under-lit —
-  // point-light intensity falls off with the square of distance, so one
-  // light centered between two distant zones lights neither well. Two
-  // rows instead — one over the machine aisle, one over the south half
-  // near the entrance — gives every zone a light roughly overhead rather
-  // than several units away. ---
-  var lampCount = 3;
-  var lampRowZ = [northZ + 1.5, southZ - 2];
-  lampRowZ.forEach(function (lz) {
-    for (var li = 0; li < lampCount; li++) {
-      var lx = -rowWidth / 2 + (li + 0.5) * (rowWidth / lampCount);
+  // "DROP-OFF" billboard label (plans/3d-walkthrough.md Stage 9.2's
+  // explicit requirement: large, legible text, readable from a normal
+  // approach distance, not a tiny sign). A THREE.Sprite with a
+  // THREE.CanvasTexture always faces the camera regardless of approach
+  // angle, with zero new dependencies (no font-loading library, matching
+  // docs/adr/0003's no-build-step constraint).
+  function makeTextSprite(text) {
+    var canvas = document.createElement("canvas");
+    canvas.width = 512; canvas.height = 128;
+    var ctx = canvas.getContext("2d");
+    // An opaque panel behind the text, not a transparent background —
+    // keeps the label legible regardless of whatever's visually behind
+    // it in the 3D scene (wall, shelving, open floor).
+    ctx.fillStyle = "#f6f3ec"; // --paper
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#ded7c8"; // --rule
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
+    ctx.fillStyle = "#1c1a17"; // --ink
+    ctx.font = "bold 64px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    var texture = new THREE.CanvasTexture(canvas);
+    var material = new THREE.SpriteMaterial({ map: texture });
+    var sprite = new THREE.Sprite(material);
+    sprite.scale.set(1.6, 0.4, 1); // matches the canvas's own 4:1 aspect ratio
+    return sprite;
+  }
+  var dropoffLabel = makeTextSprite("DROP-OFF");
+  dropoffLabel.position.set(westX + bookcaseFootprint.d + 0.2, bookcaseFootprint.h + 0.75, dropoffCenterZ);
+  scene.add(dropoffLabel);
+
+  // --- ceiling lamps: a room-covering grid (replacing Stage 8.2's
+  // two-rows-along-one-wall layout, which assumed every machine sat on a
+  // single wall). Sized directly to roomHalfWidth/roomHalfDepth so it
+  // adapts to this stage's smaller, closer-to-square room rather than
+  // staying tied to the old single machine wall's width. ---
+  var lampCols = 2, lampRows = 2;
+  for (var lr = 0; lr < lampRows; lr++) {
+    for (var lc = 0; lc < lampCols; lc++) {
+      var lx = -roomHalfWidth + ((lc + 0.5) / lampCols) * (roomHalfWidth * 2);
+      var lz = -roomHalfDepth + ((lr + 0.5) / lampRows) * (roomHalfDepth * 2);
       (function (lx, lz) {
         loadModel("/models/lampSquareCeiling.glb", function (model) {
           model.rotation.x = Math.PI; // ceiling fixtures are typically modelled hanging downward; flip to mount flush to the ceiling plane
@@ -431,7 +554,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       lamp.shadow.mapSize.set(512, 512);
       scene.add(lamp);
     }
-  });
+  }
 
   // --- Stage 8.3: the player character (Kenney "Mini Characters," CC0 —
   // public/models/SOURCES.md), replacing the first-person camera
@@ -797,8 +920,12 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   function ensureRingFor(target) {
     var key = keyFor(target);
     if (highlightRings[key]) return highlightRings[key];
-    var group = target.kind === "dropoff" ? dropoffGroup : machineGroups[target.id];
-    var ring = buildHighlightRing(group.position.x, group.position.z);
+    // Stage 9.2 removed the single dropoffGroup (the drop-off zone is now
+    // 3 separate bookcase groups) — dropoffAnchor itself is a direct
+    // scene child with its own real position, so it's used directly here
+    // instead of a group that no longer exists as one object.
+    var anchorPos = target.kind === "dropoff" ? dropoffAnchor.position : machineGroups[target.id].position;
+    var ring = buildHighlightRing(anchorPos.x, anchorPos.z);
     highlightRings[key] = ring;
     return ring;
   }
@@ -1074,6 +1201,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     releaseKey: function (k) { keys[k] = false; },
     teleportTo: function (x, z) { pos.x = x; pos.z = z; characterRoot.position.set(x, 0, z); },
     getWalkWeight: function () { return walkAction ? walkAction.getEffectiveWeight() : null; },
+    _debugCollisionBoxes: function () { return collisionBoxes; },
     _debugScene: function () {
       return {
         cameraPos: camera.position.toArray(),
