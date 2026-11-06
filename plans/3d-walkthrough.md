@@ -938,10 +938,28 @@ session picks this up and still can't call the API, that's this same
 budget wall, not a new problem — check whether the bump landed or wait
 for the Thursday reset before assuming something is broken.**
 
-#### 9.1 — the character disappears during movement (not yet root-caused)
+#### 9.1 — the character disappears during movement (FIXED — see commit `f34d80a`)
 
-**Symptom, confirmed by direct observation (Playwright + screenshots
-against a real local dev server, not inferred):** the character model
+**Status: fixed and merged into `main`.** Two independent causes, both
+confirmed by direct runtime inspection, not guessed: (1) the `walk` clip's
+`root.position` keyframe track fighting `characterRoot.position` for
+control of the mesh's world position (fixed by stripping that one track
+before creating the `AnimationAction`), and (2) a `SkinnedMesh`'s
+bind-pose bounding sphere going stale once the skeleton animates, causing
+three.js's frustum check to wrongly cull a character that's actually
+on-screen (fixed by disabling `frustumCulled` on the character's meshes —
+the standard handling for an animated `SkinnedMesh`, not a workaround).
+Verified via a new, permanent `__laundryDebug._debugCharacter()` hook
+(reads each mesh's real world position against `characterRoot.position` —
+a nonzero gap is this exact bug recurring) across both a short (~1.5s)
+and long (~5s) movement repro, with `pnpm check` green throughout. Full
+root-cause writeup and the fix itself: commit `f34d80a` on this project's
+git history. **The investigation notes below are kept as the historical
+record of how the cause was actually found — useful context if something
+in this area regresses, not a to-do list anymore.**
+
+**Original symptom, confirmed by direct observation (Playwright +
+screenshots against a real local dev server, not inferred):** the character model
 (`/models/character.glb`) is visible in a screenshot taken immediately
 after `/laundry` loads. In every screenshot taken even slightly after
 simulated forward movement begins (via `window.__laundryDebug.pressKey("w")`),

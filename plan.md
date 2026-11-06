@@ -307,6 +307,58 @@ and the offer moves to the next person instead.
   saga, the camera-wall-clip fix), and what's still weakest: `HANDOFF.md`.
   Screenshots in `research/screens/laundry-stage7-*.png`,
   `laundry-stage8-*.png`, `laundry-stage84-*.png`.
+- **Stage 9.1 fixed, `3d-walkthrough` branch merged into `main` and
+  deployed.** Separately from the two unattended runs above, the user
+  found two real problems by actually using the Stage 8 build — recorded
+  in `plans/3d-walkthrough.md` Stage 9. **9.1 (the character vanishing
+  during movement) is fixed** (two stacked causes: an animation clip's
+  root-motion track fighting the code's own position control, and a
+  stale bind-pose bounding sphere defeating frustum culling on the
+  animated skeleton — see commit `f34d80a` for the full root-cause
+  writeup). **9.2 (the room's floor plan needs a redo — smaller room, a
+  much larger labeled drop-off zone, sink+ironing merged into a
+  free-standing island) is still open**, fully specified with a
+  user-confirmed replacement layout in `plans/3d-walkthrough.md` Stage
+  9.2 — not yet implemented. The `3d-walkthrough` branch (all of Stages
+  1-9.1) was merged into `main` (merge commit `060c6f7`) and pushed;
+  CI's `check` job (a real `docker build`, the first real verification
+  of this branch's Dockerfile changes — WSL2 here can't run Docker
+  locally) and `deploy` job both passed, and
+  `https://comp4020-final-yuehesun.fly.dev/` is confirmed live with the
+  3D walkthrough (checked directly: `/` returns 200 and links to
+  `/laundry`, `/machines/1/qrcode.png` returns a real 200). **Stage 4
+  (a real two-device phone-scan rehearsal) still hasn't happened** — it
+  needs a physical second phone, which now that the real deployment
+  exists is finally possible; do this by hand, not the agent's job.
+
+## Final project deadline — read this before planning further work
+
+**Due 2026-11-09 (Monday) 12:00 noon AEDT (Canberra time)** — see
+<https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/assessments/final-project/>.
+Confirm this is still accurate by re-checking that page if picking this
+up well after the date above, since this was fetched live on
+2026-11-06/07 and isn't hand-maintained like the rest of this file.
+
+**Known constraint, worth checking before assuming it's resolved**: this
+week's course Claude Code proxy budget hit its hard $200/week cap
+mid-session on 2026-11-06, rejecting API calls outright. The user asked
+the course convenor for a one-off bump via a private Ed thread (the
+course's own documented process for this) — status of that request is
+unknown as of this note. The weekly budget resets automatically
+Thursdays 09:00 Canberra time regardless. If a session hits the same
+"422 Budget has been exceeded" error, this is why — check whether the
+bump landed, or wait for the Thursday reset, rather than assuming
+something is broken.
+
+Given the close deadline, the highest-value remaining work, roughly in
+priority order, is: (1) Stage 4's real two-device phone-scan rehearsal,
+since the deployment now exists to make it possible and it's the one
+thing in `plan.md`'s feature #19 never actually verified end-to-end; (2)
+`PROCESS.md`/`reflections/` updates covering the 3D walkthrough work (not
+done by the agent — these are the user's own, per `CLAUDE.md`); (3) Stage
+9.2's floor-plan redo, only if time remains after the above — it's a real
+improvement, not a blocker, since the currently-deployed Stage 8.2 layout
+is fully functional.
 
 ## The feature list
 
