@@ -486,6 +486,22 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       if (node.isMesh || node.isSkinnedMesh) {
         node.material = flatMat;
         node.castShadow = true;
+        // Stage 9.1 fix, second real cause (the root-motion fix above
+        // wasn't the whole story): a SkinnedMesh's bounding sphere is
+        // computed once, from the model's bind pose, and three.js never
+        // recomputes it as the skeleton animates — confirmed directly by
+        // toggling this exact flag off/on and comparing screenshots, not
+        // guessed. Once the walk animation actually poses the skeleton
+        // away from its bind pose, the character's real on-screen
+        // silhouette can extend outside that stale bounding sphere,
+        // and three.js's per-frame frustum check (which trusts the
+        // cached sphere, not the live mesh) wrongly decides the whole
+        // mesh is off-screen and skips drawing it entirely — exactly the
+        // "disappears the instant it starts animating" symptom. Disabling
+        // frustum culling for this one small, always-on-screen character
+        // is the standard fix for an animated SkinnedMesh (its bounding
+        // volume is never reliable once skinned), not a workaround.
+        node.frustumCulled = false;
       }
     });
     characterRoot.add(model);
@@ -509,12 +525,41 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   // more, directly, just for its AnimationClip data. This is the one
   // model not using the loadModel()/modelCache path, by necessity: an
   // AnimationMixer must run against the exact clone it was built for.
+  // Stage 9.1 fix (1 of 2 — the disappearing-character bug had two
+  // independent causes stacked together, not one): the "walk" clip
+  // (unlike "idle") ships a "root.position" keyframe track — Kenney's rig
+  // has a top-level "root" Bone (parent of every other bone, confirmed by
+  // a real scene-graph dump: Group > Object3D > Bone "root" >
+  // {leg-left, leg-right, torso{arm-left, arm-right, head}}, with
+  // body-mesh/head-mesh as SkinnedMeshes siblings of "root"). That track
+  // moves the root BONE's own local position every frame the walk
+  // animation plays, which (since every other bone and both skinned
+  // meshes hang off it) drags the whole character's real world-space
+  // position away from whatever characterRoot.position (the Object3D
+  // this file actually drives) says it should be — confirmed by a live
+  // Box3().setFromObject() reading on the character diverging further
+  // from characterRoot.position the longer "w" was held. This alone
+  // explained long-held-movement disappearance (the mesh drifting
+  // entirely outside the camera's view); it did NOT explain a shorter
+  // repro where the mesh vanished with zero measured drift — that
+  // turned out to be a second, independent bug, fixed separately where
+  // frustumCulled is set below. The fix here removes the root-motion
+  // track from the walk clip before ever creating its AnimationAction,
+  // so only its rotation tracks (the actual arm/leg swing) play —
+  // characterRoot's own position, set once per frame in the render loop
+  // below, is the only thing that ever moves the character through the
+  // room.
+  function stripRootMotion(clip) {
+    clip.tracks = clip.tracks.filter(function (t) { return t.name !== "root.position"; });
+    return clip;
+  }
+
   gltfLoader.load("/models/character.glb", function (gltf) {
     window.__laundryGltfAnimations = gltf.animations.map(function (a) { return a.name; });
     characterMixer = new THREE.AnimationMixer(characterRoot.children[0] || characterRoot);
     var walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");
     var idleClip = THREE.AnimationClip.findByName(gltf.animations, "idle");
-    if (walkClip) { walkAction = characterMixer.clipAction(walkClip); walkAction.play(); walkAction.setEffectiveWeight(0); }
+    if (walkClip) { walkAction = characterMixer.clipAction(stripRootMotion(walkClip)); walkAction.play(); walkAction.setEffectiveWeight(0); }
     if (idleClip) { idleAction = characterMixer.clipAction(idleClip); idleAction.play(); idleAction.setEffectiveWeight(1); }
   });
 
@@ -1035,6 +1080,43 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
         cameraQuat: camera.quaternion.toArray(),
         sceneChildCount: scene.children.length,
         northZ: northZ, southZ: southZ, roomHalfWidth: roomHalfWidth, roomHalfDepth: roomHalfDepth,
+      };
+    },
+    // Stage 9.1's own verification hook — reads each character mesh's
+    // real world position (worldPos) alongside characterRoot.position
+    // (rootPos, below): the two matching is exactly what confirms the
+    // root-motion fix above is holding (a nonzero gap between them is
+    // the disappearing-character bug recurring, not a new issue).
+    _debugCharacter: function () {
+      var modelChild = characterRoot.children[0];
+      var meshes = [];
+      if (modelChild) {
+        modelChild.traverse(function (n) {
+          if (n.isMesh || n.isSkinnedMesh) {
+            meshes.push({
+              name: n.name,
+              visible: n.visible,
+              frustumCulled: n.frustumCulled,
+              hasBoundingSphere: !!(n.geometry && n.geometry.boundingSphere),
+              boundingSphere: n.geometry && n.geometry.boundingSphere
+                ? { center: n.geometry.boundingSphere.center.toArray(), radius: n.geometry.boundingSphere.radius }
+                : null,
+              worldPos: n.getWorldPosition(new THREE.Vector3()).toArray(),
+              scale: n.scale.toArray(),
+            });
+          }
+        });
+      }
+      var box = modelChild ? new THREE.Box3().setFromObject(modelChild) : null;
+      return {
+        rootPos: characterRoot.position.toArray(),
+        rootVisible: characterRoot.visible,
+        childCount: characterRoot.children.length,
+        modelChildExists: !!modelChild,
+        modelChildVisible: modelChild ? modelChild.visible : null,
+        modelChildScale: modelChild ? modelChild.scale.toArray() : null,
+        worldBox: box ? { min: box.min.toArray(), max: box.max.toArray(), isEmpty: box.isEmpty() } : null,
+        meshes: meshes,
       };
     },
     // Debugging-only: checks whether a machine's status light sits
