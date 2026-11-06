@@ -3,7 +3,7 @@ import type { HtmlEscapedString } from "hono/utils/html";
 import type { Machine, Offer, Reservation } from "./schema.ts";
 import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
-import type { DryerOption, QueueRow } from "./queue.ts";
+import type { DoneUnacknowledged, DryerOption, QueueRow } from "./queue.ts";
 import type { SimulationResults } from "../scripts/simulate.ts";
 import { BOARD_STATE_CLASS, boardStateFor, boardStateLabel, boardTimeLeftSeconds } from "./board-state.ts";
 
@@ -18,7 +18,7 @@ export interface OfferRow {
 
 // `html` template results can resolve async (if an interpolated value does),
 // so every view function's return type needs to allow for that.
-type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
+export type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
 // --- page shell --------------------------------------------------------
 
@@ -276,6 +276,43 @@ const STYLES = `
   .simulation-reading li { margin: var(--space-2) 0; }
   .simulation-reading code { background: var(--rule); border-radius: 0.3rem; padding: 0.1rem 0.3rem; font-size: 0.9em; }
   .simulation-closing { margin-top: var(--space-5); color: var(--ink-muted); font-size: var(--text-sm); }
+
+  /* /laundry — the first-person 3D walkthrough (plans/3d-walkthrough.md).
+     The canvas fills whatever space is left under the page's own nav/h1,
+     rather than taking over the whole viewport, so the walkthrough still
+     reads as a page of this app, not a separate full-screen app. */
+  .laundry-canvas-wrap { position: relative; width: 100%; height: 70vh; min-height: 24rem; background: #000; border-radius: var(--card-radius); overflow: hidden; touch-action: none; }
+  .laundry-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+  .laundry-hint { margin: var(--space-3) 0; color: var(--ink-muted); font-size: var(--text-sm); }
+  .laundry-crosshair { position: absolute; top: 50%; left: 50%; width: 0.5rem; height: 0.5rem; margin: -0.25rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); pointer-events: none; }
+  /* Stage 7: a real call-to-action on the home page, not just the quiet
+     top-nav text link (research/design-review.md's own "generic version"
+     self-check would flag a feature's only entry point being a plain-
+     weight nav link as easy to miss entirely). display:block + margin so
+     it reads as its own standing action, not an inline word in the
+     "signed in as" sentence above it. */
+  .laundry-entry-cta { display: block; width: fit-content; margin: var(--space-3) 0 var(--space-5); }
+  /* Stage 7: the pointer-lock exit hint, shown only while actually locked
+     (toggled by JS) — persistent but unobtrusive, in a corner rather than
+     centered, so it informs without competing with the crosshair. */
+  .laundry-lock-hint { position: absolute; top: var(--space-3); right: var(--space-3); background: rgba(0,0,0,0.55); color: #fff; font-size: var(--text-xs); padding: 0.3rem 0.6rem; border-radius: 0.4rem; pointer-events: none; display: none; }
+  .laundry-lock-hint.is-visible { display: block; }
+  /* Stage 7: the examine overlay — a 2D HTML layer, deliberately not a
+     3D in-scene zoom, so the QR <img> renders at native pixel resolution
+     with no WebGL texture-filtering softness to fight (the real
+     scannability risk HANDOFF.md flagged from Stage 3/6's in-scene QR
+     plane). */
+  .laundry-examine-overlay { position: absolute; inset: 0; background: rgba(28,26,23,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #fff; }
+  .laundry-examine-overlay.is-hidden { display: none; }
+  .laundry-examine-overlay img { width: 12rem; height: 12rem; background: #fff; padding: var(--space-3); border-radius: 0.5rem; }
+  .laundry-examine-overlay .btn-quiet { color: #fff; border-color: rgba(255,255,255,0.4); }
+  /* Touch controls: a joystick (left) for movement, a drag-look zone
+     (right, everywhere else) for camera — only shown on a touch-capable
+     viewport (toggled by JS, not CSS media query, since touch capability
+     and screen size aren't the same thing). */
+  .laundry-joystick-base { position: absolute; left: var(--space-5); bottom: var(--space-5); width: 6rem; height: 6rem; border-radius: 50%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); touch-action: none; }
+  .laundry-joystick-nub { position: absolute; top: 50%; left: 50%; width: 2.5rem; height: 2.5rem; margin: -1.25rem; border-radius: 50%; background: rgba(255,255,255,0.5); pointer-events: none; }
+  .laundry-look-zone { position: absolute; inset: 0; }
 `;
 
 // Crit 9: the claim-window countdown ticks client-side every second
@@ -565,7 +602,12 @@ const REPLAY_SCRIPT = `
 // re-fetches its own small, identity-aware fragment on its own trigger
 // (plans/crit-9.md Stage 1), rather than the server pushing rendered HTML
 // to every connection regardless of whose cookie it is.
-function page(title: string, body: Html): Html {
+// Exported so src/laundry-view.ts (the 3D walkthrough, a separate file per
+// plans/3d-walkthrough.md Stage 1 — kept out of this already-large file the
+// same way src/board-state.ts was split out) can wrap its own page in the
+// exact same shell/nav/styles as every other page, instead of hand-rolling
+// a second `<head>`.
+export function page(title: string, body: Html): Html {
   return html`<!doctype html>
     <html lang="en">
       <head>
@@ -579,6 +621,7 @@ function page(title: string, body: Html): Html {
       <body hx-ext="sse" sse-connect="/events">
         <nav class="topnav">
           <a href="/">Machines</a>
+          <a href="/laundry">Go to the laundry</a>
           <a href="/readme/">What good means here</a>
           <a href="/simulation">Simulation</a>
         </nav>
@@ -777,6 +820,25 @@ function noticeBanner(row: QueueRow): Html {
   </div>`;
 }
 
+// Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): a done reservation
+// has already left queueFor()'s waiting/claimed/running set, so it can
+// never reach noticeBanner/statusHero above (both take a QueueRow) — this
+// is why the "laundry_moved" notice needs its own card, built from
+// queue.doneUnacknowledgedFor's direct query instead. Only rendered when
+// pickupSpot is actually set (someone moved it) — the ordinary "I washed
+// my own clothes and haven't collected them yet" case needs no banner at
+// all, since nothing unusual happened; 8.4a's basket-visibility check
+// handles that case silently via the 3D scene alone.
+function pendingPickupCard(item: DoneUnacknowledged): Html {
+  if (item.pickupSpot == null) return raw("");
+  return html`<div class="notice-banner">
+    <span>Your laundry was moved to <strong>Shelf ${item.pickupSpot}</strong> — collect it when you can.</span>
+    <form method="post" action="/reservations/${item.reservationId}/acknowledge-pickup">
+      <button class="btn-quiet" type="submit">Got it</button>
+    </form>
+  </div>`;
+}
+
 function washingTypeOptions(): Html {
   return html`${Object.entries(WASHING_TYPES).map(
     ([value, type]) => html`<option value="${value}">${type.label} (${type.minutes} min)</option>`,
@@ -821,7 +883,14 @@ function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
 
 // --- pages ---------------------------------------------------------------
 
-export function identityPage(): Html {
+// plans/3d-walkthrough.md Stage 3: `redirect` is only ever set by the scan
+// landing page (src/laundry-view.ts's scanPage) when a scanning phone has
+// no `person` cookie yet — carries "where to come back to" through the
+// identity form as a hidden field, so POST /identity can send a
+// just-scanned visitor back to the machine they scanned instead of always
+// to "/". Every existing call site (GET / and GET /laundry with no
+// cookie) omits it and gets the exact same page as before.
+export function identityPage(redirect?: string): Html {
   return page(
     "Room number",
     html`<div class="intro">
@@ -840,6 +909,7 @@ export function identityPage(): Html {
       the number is fine (e.g. <strong>304</strong>). No account, nothing
       else is stored, no name.</p>
       <form method="post" action="/identity">
+        ${redirect ? html`<input type="hidden" name="redirect" value="${redirect}" />` : raw("")}
         <input type="text" name="room" placeholder="e.g. 304 or room304" inputmode="numeric" required maxlength="12" />
         <button class="btn-primary" type="submit">Continue</button>
       </form>`,
@@ -985,9 +1055,10 @@ export function myStatusBlock(
   mine: { machine: Machine; row: QueueRow; aheadLabel?: string; dryerSuggestion?: DryerOption }[],
   myOffers: OfferRow[],
   now: number,
+  pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
-  if (mine.length === 0 && myOffers.length === 0) return raw("");
-  return html`${myOffers.map((o) => offerCard(o, now))}
+  if (mine.length === 0 && myOffers.length === 0 && pendingPickups.length === 0) return raw("");
+  return html`${pendingPickups.map((p) => pendingPickupCard(p))}${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(({ machine, row, aheadLabel, dryerSuggestion }) =>
       html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion)}`,
     )}`;
@@ -1071,6 +1142,7 @@ export function homePage(
   myOffers: OfferRow[],
   now: number,
   getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
+  pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
   const mine = machines.flatMap((m) => {
     const rowsForMachine = rowsByMachine.get(m.id) ?? [];
@@ -1091,8 +1163,9 @@ export function homePage(
             <button class="btn-quiet" type="submit">Switch room</button>
           </form>
         </p>
+        <a class="btn-primary laundry-entry-cta" href="/laundry">Go to the laundry</a>
         <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
-          ${myStatusBlock(mine, myOffers, now)}
+          ${myStatusBlock(mine, myOffers, now, pendingPickups)}
         </div>
       </div>
       <div class="board-column">

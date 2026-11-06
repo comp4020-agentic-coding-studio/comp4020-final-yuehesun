@@ -229,6 +229,84 @@ and the offer moves to the next person instead.
   Docker Desktop's WSL integration enabled) — `pnpm check` was confirmed
   green against a plain local server instead; the real `docker build`
   path is still to be checked by hand before shipping.
+- **3D walkthrough — two unattended runs per `prompt.md` on branch
+  `3d-walkthrough`. First run: Stages 1-3 plus Stage 6's non-phone parts
+  shipped; Stage 4 (the real phone scan) and Stage 6's recorded-clip item
+  explicitly not attempted, by design, regardless of the time budget —
+  see `plans/3d-walkthrough.md` and `docs/adr/0012-3d-walkthrough.md`.**
+  A first-person three.js scene at `GET /laundry` (pinned CDN ES module,
+  no bundler — `docs/adr/0003`'s no-build-step property holds), reachable
+  from every page's nav unconditionally, WASD + pointer-lock mouse-look
+  on desktop and an on-screen joystick + drag-look on touch, both
+  confirmed via real Playwright screenshots in this WSL2 environment
+  (a one-time, outside-the-repo fix made the Playwright/WebGL sandbox
+  issue go away — see `HANDOFF.md`). Each of the 10 machines shows its
+  real, identity-aware queue state (`GET /laundry/machines-state`, reusing
+  `board-state.ts`'s exact logic the 2D board already uses) and updates
+  live via a second `EventSource("/events")` on the exact same SSE stream
+  `src/realtime.ts` already broadcasts — no new transport, no new
+  broadcast logic. Each machine carries a real, server-rendered QR code
+  (`GET /machines/:id/qrcode.png`, the `qrcode` npm package) encoding
+  `/laundry/scan/:id`; scanning it (confirmed by an actual jsQR decode of
+  the rendered PNG, not assumed) lands on a page that branches into
+  exactly the three cases `plan.md`'s own long-standing User story already
+  described — confirm-and-claim, a fresh reservation on an idle machine
+  (this ships the "walk up and scan a machine's code on site" line, true
+  since crit 8 but never built until now), or a read-only view — built
+  entirely from existing `queue.ts` functions (`src/queue.ts` itself is
+  untouched throughout this stage). `docs/adr/0012` records the one real
+  product decision: the QR payload carries no token, matching how room-
+  number identity is unverified everywhere else in this app. A Stage 6
+  visual pass (warm lighting matching the app's own palette, soft
+  shadows, a drum-ring detail echoing the 2D machine icon) and a claim-
+  success flash (fires exactly once per real claim transition, confirmed
+  not to re-trigger on unrelated SSE events) both shipped, verified the
+  same screenshot-first way as crit 10's own design pass.
+  `spec/laundry-scan.test.ts` (5 tests) covers the scan page's branches
+  and the identity-redirect's open-redirect rejection. Screenshots in
+  `research/screens/laundry-stage*.png`. Full detail and every unasked-
+  for call: `HANDOFF.md`. **Still needed, by the user's own hand** (needs
+  a real phone and a real deployment, neither available to an unattended
+  run): Stage 4's real two-device scan rehearsal, and only after that, the
+  real phone-scan demo clip.
+- **3D walkthrough, second run: Stage 7's remaining sub-stages (7.2, 7.3)
+  plus all of Stage 8 shipped.** Pointer lock is requested automatically
+  on entering `/laundry`, with a corner hint tracking real lock state
+  (click-to-lock stays as the fallback the browser falls back to without
+  a user gesture). QR codes moved out of the old always-visible in-scene
+  plane into a proximity-triggered examine overlay (a native-resolution
+  `<img>`, confirmed scannable by a real jsQR decode, not a WebGL
+  texture). The first-person camera from the first run is gone: real CC0
+  GLTF models (Kenney's Furniture Kit and Mini Characters,
+  `public/models/SOURCES.md`) replace every placeholder box, laid out
+  against a floor-plan sketch written before any layout code
+  (`plans/3d-walkthrough.md` Stage 8.2), with a third-person character
+  (real walk/idle animation crossfade, a camera rig clamped so it can
+  never clip through a wall) and proximity-based interaction replacing
+  screen-centre raycasting. **Ships feature #18** (the "unclaimed laundry
+  handed off to a numbered pickup spot" gap): a deliberate, narrow
+  exception to `loadOwned` lets whoever holds the front waiting
+  reservation on a machine move its previous, finished-but-uncollected
+  laundry to a server-assigned spot from a fixed list; the original owner
+  is notified (reusing the existing `notice` mechanism) and acknowledges
+  collection to free the spot again — `docs/adr/0013-laundry-handoff-
+  authorization.md` records who may trigger it and why, and
+  `spec/laundry-handoff.test.ts` drives the whole flow (including a
+  full six-spot cycle, confirming a seventh handoff is rejected while the
+  pool is genuinely full and succeeds again once a spot is freed) against
+  the real running app. `src/queue.ts`'s pre-existing exported functions
+  are unchanged throughout both runs — every bit of handoff logic lives
+  in new functions alongside them. One real bug found along the way by
+  the spec itself: a repeated handoff call used to silently reassign
+  already-moved laundry a second spot, fixed by also excluding
+  `pickupSpot IS NOT NULL` from what counts as still-unclaimed. A second
+  gap, found only by an actual end-to-end Playwright run rather than unit
+  tests (the drop-off shelf's own numbered-spot-occupied marker was never
+  wired to real server state), was caught and fixed the same way. Full
+  detail, every real debugging dead end (the status-light placement
+  saga, the camera-wall-clip fix), and what's still weakest: `HANDOFF.md`.
+  Screenshots in `research/screens/laundry-stage7-*.png`,
+  `laundry-stage8-*.png`, `laundry-stage84-*.png`.
 
 ## The feature list
 
@@ -295,17 +373,28 @@ there; "gap" means nobody's claimed it yet.
     assigned. Orthogonal to washing type/duration — a separate field, not
     a new `WASHING_TYPES` entry — and doesn't touch queue position or
     timing, so it's a lower-risk addition than #16.
-18. **Unclaimed laundry handed off to a numbered pickup spot** — **gap**,
-    no crit assigned. If the next person needs the machine before the
-    previous owner has collected their clothes, they move the clothes to
-    a numbered shelf/locker spot (picked from a fixed list, not freely
-    typed, same "no free text" discipline as room numbers) and the
-    original owner is notified which spot. Needs its own state beyond the
-    existing reservation statuses (something has to track "moved, to spot
-    N, owner not yet confirmed"), a decision on who's allowed to trigger
-    it, and how a spot is marked free again — this is a real new feature,
-    not a small addition; scope it properly before building rather than
-    folding it into an existing stage.
+18. **Unclaimed laundry handed off to a numbered pickup spot** — **Done,
+    3D walkthrough Stage 8.4**: if the next person needs the machine
+    before the previous owner has collected their clothes, they move the
+    clothes to a numbered shelf spot (server-assigned from a fixed list,
+    never freely typed) and the original owner is notified which spot via
+    the existing `notice` mechanism. A new, deliberate exception to
+    `loadOwned` (whoever holds the machine's front waiting reservation may
+    trigger it; only the real owner may acknowledge collection) is
+    documented in `docs/adr/0013-laundry-handoff-authorization.md`;
+    `pickupSpot`/`pickedUpAt` columns track the new state, and
+    `spec/laundry-handoff.test.ts` covers the full cycle including every
+    fixed spot filling and freeing again.
+19. **3D walkthrough, scan a real machine's code** — prompted by course
+    feedback that the bot-driven simulation didn't convincingly pitch this
+    as something a real residence would adopt. **Stages 1-3 and Stage 6's
+    non-phone parts done** (see `plans/3d-walkthrough.md`,
+    `docs/adr/0012-3d-walkthrough.md`, and this file's own Current state
+    entry above) — a first-person 3D room at `/laundry`, live machine
+    state, real per-machine QR codes, and the scan-to-claim/scan-to-
+    reserve landing page. **Still needed:** Stage 4, a real two-device
+    scan rehearsal (needs a physical phone and a real deployment, neither
+    available to an unattended run) — my own, not scheduled for the agent.
 
 ## Gap tasks — no crit assigned yet
 

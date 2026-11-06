@@ -1,6 +1,7 @@
 import type { SSEStreamingApi } from "hono/streaming";
+import { eq, isNull, and } from "drizzle-orm";
 import { db } from "./db.ts";
-import { machines, offers } from "./schema.ts";
+import { machines, offers, reservations } from "./schema.ts";
 import * as queue from "./queue.ts";
 
 // Crit 9: real-time sync (plans/crit-9.md Stage 1). SSE carries only a
@@ -45,6 +46,30 @@ function digestOf(machineId: number, now: number): string {
   return JSON.stringify(rows);
 }
 
+// Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): a handoff's own
+// state lives on a "done" reservation, which has already left
+// queueFor()'s waiting/claimed/running set — so the per-machine digest
+// loop below, built entirely from queueFor(), can never notice a handoff
+// happening (the machine's own active-queue digest doesn't change; the
+// reservation it touches isn't in it). Without this, a handoff would
+// write to the database correctly but never reach anyone's browser
+// within the ~1s SSE guarantee the rest of the app promises — the same
+// class of bug the offers digest above already exists to avoid for a
+// different reason (offers also live outside any one machine's active
+// queue). Scoped to exactly the two columns a handoff touches
+// (pickupSpot, pickedUpAt) rather than every column on every
+// not-yet-collected "done" reservation, so this doesn't also start
+// broadcasting on completely unrelated changes to those rows.
+function doneUnacknowledgedDigest(): string {
+  const rows = db
+    .select({ id: reservations.id, pickupSpot: reservations.pickupSpot })
+    .from(reservations)
+    .where(and(eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .all();
+  return JSON.stringify(rows);
+}
+let lastPickupDigest = "";
+
 async function tick(): Promise<void> {
   const now = Date.now();
 
@@ -57,6 +82,12 @@ async function tick(): Promise<void> {
   queue.processOffers(now);
   const afterOfferState = db.select().from(offers).all();
   if (JSON.stringify(beforeOfferState) !== JSON.stringify(afterOfferState)) {
+    await broadcast("changed");
+  }
+
+  const pickupDigest = doneUnacknowledgedDigest();
+  if (pickupDigest !== lastPickupDigest) {
+    lastPickupDigest = pickupDigest;
     await broadcast("changed");
   }
 
