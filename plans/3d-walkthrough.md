@@ -920,6 +920,235 @@ guard against) and is simpler to build correctly, not a compromise.
   handoff authorization/spot-assignment rule has nowhere else sensible to
   live, being queue-state-dependent).
 
+### Stage 9 — post-Stage-8 user feedback: two real problems found by actually using the build
+
+Written after trying the Stage 8 build in a real browser (`pnpm dev`).
+Two separate, unrelated problems were found. **Neither has a code fix
+yet — this section records the investigation/design state so work can
+resume cleanly in a future session; do not start implementing from this
+section until the user explicitly says to.**
+
+This section exists because of a real interruption worth recording: work
+on both problems below was cut short mid-session when the course's
+Claude Code proxy budget hit its hard weekly cap ($200/week, resets
+Thursday 2026-11-05 09:00 Canberra time) and started rejecting API calls
+outright. The user has asked the course convenor for a one-off bump via
+Ed (per the course's own documented process for this). **If a future
+session picks this up and still can't call the API, that's this same
+budget wall, not a new problem — check whether the bump landed or wait
+for the Thursday reset before assuming something is broken.**
+
+#### 9.1 — the character disappears during movement (not yet root-caused)
+
+**Symptom, confirmed by direct observation (Playwright + screenshots
+against a real local dev server, not inferred):** the character model
+(`/models/character.glb`) is visible in a screenshot taken immediately
+after `/laundry` loads. In every screenshot taken even slightly after
+simulated forward movement begins (via `window.__laundryDebug.pressKey("w")`),
+the character model itself has vanished — only the floor shadow plane
+remains visible. This happens from the very first frame of movement, not
+gradually/at a distance.
+
+**What's already confirmed, so the next session doesn't have to
+re-derive it:**
+
+- The character's *logical* position (`pos.x`/`pos.z`, and
+  `characterRoot.position`, set each frame in the render loop's
+  `characterRoot.position.set(pos.x, 0, pos.z)` line) updates correctly
+  and smoothly — walked the character numerically from the south spawn
+  point toward the north wall across several steps, values were sane
+  throughout. **This rules out the movement/collision math
+  (`clampToRoom`, `collidesAt`) as the cause** — whatever's wrong is a
+  rendering/visibility problem, not a logic-produces-wrong-numbers
+  problem.
+- `window.__laundryGltfAnimations` (the clip-name list read off the
+  loaded GLTF) returns the full real clip list (`static, idle, walk,
+  sprint, jump, fall, crouch, sit, drive, die, pick-up, ...`), confirming
+  the model file itself loads successfully and isn't corrupt.
+  `window.__laundryBasket.isVisible()` also reports correctly (`false`
+  on a fresh room with no reservation).
+- A temporary inspection hook was drafted (not committed, reverted) that
+  would read `characterRoot.children[0]`'s `.visible`, `.scale`,
+  `.position`, a live `THREE.Box3` world bounding box, and each child
+  mesh's `frustumCulled` flag — **this was never actually run before the
+  budget wall hit**, so it's the concrete next step, not background
+  research already done.
+
+**Leading hypotheses to check first, in roughly the order a next session
+should try them** (none confirmed yet — do not assume any of these is
+the answer without actually checking, per the evidence-over-guessing
+discipline this whole plan has followed):
+
+1. **Stale cached bounding volumes after the material-override
+   `traverse()` call** (`src/laundry-view.ts`'s `loadModel("/models/
+   character.glb", ...)` callback replaces every mesh's material in a
+   `traverse()`, but never calls `geometry.computeBoundingSphere()`/
+   `computeBoundingBox()` afterward). Three.js's frustum-culling check
+   uses each mesh's cached bounding sphere; if Kenney's export has an
+   unusual or absent one, overriding the material doesn't invalidate it,
+   and a culling check could wrongly exclude the mesh once the camera's
+   relative position to it changes after the character starts moving
+   (consistent with "visible at spawn, gone once the camera/character's
+   relative geometry changes"). **Check**: log
+   `mesh.geometry.boundingSphere` before and after the material
+   override, and try setting `mesh.frustumCulled = false` on every child
+   mesh as a diagnostic (not necessarily the final fix) to see if the
+   model reappears during movement.
+2. **The model is loaded twice via two different code paths that
+   produce two different object graphs** — `loadModel("/models/
+   character.glb", ...)` (adds the model to `characterRoot`, used for
+   rendering) and a separate, direct `gltfLoader.load("/models/
+   character.glb", ...)` call (used only to build the `AnimationMixer`
+   and find `walk`/`idle` clips by name — see the comment in
+   `src/laundry-view.ts` explaining this dual-load was deliberate,
+   because `loadModel`'s shared-cache path only returns a *clone* of the
+   scene, not the original `gltf.animations` array). **Check**: confirm
+   whether `characterMixer` (built in the second load's callback,
+   targeting `characterRoot.children[0]`) is actually driving the SAME
+   object that's visible in the scene graph, or a different instance —
+   if the two loads race and the mixer's `characterRoot.children[0]`
+   reference is captured before the first load's model is actually
+   added, it could end up animating something not in the scene, or (less
+   likely but worth ruling out) the weight-blending logic could be
+   driving a root-motion bone that collapses the whole rig's visible
+   scale to zero once `walkAction`'s weight becomes nonzero.
+3. **Camera near-plane/frustum interaction once the character is close
+   to or behind the camera's actual render volume** — check
+   `updateCamera()`'s `CAM_DISTANCE`/`CAM_HEIGHT` values and the
+   camera's near/far planes (`new THREE.PerspectiveCamera(60, 1, 0.1,
+   100)` — a 0.1 near plane is generous, making this less likely than
+   hypothesis 1, but not yet ruled out).
+4. **`characterRoot.visible` toggled somewhere unexpectedly** — a
+   straightforward but worth-eliminating check: grep every assignment to
+   `.visible` in the file and confirm none of them touch `characterRoot`
+   or its children unintentionally.
+
+**How to verify once a real cause is found**: re-run the exact Playwright
+repro already used (load `/laundry`, screenshot immediately, simulate
+`pressKey("w")` for ~1.5s via `__laundryDebug`, screenshot again) and
+confirm the character is visible in the second screenshot too — this is
+the same screenshot-based verification pattern every other stage in this
+plan already uses, not a new verification approach to invent.
+
+#### 9.2 — the room is too large, and the west-wall "public zone" needs to stop reading as a hangout spot
+
+**Direct feedback from using the Stage 8 build, not a new feature
+request**: the room built from the Stage 8.2 floor-plan sketch above is
+too large relative to what a small residence laundry room should feel
+like, and the drop-off/public area (the user's correction: explicitly
+**not a sitting/socializing nook** — it exists purely to hold someone
+else's finished laundry, and must read that way, not as a lounge corner)
+needs a different footprint and placement than Stage 8.2 built.
+
+**The user provided a real floor-plan reference image**
+(`research/image.png` — not committed as of this writing, the user
+placed it in `research/` directly) and confirmed, through several rounds
+of the user correcting a sketched interpretation, the following **final,
+confirmed layout** — this supersedes Stage 8.2's floor-plan sketch above
+entirely for the next implementation pass:
+
+```
+                              -Z (north / far wall)
+        ┌─────────────────────────────────────────────────────┐
+        │  [W1][W2][W3][W4][W5]                          [D2] │
+        │   (5 washers along the north wall)              [D1] │
+        │                                                 [W8] │
+        │                                                 [W7] │
+-X      │                                                 [W6] │  +X
+(west,  │            ┌──────────────┐                          │ (east,
+ whole  │            │  sink + fold-│                          │  short
+ wall = │            │  out ironing │                          │  wall:
+ PUBLIC │            │  board,      │                          │  3 more
+ ZONE — │            │  merged into │                          │  washers
+ see    │            │  one free-   │                          │  + 2
+ below) │            │  standing    │                          │  dryers,
+        │            │  island,     │                          │  same
+        │            │  centered in │                          │  wall,
+        │            │  the east    │                          │  one
+        │            │  floor area  │                          │  continuous
+        │            │  (not        │                          │  run)
+        │            │  against any │                          │
+        │            │  wall)       │                          │
+        │                                                      │
+        │              (entry / player spawn,                   │
+        │               centered on this wall)                  │
+        └─────────────────────────────────────────────────────┘
+                              +Z (south / entrance wall)
+```
+
+- **Machines, confirmed exact split (replaces 8.2's single-wall-of-10
+  layout)**: **5 washers along the whole north wall**, then **3 washers +
+  2 dryers along the whole east wall** (one continuous run on that wall,
+  not grouped by type the way 8.2's single-wall layout grouped them) —
+  totals 8 washers + 2 dryers, matching the real seeded machine count
+  exactly (confirmed against `src/db.ts`'s seed data before writing this
+  — this is not a new count invented for the room, it has to keep
+  matching whatever the server actually returns, the same "computed from
+  the real {id, label, type} list, never hardcoded to a specific number"
+  principle `src/laundry-view.ts`'s own top-of-file comment already
+  states).
+- **The whole west wall is the public/drop-off zone** — not a corner
+  zone sized like the sink (Stage 8.2's mistake, per the user's own
+  "how's this supposed to fit clothes" complaint). It needs to actually
+  be sized like a real shelving/table unit a person could set a laundry
+  basket's worth of clothes on, spanning a meaningful fraction of the
+  wall, not a small table-sized prop.
+- **Explicit requirement: large, legible text labeling** on or above the
+  drop-off zone (e.g. floating 3D text or a sprite/canvas-texture label —
+  exact technique TBD at implementation time, but it must be readable at
+  a normal approach distance, not a tiny sign) — the user was explicit
+  that the current build has no textual indication this zone is the
+  drop-off area at all, only the numbered spot-occupancy colour markers
+  Stage 8.4 already built. This is additive to 8.4's existing
+  `dropoffSpotMeshes` colour-marker system, not a replacement for it.
+- **Sink + ironing table merge into one free-standing "island"** in the
+  open floor area on the east side, **not against any wall** — matches
+  the reference image's own "central island" treatment exactly (the
+  reference shows a kitchen-style island with a sink and a pull-out
+  ironing board built into one counter unit). This replaces Stage 8.2's
+  separate west-wall sink + west-wall ironing-table placement entirely.
+- **Explicitly ruled out, so it isn't re-proposed**: keeping the public
+  zone as a small table matching the sink's footprint (Stage 8.2's actual
+  built result) — rejected by the user as not large enough to plausibly
+  hold laundry. A sitting/lounge treatment for the public zone (the
+  reference image's own west-side "multi-purpose public/living zone"
+  with a table and bench, meant for sitting and working) was also
+  explicitly ruled out by the user: "按我们说的，这个位置是用来放衣服的，而不是聚会"
+  (this spot is for *putting down laundry*, not socializing) — the
+  reference image's architectural layout (zone position, room
+  proportions, clean labeled-zone visual clarity) is worth learning from;
+  its specific *furniture choice* for that one zone (a social table +
+  bench) is not, and must not be ported over along with the rest of the
+  layout.
+- **Room size**: the user asked for significantly smaller than Stage
+  8.2's built result ("目前的一半以内宽度" — within half the current
+  width) — exact new dimensions aren't pinned down yet (TBD at
+  implementation time, computed the same data-driven way Stage 8.2's own
+  constants were, not hardcoded), but the controlling idea is: a believable
+  small-residence laundry room, not a room sized to comfortably fit four
+  separate zones with generous walking space around each, which is what
+  Stage 8.2 actually produced.
+- **Not yet decided / needs a fresh design pass before coding, not just
+  a parameter tweak**: the exact new `roomHalfWidth`/`roomHalfDepth`
+  formula, the drop-off zone's exact footprint/model (the existing
+  `table.glb` reused at a much larger scale, multiple `table.glb`
+  instances side by side, or a different Furniture Kit model entirely —
+  re-check `research/3d-booking/asset-sourcing.md`/the Furniture Kit pack
+  for a shelving-unit model before assuming `table.glb` scaled up is the
+  right call), and the exact text-label implementation technique. **A
+  future session should treat this as "redo Stage 8.2's sketch and
+  layout code from scratch against this new confirmed plan," not "patch
+  the existing constants."**
+
+**Verification approach once implemented**: the same Playwright
+screenshot-overview pattern Stage 8.2 already used
+(`laundry-stage8-overview-desktop.png`-style wide shots plus close-up
+shots of the drop-off zone specifically), explicitly re-checked against
+this section's requirements (room reads as smaller, drop-off zone reads
+as large/obviously-for-laundry with visible text, island is free-standing
+and centered, machine counts/positions match the confirmed split above)
+— not just "does it still run."
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual
