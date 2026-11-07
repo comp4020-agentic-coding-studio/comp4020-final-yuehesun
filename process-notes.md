@@ -405,3 +405,42 @@ bug uninvestigated if taken as a full answer.
 **Backed by:** commit with the `setBasketVisible`/`setBasketKind`
 re-application fix (pending: next commit); `plans/3d-walkthrough.md`
 Stage 9.6's root-cause writeup.
+
+## Refusing to accept "no bug found" a second time, and asking for the model itself to be swapped
+
+**What happened:** the character-stuck symptom (first raised in Stage
+9.3, re-investigated once already in Stage 9.6 without being resolved)
+came up a third time. The agent's position/state checks kept coming back
+clean — `characterRoot.position` updated correctly, the model's own
+bounding box tracked it — and on that basis it reported the design was
+working as intended (a normal third-person camera effect). I didn't
+accept that a second time: I could see with my own eyes, in my own
+browser, that the character wasn't moving, and I told the agent to
+replace the character model with the simplest possible shape (a plain
+head-and-limbs primitive, no rig) so we could see directly whether the
+problem was the model itself.
+
+**The obvious alternative:** accept the agent's repeated "the numbers are
+correct, this is just how the camera looks" explanation. Every
+automated check it had run agreed with that conclusion.
+
+**What I decided instead:** insisted on an actual swap of the model,
+done live in my own browser rather than another round of scratch-server
+screenshots, and kept pushing back (including through a detour where the
+agent misdiagnosed an unrelated leftover process as "your browser and my
+tools are in different network environments," which wasn't it either)
+until it isolated the real mechanism.
+
+**Why it helped:** the primitive moved correctly on screen the instant it
+replaced the rig, which proved the bug was specific to the rigged model,
+not the position/camera code every earlier check had already cleared.
+That narrowed the search enough to find the actual cause — the generic
+model-cloning code silently shared one skeleton across every copy of the
+character, so the character's bones never moved even though its
+position variable always did. No amount of re-checking position state
+would ever have found this; it took seeing the actual rendered result
+contradict the numbers, and insisting that contradiction be explained
+rather than argued away.
+
+**Backed by:** commit `8e33e09`; `plans/3d-walkthrough.md`'s Stage 9.3
+root-cause writeup.
