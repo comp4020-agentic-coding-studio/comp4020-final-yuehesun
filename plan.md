@@ -404,8 +404,36 @@ and the offer moves to the next person instead.
   Playwright/browser contexts for multi-actor scenarios (they all use a
   second cookie string) — both corrected in the plan itself, each flagged
   explicitly as a correction rather than silently fixed, so a future
-  reader doesn't wonder why the plan second-guesses itself. **Not yet
-  implemented** — explicitly deferred to a future session.
+  reader doesn't wonder why the plan second-guesses itself.
+- **Laundry presence Stage 1 (server-side module and routes) built and
+  verified.** `src/presence.ts` (in-memory `PresenceRecord` map, keyed by
+  a per-tab id, `report`/`removeStale`/`remove`/`all`, a dedicated SSE
+  broadcast loop on its own 250ms tick, separate from
+  `src/realtime.ts`'s own), `POST /laundry/presence`, `POST
+  /laundry/presence/leave`, `GET /laundry/presence-stream` (all in
+  `src/app.ts`), `docs/adr/0014-laundry-presence.md`, and
+  `spec/laundry-presence.test.ts` (6 tests, including a real 5.2s wait
+  for `STALE_MS` cleanup, consistent with this project's existing
+  precedent for a real-time wait elsewhere in its spec suite) — all green
+  against a scratch server, `pnpm check` green overall (14 files, 36
+  tests). `src/queue.ts` untouched, confirmed by diff. Two more
+  inaccuracies caught and corrected in the plan file itself while
+  implementing, beyond the two already fixed when the plan was first
+  written: `startRealtimeLoop()` (and now `startPresenceLoop()`) is
+  called from `src/server.ts`, not `src/app.ts` as an earlier draft said;
+  and `clock.ts`'s `setClock()` seam cannot inject a shorter `STALE_MS`
+  for the stale-cleanup test, since that seam only ever works in-process
+  against an in-memory database (`sim/`, `spec/fairness-properties.test.ts`)
+  — this spec drives the real server over HTTP from a separate process,
+  so it simply waits out the real 5-second default instead. **Stage 1 was
+  built in parallel with Stage 9.4's own implementation** (a different
+  session's background fork, concurrently editing `src/laundry-view.ts`)
+  — deliberately scoped to files Stage 9.4 never touches
+  (`src/presence.ts`, `src/app.ts`, `src/server.ts`, a new spec file) so
+  the two could proceed without conflict; **Stage 2 (the client-side
+  half, which does touch `src/laundry-view.ts`'s render loop) is
+  deliberately held until Stage 9.4 lands and commits**, to avoid basing
+  new work on a file mid-rewrite.
 
 ## Final project deadline — read this before planning further work
 

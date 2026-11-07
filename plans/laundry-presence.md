@@ -160,6 +160,7 @@ confused with, anything that decides queue order or fairness.
 
 ```ts
 export interface PresenceRecord {
+  tabId: string;
   identity: string;
   x: number;
   z: number;
@@ -173,7 +174,7 @@ export interface PresenceRecord {
 const records = new Map<string, PresenceRecord>();
 
 export function report(tabId: string, identity: string, x: number, z: number, yaw: number, moving: boolean): void {
-  records.set(tabId, { identity, x, z, yaw, moving, lastSeenMs: clock.now() });
+  records.set(tabId, { tabId, identity, x, z, yaw, moving, lastSeenMs: clock.now() });
 }
 
 export function removeStale(maxAgeMs: number): void {
@@ -670,8 +671,11 @@ camera angle).
   `all`, the `streams: Set<SSEStreamingApi>` + `addStream`/`removeStream`
   pair (mirroring `realtime.ts`'s own shape), `startPresenceLoop()`.
 - `src/app.ts`: `POST /laundry/presence`, `POST /laundry/presence/leave`,
-  `GET /laundry/presence-stream`, and calling `presence.startPresenceLoop()`
-  alongside the existing `realtime.startRealtimeLoop()` call at boot.
+  `GET /laundry/presence-stream`.
+- `src/server.ts`: **correction to an earlier draft of this plan** —
+  `startRealtimeLoop()` is called from `src/server.ts` at boot, not from
+  `src/app.ts` (checked before writing this). `startPresenceLoop()` is
+  called alongside it there, not in `app.ts`.
 - `docs/adr/0014-laundry-presence.md`, written before Stage 2's client
   code, per this plan's own "write the ADR before implementation" note
   above.
@@ -680,12 +684,30 @@ camera angle).
   app over HTTP) that — posts two different tabIds under two different
   identities, confirms both show up in a payload read off the SSE stream;
   posts a leave for one tabId, confirms it drops out of the next
-  broadcast; confirms a record with no report for longer than a short
-  test-tuned stale window (inject a shorter `STALE_MS` for the test via
-  the same kind of seam `clock.ts` already provides elsewhere, rather
-  than waiting out the real 5-second default in a test) is dropped even
-  without an explicit leave. No browser/Playwright needed for this
-  stage — it's pure server behaviour.
+  broadcast; confirms a record with no report for longer than `STALE_MS`
+  is dropped even without an explicit leave. No browser/Playwright needed
+  for this stage — it's pure server behaviour.
+  **Correction to an earlier draft of this plan, caught before writing
+  any spec code**: an earlier version of this plan proposed injecting a
+  shorter `STALE_MS` for the test "via the same kind of seam `clock.ts`
+  already provides elsewhere" — wrong on inspection. `clock.setClock()`
+  is only ever called from `sim/` and `spec/fairness-properties.test.ts`,
+  both of which run the real `queue.ts` functions *in-process, against an
+  in-memory database* (CLAUDE.md's own test-harness rule: in-process
+  tests and the simulator never touch the running app). This spec is the
+  opposite shape — it's a separate test process driving the real,
+  separately-running HTTP server via `fetch()` (`inject("baseUrl")`,
+  matching every other `spec/*.test.ts` file) — so there is no shared
+  process for a test-side `setClock()` call to affect; the server's own
+  `STALE_MS` constant is simply not reachable from the test process at
+  all. The actual, simpler fix: **just wait out the real 5-second
+  `STALE_MS`** in this one test (`await new Promise(r => setTimeout(r,
+  5_200))` or equivalent) rather than inventing a config-override
+  mechanism for a single test's benefit — this project's spec suite
+  already accepts a real multi-minute wall-clock wait elsewhere for
+  exactly this reason (the move-back-one-place claim window verification
+  noted in `HANDOFF.md`), so one ~5-second wait here is consistent with
+  that existing precedent, not a new category of slow test.
   **Correction to an earlier draft of this plan**: checked before writing
   this — **no existing `spec/*.test.ts` file reads an SSE stream's body
   at all**, not even the pre-existing `/events` stream (every realtime

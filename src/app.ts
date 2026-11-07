@@ -6,6 +6,7 @@ import { db } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
 import * as logging from "./logging.ts";
 import * as queue from "./queue.ts";
+import * as presence from "./presence.ts";
 import * as realtime from "./realtime.ts";
 import { renderReadme } from "./readme.ts";
 import { readSimulationResults } from "./simulation-results.ts";
@@ -187,6 +188,58 @@ app.get("/laundry/scan/:id", (c) => {
   const now = Date.now();
   const rows = queue.queueFor(machineId, now);
   return c.html(scanPage(machine, rows, identity, now));
+});
+
+// plans/laundry-presence.md Stage 1: one browser tab's own position
+// report. Fire-and-forget from the client's own perspective (a bare 204
+// — this is telemetry, not an action with a user-visible consequence, so
+// there's nothing to render back).
+app.post("/laundry/presence", async (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.json({ error: "sign in first" }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  // The one route in this app that accepts a body shaped by client-side
+  // JS rather than a form field, so malformed/missing fields are a real
+  // possibility (a stale tab mid-reload, a future client bug) — checked
+  // defensively, not just against hostile input.
+  if (!body || typeof body.tabId !== "string" || typeof body.x !== "number" || typeof body.z !== "number" || typeof body.yaw !== "number") {
+    return c.json({ error: "malformed presence report" }, 400);
+  }
+  presence.report(body.tabId, identity, body.x, body.z, body.yaw, !!body.moving);
+  return c.body(null, 204);
+});
+
+// plans/laundry-presence.md Stage 1: an explicit "I'm gone" signal, sent
+// via navigator.sendBeacon on pagehide so a deliberate tab close/
+// navigation removes the character immediately instead of waiting out
+// presence.ts's stale-record timeout. Best-effort only — removeStale()
+// is what guarantees a dead tab's character eventually disappears even
+// if this never fires (a crashed tab, a lost connection on the way out).
+app.post("/laundry/presence/leave", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (body && typeof body.tabId === "string") presence.remove(body.tabId);
+  return c.body(null, 204);
+});
+
+// plans/laundry-presence.md Stage 1: SSE, one stream per connected
+// /laundry tab, broadcasting everyone else's current positions on a
+// steady tick. Modelled on GET /events' own shape directly below, but a
+// separate stream and a separate Set<SSEStreamingApi> — presence is
+// continuous high-frequency state, a different shape from /events' own
+// discrete change signals, so the two are kept apart rather than merged
+// (see the plan's "Why this needs a new transport").
+app.get("/laundry/presence-stream", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.text("sign in first", 400);
+
+  return streamSSE(c, async (stream) => {
+    presence.addStream(stream);
+    stream.onAbort(() => presence.removeStream(stream));
+    while (!stream.closed && !stream.aborted) {
+      await stream.sleep(60_000);
+    }
+  });
 });
 
 // Crit 9: one shared SSE stream per browser (plans/crit-9.md Stage 1). It
