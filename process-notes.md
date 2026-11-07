@@ -338,3 +338,70 @@ note is supposed to take a position on.
 **Backed by:** `docs/adr/0010-fairness-simulation-as-testing.md`
 (pending: next commit); `sim/results.json` (committed, this session);
 `research-note.md`'s DST section (pending: next commit).
+
+## Requiring a real regression test for the backwards-machine bug, not just a one-line fix
+
+**What happened:** I noticed several washing machines in the 3D room had
+their door facing the wall instead of the room — visible in a screenshot
+I took myself. I reported the bug and, in the same message, told the
+agent to think about how to design an automated test that would prevent
+this class of problem from recurring, not just fix the one instance.
+
+**The obvious alternative:** accept a quick patch to the one wrong
+rotation constant and move on — the room already looked right again
+after the fix, and nothing in the brief requires a test for every visual
+constant in a 3D scene.
+
+**What I decided instead:** required a real, running regression test
+before considering the bug closed. The agent's own investigation found
+that an earlier stage's fix (a sign-flip workaround, "frontSign") had
+patched the symptom (a status light looking right) without ever checking
+the thing underneath it (the model's own rotation) — exactly the kind of
+problem a screenshot check alone won't reliably catch twice. Insisting on
+a test, not just a diff, forced the fix to also extract the room's layout
+math into a plain function a test could call directly, rather than
+leaving it buried inside the browser-only scene script.
+
+**Why it helped:** a screenshot looks right until the next wall or
+constant is added, then someone has to notice the same way I just did —
+by eye, after the fact. A test that checks "does each machine's rotation
+actually point into its own room, not just whichever direction looked
+fine in one screenshot" catches a future version of the same mistake
+automatically, including ones a screenshot wouldn't obviously reveal from
+a different camera angle.
+
+**Backed by:** `spec/laundry-layout.test.ts` (commit `7f8ec33`); the same
+commit's `src/laundry-layout.ts` extraction; `plans/3d-walkthrough.md`
+Stage 9.5's root-cause writeup.
+
+## Not accepting "that's just the normal camera" and asking for the actual binding to be checked
+
+**What happened:** reporting the character-stuck symptom again, the agent's
+first answer was that this was expected third-person camera behaviour (the
+character stays centered on screen while the room moves around it) — not
+a bug. I'd taken a screenshot showing a red object that moved with the
+camera while the character itself stayed put relative to the room, and I
+didn't accept that explanation; I told the agent to actually check what
+object that red block was and whether something was bound incorrectly.
+
+**The obvious alternative:** accept "it's a known, normal camera design"
+and move on — the agent had already demonstrated (with real logged
+position/camera values) that the character's coordinates do change when
+walking, which is consistent with that explanation.
+
+**What I decided instead:** pushed for the actual binding logic to be
+checked, since the screenshot evidence (a detached-looking red object)
+didn't fully square with "working as intended."
+
+**Why it helped:** the deeper check found a real, previously-unknown bug —
+a race between the character model's own async load and the basket prop's
+visibility state, where the basket could be marked "should be visible"
+before the mesh carrying it existed, silently losing that state forever
+(unless some later, unrelated event happened to reapply it). The "it's
+just the camera" explanation was true for the position question but had
+nothing to do with the basket, and would have left a real, reproducible
+bug uninvestigated if taken as a full answer.
+
+**Backed by:** commit with the `setBasketVisible`/`setBasketKind`
+re-application fix (pending: next commit); `plans/3d-walkthrough.md`
+Stage 9.6's root-cause writeup.

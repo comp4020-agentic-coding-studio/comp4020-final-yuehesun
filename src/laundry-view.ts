@@ -635,7 +635,25 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     characterRoot.add(model);
 
     basketMesh = buildBasket();
-    basketMesh.visible = false;
+    // Stage 9.6: apply whatever basketVisible/basketKind already is,
+    // not a hardcoded false — character.glb loads asynchronously (this
+    // is its first ever load, so loadModel() can't serve it from cache
+    // synchronously), and refetchMachineState() runs immediately on page
+    // load with no dependency on this callback having fired first. If
+    // that fetch resolves (and calls setBasketVisible(true), say, for a
+    // resident who already has an active reservation) before this
+    // callback runs, setBasketVisible's own if (basketMesh) guard was
+    // silently dropping the value, since basketMesh didn't exist yet —
+    // and nothing ever revisited it afterward unless some later event
+    // happened to call refetchMachineState() again. Confirmed as a real,
+    // reproducible (if timing-dependent) bug: a scene-graph walk found
+    // the real mesh's own .visible left false while the state variable
+    // genuinely was true. Reading the already-known values here instead
+    // removes the race: whichever of "model loads" or "first state fetch
+    // resolves" happens first, the other one's effect is still applied
+    // correctly once this line runs.
+    basketMesh.visible = basketVisible;
+    basketMesh.material.color.setHex(basketKind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
     characterRoot.add(basketMesh);
 
     // Animations: the GLTF ships many (idle/walk/pick-up/etc. — confirmed

@@ -1421,6 +1421,186 @@ own scope (Stage 9.2 is layout-constants-only, per that section's own
 is real work for a dedicated stage of its own, not a drive-by fix bundled
 into the layout commit.
 
+**Re-investigated in a later session (after Stage 9.5): still not
+resolved — only ruled one explanation out, not confirmed a fix.** The
+user reported, again, after a hard refresh: the character stays fixed at
+the center of the screen while walking; a red "basket" prop (Stage 8.4's
+`basketMesh`, `BASKET_OWN_COLOR = 0xb5402a`) appeared to move relative to
+the camera while the character itself didn't move relative to the room.
+
+A first pass wrongly concluded this was just the normal third-person
+follow-camera effect (the character staying near-centered on screen while
+the room moves around it, since the camera offset tracks the character 1:1)
+— that conclusion was reached by running `window.__laundryDebug` checks
+directly against the user's own live `pnpm dev` server on port 8080,
+**a violation of this file's own port-discipline rule** (scratch
+verification must never touch 8080) and of CLAUDE.md's test-harness
+rules, and it never actually reproduced the reported symptom (a
+disconnect between the character and the basket) — it only confirmed
+that `characterRoot.position` and the camera both change together, which
+is consistent with either the normal design *or* a real bug, so it
+proved nothing about which one is happening. A second pass, correctly
+run against an isolated scratch server (port 8097, its own throwaway
+database), confirmed `characterRoot.position` and the character model's
+own live world bounding box move together frame-to-frame under a real
+keyboard-driven walk — i.e. the local player's own primary character is
+internally consistent. It did **not** reproduce the user's reported
+basket/character disconnect, and did not investigate `basketMesh`'s own
+position relative to `characterRoot` under real play conditions (only
+confirmed `BASKET_OWN_COLOR`'s hex value matches a sampled pixel from the
+user's screenshot, which only identifies *what* the red object is, not
+*why* it appeared detached).
+
+**Next session's concrete next steps, more specific than the original
+two above:**
+- Reproduce with the mouse drag-to-look active at the same time as WASD
+  movement (Stage 9.4 changed the look scheme since this section was
+  first written; the original investigation never tested look+move
+  together, only keyboard alone).
+- If `basketVisible` was `true` at the time of the user's screenshot,
+  check whether `setBasketVisible`/`setBasketKind` ever runs *before*
+  `characterRoot.add(basketMesh)` has executed (the `loadModel()`
+  sync-if-cached/async-if-not hazard already found once this project,
+  in `plans/laundry-presence.md`'s Stage 2 `entry`-ordering bug) — a
+  basket mesh added to the wrong parent, or added twice, would explain a
+  prop that doesn't track the character.
+- Confirm reproduction happens on a true fresh load (not a stale tab) —
+  the user's first report in this round turned out to be exactly that,
+  so this needs ruling out again before trusting any new result as real.
+- Never debug this again against port 8080; use a scratch port ≥8090 and
+  a throwaway database, per this file's and CLAUDE.md's own existing
+  rules — restated here because it was violated once already investigating
+  this exact issue.
+
+**The basket-visibility bullet above was confirmed, in a third pass, as
+a real bug — though not the user's original character-stuck symptom.**
+Correctly isolated this time (scratch port 8098, a fresh throwaway
+database, a real reservation created server-side, `page.evaluate` reads
+only taken after `refetchMachineState()`'s own fetch had resolved — the
+earlier pass's "basket mesh visible: false" reading briefly looked like
+confirmation, but turned out to be the test script's own read racing
+ahead of the fetch, not the product bug itself; re-run with a longer wait
+showed `window.__laundryBasket.isVisible()` correctly read `true`). The
+real, reproducible bug is narrower than that first signal suggested:
+
+`character.glb` (the local player's own model) is genuinely
+network-loaded exactly once, asynchronously, the *first* time anything on
+the page calls `loadModel("/models/character.glb", ...)` — which is this
+character, at line ~606, not a remote character (those always run after,
+once this load has already populated `modelCache`). `basketMesh` is only
+ever constructed *inside that same async callback*
+(`basketMesh = buildBasket(); ...; characterRoot.add(basketMesh);`).
+Meanwhile `refetchMachineState()` — which can set `basketVisible = true`
+via the server's `myBasketVisible` flag — is called immediately on page
+load (line 1077), with no dependency on the character model having
+finished loading first. `setBasketVisible(visible)` stores the
+`visible` flag into the module-level `basketVisible` variable
+unconditionally, but only writes it onto the real mesh's own
+`.visible` property `if (basketMesh)` — guarding against exactly the
+window where `basketMesh` is still `null`. If a resident's own basket is
+already supposed to be visible (an active or done-unacknowledged
+reservation) at the moment this race resolves unfavourably — the fetch
+resolving before the character model finishes loading — the real
+`THREE.Mesh`'s `.visible` is left at its construction-time default
+(`false`, set explicitly right after `buildBasket()`), and **nothing
+ever revisits it afterward** unless some *other* event happens to call
+`refetchMachineState()` again later (an SSE `changed`/`machine-N` event,
+or the handoff-confirm path at line 1349) — at which point `basketMesh`
+now exists, and the correct value is applied retroactively. This was
+confirmed directly: a scene-graph walk (finding `characterRoot` via
+`machineGroups[1].parent`, then its own non-model child) showed the real
+mesh's `.visible === false` while `window.__laundryBasket.isVisible()` —
+reading the *state* variable, not the mesh — correctly returned `true`,
+on a page where the race had resolved unfavourably on that particular
+run (not reproducible every time, consistent with a race rather than a
+deterministic bug — timing against a real network-loaded GLTF varies
+run to run).
+
+**This is the identical bug *shape* `plans/laundry-presence.md`'s Stage 2
+`entry`-ordering bug already found once** (closing over/depending on an
+object that `loadModel()`'s async-if-not-cached path hasn't created yet)
+— a different variable, same root cause, the second time this exact
+hazard has bitten this file. Worth a standing rule, not just a second
+patch: anything that needs to act on `basketMesh` (or any other
+object only created inside a `loadModel()` callback) must check for its
+existence lazily at the moment it's *read*, not trust that setting a
+flag once is enough — because the flag can be set before the mesh
+exists, with nothing structurally guaranteeing a second write ever
+happens.
+
+**Fix** (Stage 9.6, below): make `setBasketVisible`/`setBasketKind`
+re-apply themselves once the mesh is actually constructed, instead of
+silently dropping the value when `basketMesh` is still `null`.
+
+**Still not investigated**: the user's original symptom (the character
+staying fixed relative to the room, not just centered on screen) remains
+unreproduced. This basket race is a real, independently-confirmed bug,
+but nothing above explains a *position* desync — only a *visibility*
+one. The next session should treat these as two separate hypotheses
+until one is actually confirmed against the user's own exact repro
+steps (mouse-drag + WASD together, on a true fresh load).
+
+### Stage 9.6 — fix: basket visibility can be set before the basket mesh exists
+
+**Design.** `setBasketVisible`/`setBasketKind` both early-return (via
+`if (basketMesh)`) when the character model hasn't finished loading yet,
+silently dropping whatever value was requested. The fix: keep requesting
+the *latest* value even when the mesh doesn't exist yet, and apply it the
+moment the mesh is constructed — not a queue of pending calls (only the
+*last* requested state actually matters, since `basketVisible`/
+`basketKind` already are "last write wins" module-level variables), just
+reading them once right after `characterRoot.add(basketMesh)` runs:
+
+```js
+basketMesh = buildBasket();
+basketMesh.visible = basketVisible; // apply whatever was already requested, not a hardcoded false
+basketMesh.material.color.setHex(basketKind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
+characterRoot.add(basketMesh);
+```
+
+This removes the window entirely: whichever of "the model finishes
+loading" or "the first `refetchMachineState()` resolves" happens first,
+the final state is always correct, because the mesh is initialized from
+the already-known `basketVisible`/`basketKind` values instead of a
+hardcoded default that only a second, later event might ever correct.
+
+**Verify**: reproduce the exact race from this session's own repro (a
+fresh identity, a real reservation created before the first `/laundry`
+load, a scratch server/database, port ≥8090) across several repeated
+runs — the race is timing-dependent, so one passing run isn't enough;
+confirm the scene-graph-walk check (`characterRoot`'s non-model child's
+own `.visible`) matches `window.__laundryBasket.isVisible()` on every
+run, not just most. `pnpm check` green; `git diff --stat` shows only
+`src/laundry-view.ts` changed.
+
+#### Stage 9.6 built and verified
+
+Implemented exactly as designed: `basketMesh.visible`/`.material.color`
+are now initialized from the already-known `basketVisible`/`basketKind`
+variables at the moment the mesh is constructed, instead of a hardcoded
+`false`. Verified against a fresh scratch server (port 8099, a throwaway
+database) across 6 repeated runs, each with a distinct identity and
+machine — a real reservation created server-side immediately before
+navigating to `/laundry` (no artificial delay, to maximize the chance the
+model-load and state-fetch races actually overlap the way a real user's
+page load would), then a scene-graph walk confirming the real mesh's own
+`.visible` matches `window.__laundryBasket.isVisible()`'s state-flag
+reading. All 6 runs matched (`true`/`true`); before the fix, this same
+repro had shown a real `false`/`true` mismatch on at least one run.
+`pnpm check` green (39 tests) against a clean database (the verification
+script's own repeated reservations had briefly broken `spec/offer.test.ts`
+against the scratch server they ran on, by occupying every machine — not
+a product regression, just that server's own state needing a fresh
+database to re-check against); `tsc --noEmit` clean; only
+`src/laundry-view.ts` changed.
+
+The user's original symptom from this investigation (the character's own
+position staying fixed relative to the room) remains **unconfirmed and
+unfixed** — this stage only closes the basket-visibility race that
+surfaced during the same investigation, a different, now-confirmed bug.
+See the "Re-investigated in a later session" note above Stage 9.4 for
+what's still open.
+
 ### Stage 9.4 — look interaction, machine detail diagnosis, a real indicator light, and an intentionally oversized interactable
 
 Written after the user tried the Stage 9.2 build and raised four
