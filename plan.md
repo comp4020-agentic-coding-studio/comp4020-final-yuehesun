@@ -532,6 +532,28 @@ and the offer moves to the next person instead.
   3/"Stage 3 built and verified" for the full numeric verification.
   **Laundry presence is now fully built (Stages 1-3) and verified
   locally; not yet deployed.**
+- **Stage 9.3's long-deferred "character doesn't visibly move" bug finally
+  root-caused and fixed, not just re-investigated.** Every earlier
+  automated check had confirmed `characterRoot.position` and the model's
+  own bounding box were correct, and concluded there was no bug — the
+  real defect was one level deeper: `loadModel()`'s plain
+  `Object3D.clone(true)` silently shares one skeleton object across every
+  clone of a rigged model (`THREE.SkinnedMesh.copy()`'s own behaviour,
+  not a bug introduced here), so the character's bones stayed frozen at
+  the origin forever while every position variable this file tracks was
+  genuinely correct the whole time. Fixed by switching to three.js's own
+  `SkeletonUtils.clone()`, a safe drop-in for every other (non-skinned)
+  model `loadModel()` already serves. A second, independently real bug
+  found investigating the same report — the camera could clip through
+  the ceiling at the top of its look-pitch range, since only the
+  horizontal camera position was ever clamped to the room's walls, never
+  the vertical one — is fixed alongside it, plus lowering `CAM_HEIGHT` to
+  a more human eye level per the user's request. Full root-cause writeup,
+  including the diagnostic process that found it (a primitive-model swap
+  done live in the user's own browser, then an isolated `git worktree`
+  build to inspect the skeleton's bone transforms without disturbing that
+  session): `plans/3d-walkthrough.md`, "Stage 9.3" section. `pnpm check`
+  green (39 tests); user-confirmed fixed by eye in their own browser.
 
 ## Final project deadline — read this before planning further work
 

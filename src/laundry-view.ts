@@ -44,6 +44,7 @@ const IMPORT_MAP = `{"imports": {"three": "${THREE_BASE}/build/three.module.js"}
 const LAUNDRY_SCRIPT = `
 import * as THREE from "${THREE_BASE}/build/three.module.js";
 import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/SkeletonUtils.js";
 
 (function () {
   var wrap = document.getElementById("laundry-canvas-wrap");
@@ -172,14 +173,37 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   // --- GLTF loading: one shared loader, a small cache keyed by URL so
   // placing several copies of the same model (e.g. every washer) only
   // fetches/parses it once — clone() reuses the parsed geometry/material
-  // graph cheaply for each placed instance. ---
+  // graph cheaply for each placed instance.
+  //
+  // Real bug found investigating the "character doesn't visibly move"
+  // report: plain Object3D.clone(true) (three.js's generic clone, used
+  // here until now) does NOT correctly clone a rigged/skinned model.
+  // THREE.SkinnedMesh.copy() (which Object3D.clone() calls internally)
+  // assigns this.skeleton = source.skeleton — a bare reference, not a
+  // deep copy — so every clone of character.glb kept pointing at the
+  // one skeleton object that lives on the cached, never-added-to-the-
+  // scene original gltf.scene. That original's bones are never moved by
+  // anything (characterRoot.position is what this file actually drives),
+  // so the bones stay frozen at the origin forever — the mesh's own
+  // bounding box reflects characterRoot's position correctly, but the
+  // skinned mesh's actual rendered shape is driven by the frozen bones,
+  // which is why the character visually never seemed to move even though
+  // every position variable this file tracks was provably correct.
+  // Confirmed directly: skeleton.bones[0].getWorldPosition() stayed at
+  // [0,0,0] regardless of characterRoot.position, and the root bone's own
+  // parent chain never included characterRoot at all. SkeletonUtils.clone
+  // (three.js's own addon specifically for this) deep-clones the skeleton
+  // and rebinds every SkinnedMesh to its own cloned bones; it's a safe
+  // drop-in for loadModel()'s existing non-skinned models too (furniture/
+  // machines), since it clones a plain Object3D graph identically to
+  // Object3D.clone() when there's no skeleton to rebind.
   var gltfLoader = new GLTFLoader();
   var modelCache = {};
   function loadModel(url, onReady) {
-    if (modelCache[url]) { onReady(modelCache[url].scene.clone(true)); return; }
+    if (modelCache[url]) { onReady(cloneSkinned(modelCache[url].scene)); return; }
     gltfLoader.load(url, function (gltf) {
       modelCache[url] = gltf;
-      onReady(gltf.scene.clone(true));
+      onReady(cloneSkinned(gltf.scene));
     }, undefined, function (err) {
       console.error("failed to load " + url, err);
     });
@@ -721,7 +745,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var pos = { x: 0, z: southZ };
   var MOVE_SPEED = 2.6;
   var LOOK_SENSITIVITY = 0.0025;
-  var CAM_DISTANCE = 3.2, CAM_HEIGHT = 1.8;
+  // CAM_HEIGHT lowered from 1.8 to 1.6 (roughly eye height for an average
+  // adult standing — 1.8 was taller than a real person's eye line, not
+  // just "tall camera rig" placement). CAM_HEIGHT_MARGIN keeps the
+  // vertical component inside the room: clampCameraPos (below) already
+  // clamped X/Z against the walls, but nothing ever clamped Y against the
+  // floor/ceiling — pitching the look angle toward its extremes (the
+  // Math.sin(pitch) * 1.2 term below) could push the camera's own Y
+  // position above wallHeight (2.6) or below the floor, which reads as
+  // "the camera clips through the ceiling/wall" exactly as reported.
+  var CAM_DISTANCE = 3.2, CAM_HEIGHT = 1.6;
+  var CAM_HEIGHT_MARGIN = 0.15;
   var CAM_LERP = 0.12; // per-frame ease factor, not a time-scaled lerp — simple and stable at this fixed-ish frame rate
 
   function collidesAt(x, z) {
@@ -773,7 +807,9 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     var backZ = Math.cos(yaw) * CAM_DISTANCE;
     var rawX = characterRoot.position.x + backX, rawZ = characterRoot.position.z + backZ;
     var clamped = clampCameraPos(rawX, rawZ);
-    desiredCamPos.set(clamped.x, CAM_HEIGHT + Math.sin(pitch) * 1.2, clamped.z);
+    var rawY = CAM_HEIGHT + Math.sin(pitch) * 1.2;
+    var clampedY = Math.max(CAM_HEIGHT_MARGIN, Math.min(wallHeight - CAM_HEIGHT_MARGIN, rawY));
+    desiredCamPos.set(clamped.x, clampedY, clamped.z);
     camera.position.lerp(desiredCamPos, CAM_LERP);
     desiredCamTarget.set(characterRoot.position.x, 0.9, characterRoot.position.z);
     camera.lookAt(desiredCamTarget);

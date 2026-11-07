@@ -1516,6 +1516,82 @@ run (not reproducible every time, consistent with a race rather than a
 deterministic bug — timing against a real network-loaded GLTF varies
 run to run).
 
+**Root cause of the original "character doesn't visibly move" symptom,
+finally confirmed (a later session) — `Object3D.clone()` silently shares
+the skeleton, not a binding/movement-logic bug at all.** The user
+insisted (correctly) that the symptom was real and reproducible in their
+own browser on `localhost:8080`, after every automated Playwright repro
+in earlier sessions had failed to reproduce it. A diagnostic swap to a
+primitive (non-skinned) stand-in character, done live in the user's own
+`pnpm dev` session rather than a scratch server, confirmed the primitive
+moved correctly on screen — narrowing the bug to something specific to
+the *rigged* GLTF path, not `characterRoot`/camera/input code (all of
+which the primitive also exercises identically).
+
+The actual defect: `loadModel()` (the shared GLTF cache/clone helper
+every model in this file uses) cloned every model with plain
+`Object3D.clone(true)`. For an ordinary mesh (a washer, a table) this is
+correct. For a *rigged* model, it is not — `THREE.SkinnedMesh.copy()`
+(which `Object3D.clone()` calls internally for every `SkinnedMesh` node)
+assigns `this.skeleton = source.skeleton`, a bare reference, not a deep
+copy. Every clone of `character.glb` therefore shared the *one* skeleton
+object living on the cached original `gltf.scene` — an object that is
+never added to the scene and never moved by anything. Confirmed directly
+by an isolated `git worktree` build (so this could be checked without
+disturbing the user's own live diagnostic session): `skeleton.bones[0]`'s
+world position stayed frozen at `[0,0,0]` regardless of
+`characterRoot.position`, and walking that bone's own parent chain never
+reached `characterRoot` at all. `characterRoot.position` and the
+`SkinnedMesh` object's own bounding box were both provably correct the
+entire time (confirmed repeatedly across earlier sessions via
+`_debugCharacter()`) — the actual on-screen silhouette of a skinned mesh
+is driven by its bones' world transforms, not the mesh object's own
+`.position`, which is why every earlier state/position-based check
+"passed" while the visible result was still wrong.
+
+Fix: `SkeletonUtils.clone()` (three.js's own addon built specifically for
+this — see `examples/jsm/utils/SkeletonUtils.js`) replaces the plain
+`Object3D.clone(true)` call inside `loadModel()`. It deep-clones the
+skeleton and rebinds every `SkinnedMesh` to its own cloned bones, and is
+a safe drop-in for every other (non-skinned) model `loadModel()` already
+serves, since it behaves identically to `Object3D.clone()` when there is
+no skeleton to rebind. Verified: a fresh scene-graph check after the fix
+shows the root bone's world position exactly tracking
+`characterRoot.position` before and after a real keyboard-driven walk
+(`[0,0,3.95]` → `[0,0,0.353]`, matching on both sides), the root bone is
+now a genuine descendant of `characterRoot`, all 31 of `character.glb`'s
+animation clips still load with no console error, and `pnpm check` is
+green (15 files, 39 tests) against a scratch server. The user then
+confirmed visually, in their own real browser, that the rigged character
+now visibly moves while walking.
+
+**A second, independently-confirmed-real bug found investigating the
+same report**: the user separately observed the camera clipping through
+the ceiling while dragging the look angle upward. Checked numerically
+before fixing: `updateCamera()`'s vertical position
+(`CAM_HEIGHT + Math.sin(pitch) * 1.2`) was never clamped against
+`wallHeight` (2.6) the way `clampCameraPos()` already clamped the
+horizontal X/Z position against the walls — at `pitch`'s own upper bound
+(0.9) this computes to `2.74`, genuinely above the ceiling. Fixed by
+clamping the computed Y the same way X/Z already were
+(`CAM_HEIGHT_MARGIN = 0.15` on both the floor and ceiling side), and
+separately lowered `CAM_HEIGHT` from 1.8 to 1.6 (closer to a real standing
+adult's eye height), both at the user's explicit request.
+
+**Lesson for future verification of this file, worth restating given how
+long this took to actually confirm**: every earlier automated Playwright
+repro checked `characterRoot.position`/the `SkinnedMesh` node's own
+`.position`/bounding box — all of which were correct the whole time — and
+concluded "no bug" each time. None of them checked the skeleton's own
+bone transforms, which is what actually determines a skinned mesh's
+rendered shape. The user's insistence on re-checking in their own real
+browser, and asking for the model to be swapped for something simpler
+rather than accepting "that's just how third-person cameras look," is
+what actually found this — matching this file's own repeated pattern
+(Stage 9.5, Stage 9.6) of a user-reported symptom turning out to be real
+and specific, not the already-ruled-out explanation an earlier pass had
+settled for.
+
 **This is the identical bug *shape* `plans/laundry-presence.md`'s Stage 2
 `entry`-ordering bug already found once** (closing over/depending on an
 object that `loadModel()`'s async-if-not-cached path hasn't created yet)
