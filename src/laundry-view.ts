@@ -256,6 +256,16 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     washer: { min: [0, 0, -0.35], max: [0.39, 0.47, 0.04] },
     dryer: { min: [0, 0, -0.35], max: [0.39, 0.47, 0.03] },
     bookcase: { min: [0, 0, -0.25], max: [0.4, 0.88, 0] }, // bookcaseOpen.glb, measured the same way (Stage 9.2)
+    // Stage 10: real measured bbox for kitchenSink.glb/table.glb
+    // (Box3().setFromObject() against the actual files, same technique as
+    // every other entry here) — added because the island's own collision
+    // boxes (below) used to be built from a hand-picked center point that
+    // never matched where these two models actually render (see the
+    // sink/table placement comment below for the root-cause writeup); a
+    // real MODEL_BBOX entry is what lets them use the exact same
+    // corner-origin-aware placement convention the machines already do.
+    sink: { min: [0, 0, -0.45], max: [0.43, 0.49, 0] },
+    table: { min: [0, 0, -0.447373331], max: [0.841487944, 0.326733977, 0] },
   };
   // Stage 9.4.4: washers/dryers are rendered deliberately larger than
   // their real measured size — the "oversized interactable" convention
@@ -269,9 +279,19 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // clearance arithmetic that confirmed this doesn't need a room-size or
   // spacing change.
   var MACHINE_SCALE = 1.8;
+  // Stage 10: the sink/ironing-table island is background detail, not
+  // something a resident acts on the way they do a machine's QR/claim —
+  // it doesn't need MACHINE_SCALE's own "reads at a glance from across
+  // the room" treatment, just enough of a bump that it doesn't look
+  // undersized next to the now-1.8x machines. A smaller, separately
+  // tuned factor, checked against ISLAND_CLEARANCE (2.4, in
+  // src/laundry-layout.ts) before picking 1.3: the island's own two
+  // models (sink 0.43x0.45, table 0.84x0.45) at 1.3x scale fit well
+  // inside that clearance with walking room to spare on every side.
+  var DECOR_SCALE = 1.3;
   function footprintOf(type) {
     var b = MODEL_BBOX[type] || MODEL_BBOX.washer;
-    var scale = (type === "washer" || type === "dryer") ? MACHINE_SCALE : 1;
+    var scale = (type === "washer" || type === "dryer") ? MACHINE_SCALE : (type === "sink" || type === "table") ? DECOR_SCALE : 1;
     return {
       w: (b.max[0] - b.min[0]) * scale,
       d: (b.max[2] - b.min[2]) * scale,
@@ -414,6 +434,16 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     anchor.position.set(0, footprint.h * 0.5, footprint.d / 2 + 0.1);
     group.add(anchor);
     qrAnchors[p.id] = anchor;
+
+    // Stage 10: a number label above each machine, in the exact spot the
+    // old unclaimed-laundry ring used to occupy (footprint.h + 0.25) —
+    // freed up by folding that state into the status light's own colour
+    // instead (see STATE_COLOR/applyMachineState below). Reuses the same
+    // "Washer N"/"Dryer N" string the examine overlay and 2D board already
+    // show, so this isn't a second, possibly-drifting numbering scheme.
+    var numberLabel = buildLabelSprite((p.type === "dryer" ? "Dryer " : "Washer ") + p.id, { scale: [0.7, 0.175], fontPx: 56 });
+    numberLabel.position.set(0, footprint.h + 0.25, 0);
+    group.add(numberLabel);
   });
   window.__laundryMachineGroups = machineGroups; // Playwright-inspectable escape hatch
   window.__laundryStatusLights = statusLights;
@@ -421,36 +451,90 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // --- Stage 9.2: sink + ironing table merge into one free-standing
   // island in open floor (replacing Stage 8.2's two separate west-wall
   // positions — the west wall is now the drop-off zone, below), roughly
-  // centered in the room. Both models and their already-measured
-  // collision footprints (sink 0.5x0.5, table 0.85x0.45) are unchanged
-  // from Stage 8.2, just recombined under one shared placement. ---
+  // centered in the room.
+  //
+  // Stage 10 fix: both props now use the exact same corner-origin Group
+  // convention the machines already use (a Group whose position IS the
+  // model's true floor-center, with the model itself offset inside that
+  // group by -bbox.min*scale) — not the hand-tuned absolute offsets this
+  // block used before. Root cause of the bug this replaces: those old
+  // offsets ("islandX + sinkLocalX - 0.25", etc.) were tuned so the model
+  // *looked* right, but addCollisionBox was then given the un-corrected
+  // anchor point ("islandX + sinkLocalX", "islandZ") as if it were the
+  // model's true center — it wasn't, by about half a model-depth on each
+  // prop (confirmed by loading the real models and measuring their
+  // rendered world-space bbox center against the box that was built:
+  // the sink's real center sat at Z=-0.775 while its collision box was
+  // centered at Z=-0.3; the table's real center at Z=-0.744 against a
+  // box centered at Z=-0.3) — so the real, rendered north face of each
+  // prop (the side facing the room/machines) had no collision coverage
+  // at all, which is what let a player walk straight through. Routing
+  // both props through footprintOf()/MODEL_BBOX (same as every machine)
+  // makes the visible model, its collision box, and (for the table) the
+  // iron prop's own position all derive from one consistent placement. ---
   var islandX = 0;
   var islandZ = (northZ + southZ) / 2;
   var sinkLocalX = -0.55;
   var ironLocalX = 0.5;
 
-  addCollisionBox(islandX + sinkLocalX, islandZ, 0.5, 0.5);
+  var sinkFootprint = footprintOf("sink");
+  addCollisionBox(islandX + sinkLocalX, islandZ, sinkFootprint.w, sinkFootprint.d);
+  var sinkGroup = new THREE.Group();
+  sinkGroup.position.set(islandX + sinkLocalX, 0, islandZ);
+  scene.add(sinkGroup);
   loadModel("/models/kitchenSink.glb", function (model) {
-    model.position.set(islandX + sinkLocalX - 0.25, 0, islandZ - 0.25);
+    var b = MODEL_BBOX.sink;
+    model.scale.setScalar(sinkFootprint.scale);
+    model.position.set(-b.min[0] * sinkFootprint.scale - sinkFootprint.w / 2, 0, -b.min[2] * sinkFootprint.scale - sinkFootprint.d / 2);
     model.traverse(function (n) { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
-    scene.add(model);
+    sinkGroup.add(model);
   });
 
-  addCollisionBox(islandX + ironLocalX, islandZ, 0.85, 0.45);
+  var tableFootprint = footprintOf("table");
+  addCollisionBox(islandX + ironLocalX, islandZ, tableFootprint.w, tableFootprint.d);
+  var tableGroup = new THREE.Group();
+  tableGroup.position.set(islandX + ironLocalX, 0, islandZ);
+  scene.add(tableGroup);
   loadModel("/models/table.glb", function (model) {
-    model.position.set(islandX + ironLocalX - 0.42, 0, islandZ - 0.22);
+    var b = MODEL_BBOX.table;
+    model.scale.setScalar(tableFootprint.scale);
+    model.position.set(-b.min[0] * tableFootprint.scale - tableFootprint.w / 2, 0, -b.min[2] * tableFootprint.scale - tableFootprint.d / 2);
     model.traverse(function (n) { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
-    scene.add(model);
-    // a plain box "iron" prop on top — the plan's own "no need to source
-    // a separate iron model" note.
+    tableGroup.add(model);
+
+    // Stage 10: a real procedural iron shape (a tapered sole plate +
+    // handle), replacing the plain flat-colour box placeholder — no real
+    // CC0 clothes-iron model exists (checked Kenney's Furniture Kit, every
+    // other Kenney pack, poly.pizza, and Poly Haven; the one iron-shaped
+    // hit on poly.pizza is CC-BY, which fails this project's CC0-only
+    // sourcing rule, public/models/SOURCES.md). Shape alone should read as
+    // "iron" the same way the basket's tapered frustum reads as "basket"
+    // without needing a distinct colour to do that job.
+    var soleShape = new THREE.Shape();
+    soleShape.moveTo(-0.06, -0.11);
+    soleShape.lineTo(0.06, -0.11);
+    soleShape.lineTo(0.035, 0.1);
+    soleShape.lineTo(0, 0.14);
+    soleShape.lineTo(-0.035, 0.1);
+    soleShape.lineTo(-0.06, -0.11);
+    var soleGeo = new THREE.ExtrudeGeometry(soleShape, { depth: 0.045, bevelEnabled: false });
+    soleGeo.rotateX(-Math.PI / 2); // lay the flat 2D sole shape horizontal, point facing +Z
+    soleGeo.translate(0, 0.045, 0); // extrude depth becomes height — lift it clear of the table surface, not half-buried in it
+    var ironMat = new THREE.MeshStandardMaterial({ color: 0x4a4642 });
+    var iron = new THREE.Mesh(soleGeo, ironMat);
+    var handle = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 8, 12, Math.PI), ironMat);
+    handle.rotation.set(0, 0, 0);
+    handle.rotation.x = Math.PI / 2;
+    handle.position.set(0, 0.045 + 0.03, -0.04); // sits above the sole's own back end, where a real iron's handle arcs up
+    iron.add(handle);
+    // Live-measured, not hardcoded: the table's own real top surface
+    // height, read directly off the loaded (and now-scaled) model, so a
+    // future scale change can't silently leave the iron floating above or
+    // sunk into the table top the way a guessed constant would.
     var tableBox = new THREE.Box3().setFromObject(model);
-    var iron = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.08, 0.22),
-      new THREE.MeshStandardMaterial({ color: 0x6b6358 }),
-    );
-    iron.position.set(islandX + ironLocalX, tableBox.max.y + 0.04, islandZ);
+    iron.position.set(0, tableBox.max.y - tableGroup.position.y, tableFootprint.d * 0.15);
     iron.castShadow = true;
-    scene.add(iron);
+    tableGroup.add(iron);
   });
 
   // --- Stage 9.2: the drop-off/public zone, the whole west wall — real
@@ -684,28 +768,44 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var basketVisible = false;
   var basketKind = "own"; // "own" | "other" — 8.4's two distinct carried-basket states; tracked but no longer shown visually
 
+  // Stage 10: enlarged (BASKET_SCALE) and re-rounded (10 -> 24 radial
+  // segments, matching the status light's 20 and the unclaimed-ring's 24
+  // — the basket was the one carried prop still built from a visibly
+  // low-poly cylinder) per the user's own observation that it reads as
+  // "has corners," not round. BASE_TOP_RADIUS/BASE_BOTTOM_RADIUS/
+  // BASE_HEIGHT are the original (pre-Stage-10) dimensions, kept as named
+  // constants specifically so the clearance math below scales *with* the
+  // basket rather than needing its own second hand-tuned offset.
+  var BASKET_SCALE = 1.35;
+  var BASKET_BASE_TOP_RADIUS = 0.13, BASKET_BASE_BOTTOM_RADIUS = 0.09, BASKET_BASE_HEIGHT = 0.16;
+  var BASKET_TOP_RADIUS = BASKET_BASE_TOP_RADIUS * BASKET_SCALE;
+  var BASKET_BOTTOM_RADIUS = BASKET_BASE_BOTTOM_RADIUS * BASKET_SCALE;
+  var BASKET_HEIGHT = BASKET_BASE_HEIGHT * BASKET_SCALE;
+  // The body model's own real front-face z, measured the same way the
+  // basket's original clipping fix measured it (a real Box3 reading in
+  // characterRoot-local space, not a guess): z ~= 0.159. The desired
+  // clearance outside that face (~0.03, the original fix's own target)
+  // is named here so a future size change re-derives the z position from
+  // it automatically, instead of needing its own re-measurement the way
+  // a hardcoded z constant would — this is exactly the bug class Stage
+  // 10's "basket enlarged, offset never updated" risk would otherwise be.
+  var BASKET_BODY_FRONT_Z = 0.159;
+  var BASKET_CLEARANCE = 0.03;
+  var BASKET_Z = BASKET_BODY_FRONT_Z + BASKET_CLEARANCE + BASKET_TOP_RADIUS;
+
   function buildBasket() {
     // A simple hand-built prop — plan's own "not worth extensive sourcing
     // effort for one small prop" note still holds; the shape itself
     // (CylinderGeometry with different top/bottom radii, a tapered
     // frustum) is what reads as "basket", not colour. Positioned at
-    // roughly waist/carry height in front of the character.
-    //
-    // z offset: measured the body model's own real bounding box in
-    // characterRoot-local space before picking a number (a real Box3
-    // reading, not a guess) — the body's front surface sits at
-    // z ~= 0.159. The basket's old z = 0.18 only cleared that by 0.02,
-    // but a Mesh's .position is its *center*, not its near face — with
-    // the basket's own 0.13 top radius, its near (body-facing) edge
-    // actually sat at 0.18 - 0.13 = 0.05, well inside the body's own
-    // z-range (-0.194 to 0.159), which is what clipped it into the torso.
-    // 0.32 puts the basket's near edge at 0.32 - 0.13 = 0.19, a real
-    // ~0.03 clearance outside the body's own front surface.
+    // roughly waist/carry height in front of the character. Near-edge
+    // clearance (BASKET_Z - BASKET_TOP_RADIUS, outside BASKET_BODY_FRONT_Z)
+    // is BASKET_CLEARANCE by construction, regardless of BASKET_SCALE.
     var basket = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13, 0.09, 0.16, 10),
+      new THREE.CylinderGeometry(BASKET_TOP_RADIUS, BASKET_BOTTOM_RADIUS, BASKET_HEIGHT, 24),
       new THREE.MeshStandardMaterial({ color: BASKET_WICKER_COLOR }),
     );
-    basket.position.set(0, 0.32, 0.32);
+    basket.position.set(0, 0.32, BASKET_Z);
     basket.castShadow = true;
     return basket;
   }
@@ -869,6 +969,17 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var CAM_DISTANCE = 3.2, CAM_HEIGHT = 1.6;
   var CAM_HEIGHT_MARGIN = 0.15;
   var CAM_LERP = 0.12; // per-frame ease factor, not a time-scaled lerp — simple and stable at this fixed-ish frame rate
+  // Stage 10: scroll-wheel zoom, changing how far back the existing
+  // third-person follow camera sits (CAM_DISTANCE) rather than the
+  // camera's FOV — a simpler, more familiar "zoom" for a follow camera,
+  // and it doesn't touch movement/collision at all (clampCameraPos,
+  // called every frame from CAM_DISTANCE's current value, already keeps
+  // the resulting camera position off the walls regardless of distance).
+  // Bounds: 1.8 (close enough to still clearly see the character, not
+  // inside it) to 5 (far enough to see more of the room without the
+  // follow camera itself clipping through a wall at typical room widths —
+  // clampCameraPos's own per-frame clamp is the real backstop either way).
+  var CAM_DISTANCE_MIN = 1.8, CAM_DISTANCE_MAX = 5;
 
   function collidesAt(x, z) {
     for (var i = 0; i < collisionBoxes.length; i++) {
@@ -983,6 +1094,16 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   });
   renderer.domElement.addEventListener("mouseup", function () { dragging = false; });
   renderer.domElement.addEventListener("mouseleave", function () { dragging = false; });
+
+  // Stage 10: scroll-wheel zoom. preventDefault stops the whole page from
+  // scrolling while the canvas has focus — matching the existing
+  // touch-action: none precedent already set on the canvas wrap for touch
+  // controls, same reasoning (a gesture meant for the 3D scene shouldn't
+  // also move the surrounding page).
+  renderer.domElement.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    CAM_DISTANCE = Math.max(CAM_DISTANCE_MIN, Math.min(CAM_DISTANCE_MAX, CAM_DISTANCE + e.deltaY * 0.0025));
+  }, { passive: false });
 
   // --- touch: a left-side joystick for movement, a drag-anywhere-else
   // zone for look — only shown on a touch-capable viewport. Unchanged
@@ -1131,16 +1252,43 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // disagree about what a colour means. Applied to each machine's own
   // status-light disc (built above, alongside the model) rather than the
   // model itself — see that declaration's comment for why whole-model
-  // recolouring was tried and dropped. ---
+  // recolouring was tried and dropped. Note: the "unclaimed" key here is
+  // BoardState's own meaning ("your turn, but position 1 isn't yours" —
+  // red/alert), a different concept entirely from entry.unclaimedLaundry
+  // below (a done-and-not-yet-collected reservation sitting on the
+  // machine) — see UNCLAIMED_LAUNDRY_COLOR, which overrides this table
+  // when that's the case. ---
   var STATE_COLOR = {
     "free": 0x1f6f5c, "running": 0x2b5f8a, "claimed": 0x2b5f8a,
     "your-turn": 0xb5402a, "unclaimed": 0xb5402a,
     "nearly-your-turn": 0x6b6358, "waiting": 0x6b6358,
   };
+  // Stage 10: used to be a separate floating ring (unclaimedMarkers,
+  // below in history) stacked above the status light — redundant, two
+  // indicator systems for related information, per the user's own
+  // feedback. Folded into the light's own colour instead: a machine with
+  // unclaimed laundry shows this colour regardless of what entry.state's
+  // own colour would otherwise be, freeing the ring's old screen position
+  // for the number label added above. Kept as its own named constant
+  // (not reusing a STATE_COLOR entry) since it's keyed off a different
+  // field (entry.unclaimedLaundry, a boolean alongside entry.state, not
+  // a BoardState value itself) and needs to visually win over any of
+  // them.
+  var UNCLAIMED_LAUNDRY_COLOR = 0xffd54a;
 
   var lastKnownState = {};
   window.__laundryLastKnownState = lastKnownState;
   var stateEverPainted = false;
+
+  // lastKnownUnclaimed tracks entry.unclaimedLaundry per machine (not just
+  // entry.state) — flashClaimed's own "restore to the real colour after
+  // the flash" needs to know which of the two colour sources currently
+  // wins, since a machine freshly claimed could, in principle, also still
+  // be showing a stale done-and-uncollected reservation from before.
+  var lastKnownUnclaimed = {};
+  function realColorFor(machineId) {
+    return lastKnownUnclaimed[machineId] ? UNCLAIMED_LAUNDRY_COLOR : STATE_COLOR[lastKnownState[machineId]];
+  }
 
   var FLASH_COLOR = 0xffd54a;
   var FLASH_MS = 700;
@@ -1149,53 +1297,18 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   function flashClaimed(machineId) {
     var light = statusLights[machineId];
     if (!light) return;
-    var realColor = STATE_COLOR["claimed"];
     light.material.color.setHex(FLASH_COLOR);
     light.material.emissive.setHex(FLASH_COLOR);
     flashingUntil[machineId] = Date.now() + FLASH_MS;
     flashCount[machineId] = (flashCount[machineId] || 0) + 1;
     setTimeout(function () {
       flashingUntil[machineId] = 0;
+      var realColor = realColorFor(machineId);
       light.material.color.setHex(realColor);
       light.material.emissive.setHex(realColor);
     }, FLASH_MS);
   }
   window.__laundryFlashCount = flashCount;
-
-  // Stage 8.4: a distinct marker above any machine still holding someone
-  // else's unclaimed laundry, visible to everyone (not just the room that
-  // could act on it) so it reads as a real room feature, not a
-  // per-viewer secret. A small floating ring, separate from the
-  // highlight outline (which only shows on proximity), using a colour
-  // distinct from every STATE_COLOR value above.
-  var UNCLAIMED_MARKER_COLOR = 0xffd54a;
-  var unclaimedMarkers = {}; // machineId -> Mesh
-  function setUnclaimedMarker(machineId, visible) {
-    var group = machineGroups[machineId];
-    if (!group) return;
-    if (!unclaimedMarkers[machineId]) {
-      var ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.12, 0.025, 8, 24),
-        new THREE.MeshStandardMaterial({ color: UNCLAIMED_MARKER_COLOR, emissive: UNCLAIMED_MARKER_COLOR, emissiveIntensity: 0.4 }),
-      );
-      // Stage 9.4.4 fix: this used to be a hardcoded literal (0.47 + 0.25,
-      // "0.47 ≈ the real washer/dryer model's own measured height") —
-      // harmless only by coincidence, since 0.47 happened to equal the
-      // real unscaled height; it would have silently stopped matching the
-      // model's real (now MACHINE_SCALE'd) top the moment the scale
-      // changed, with nothing pointing at why. Reading footprint.h here
-      // keeps this in sync with the model's actual current size the same
-      // way every other placement in this file already does.
-      var mInfo = machines.find(function (mm) { return mm.id === machineId; });
-      var footprint = footprintOf(mInfo && mInfo.type === "dryer" ? "dryer" : "washer");
-      ring.position.set(0, footprint.h + 0.25, 0);
-      ring.rotation.x = Math.PI / 2;
-      group.add(ring);
-      unclaimedMarkers[machineId] = ring;
-    }
-    unclaimedMarkers[machineId].visible = visible;
-  }
-  window.__laundryUnclaimedMarkers = unclaimedMarkers;
 
   var canHandoffOn = {}; // machineId -> bool, the viewer's own permission, read by the click handler below
 
@@ -1207,7 +1320,16 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       var previous = lastKnownState[entry.id];
       var justClaimed = stateEverPainted && previous !== "claimed" && entry.state === "claimed";
 
-      var color = STATE_COLOR[entry.state];
+      // Stage 10: unclaimed laundry (a done-but-not-collected reservation
+      // sitting on this machine) takes visual precedence over the
+      // machine's own queue state — a machine can simultaneously read
+      // "free" per queue state and still hold someone's unclaimed laundry,
+      // and that's the more actionable fact to show. This is the same
+      // precedence the old separate ring used to express as its own
+      // independent visibility flag, folded here into one light's colour
+      // choice instead of two indicator systems.
+      lastKnownUnclaimed[entry.id] = !!entry.unclaimedLaundry;
+      var color = entry.unclaimedLaundry ? UNCLAIMED_LAUNDRY_COLOR : STATE_COLOR[entry.state];
       var flashActive = (flashingUntil[entry.id] || 0) > Date.now();
       if (color != null && !flashActive) {
         light.material.color.setHex(color);
@@ -1217,7 +1339,6 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       lastKnownState[entry.id] = entry.state;
       if (justClaimed) flashClaimed(entry.id);
 
-      setUnclaimedMarker(entry.id, !!entry.unclaimedLaundry);
       canHandoffOn[entry.id] = !!(entry.unclaimedLaundry && entry.unclaimedLaundry.canHandOff);
     });
     stateEverPainted = true;

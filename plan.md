@@ -659,6 +659,54 @@ and the offer moves to the next person instead.
   (a leg bone's own rotation sampled across 6 frames, all distinct).
   `pnpm check` green (15 files, 39 tests); only `src/laundry-view.ts`
   changed.
+- **Nine real problems found by using the deployed build — investigated,
+  planned, built, and verified, all in one unattended pass** — full
+  detail in `plans/3d-walkthrough.md` Stage 10/"Stage 10 built and
+  verified": a real sink/table collision gap, root-caused precisely (the
+  collision box's own center point didn't match where the model actually
+  renders — the same corner-origin quirk the machines already correct
+  for, never applied to these two props — not just a stale size guess),
+  fixed by routing both through `footprintOf()`/`MODEL_BBOX` the same way
+  every machine already is; confirmed by a collision-grid probe (now one
+  solid gap-free rectangle, was a wide-open north side) and a simulated
+  walk straight up the island's own former gap, which now stops dead
+  against the fix. Character-to-character collision confirmed as a
+  deliberate, documented non-goal (`plans/laundry-presence.md`), no
+  change. Sink/table scale (`DECOR_SCALE = 1.3`) and a real procedural
+  iron prop (tapered extruded sole + torus handle, sitting on the table's
+  own measured surface height) replacing the flat-colour placeholder box
+  — no real CC0 iron model exists after checking Kenney, poly.pizza, and
+  Poly Haven. The carried basket enlarged (`BASKET_SCALE = 1.35`) and
+  re-rounded (10 → 24 radial segments), its clearance from the body
+  re-derived from the same measurement the original anti-clipping fix
+  used, so a bigger basket can't reintroduce that bug. The separate
+  yellow "unclaimed laundry" ring deleted entirely, folded into the
+  status light's own colour (confirmed live against a real claimed
+  reservation and a real pre-existing unclaimed-laundry case — `#2b5f8a`
+  and `#ffd54a` respectively, read directly off the material, not
+  inferred); the vacated spot now holds a per-machine number label
+  (reusing the existing drop-off sign's `buildLabelSprite()` helper, no
+  new one). Scroll-wheel zoom added (`CAM_DISTANCE`, clamped, confirmed
+  via a real wheel event moving the camera's own world position).
+  Scanning a machine while already identified now redirects (303) to the
+  real home page instead of the separate scan-page shape — the existing
+  scan-page code itself is untouched, per the user's explicit correction,
+  only the already-logged-in route's destination changed; confirmed over
+  HTTP for an idle machine, one someone else holds, and a nonexistent
+  one, plus the unchanged logged-out/redirect-field behaviour.
+  `spec/laundry-scan.test.ts` rewritten to match (two old page-content
+  tests became three redirect-assertion tests). The 3D character's
+  identity binding confirmed already correct, no change. `pnpm check`
+  green (40 tests); `tsc --noEmit` clean; `src/queue.ts` untouched,
+  confirmed by diff. Separately, this investigation also found and fixed
+  a real verification-process incident: a prior `pnpm check` run had
+  polluted the user's own long-running `pnpm dev` database with hundreds
+  of leftover `waiting` reservations (every machine full, all with the
+  same timestamp — the "did an agent's test script leave this behind"
+  symptom was correct), since `spec/`'s default `APP_URL` is
+  `localhost:8080`, the same port `pnpm dev` uses; cleaned up, and every
+  verification in this stage used a separate scratch port/database
+  instead, per `CLAUDE.md`'s own existing rule.
 
 ## Final project deadline — read this before planning further work
 

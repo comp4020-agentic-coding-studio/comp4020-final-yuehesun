@@ -14,7 +14,7 @@ import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
-import { laundryPage, scanIdentityPage, scanPage } from "./laundry-view.ts";
+import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
 import QRCode from "qrcode";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -172,11 +172,18 @@ app.get("/machines/:id/qrcode.png", async (c) => {
   return c.body(new Uint8Array(png), 200, { "content-type": "image/png" });
 });
 
-// plans/3d-walkthrough.md Stage 3: the scan landing page — three branches
-// (plus the logged-out redirect-through-identity case, handled by
-// scanIdentityPage below), built entirely from existing queue.ts reads
-// and existing action routes (POST /reservations/:id/claim,
-// POST /machines/:id/reservations both already exist and are unchanged).
+// plans/3d-walkthrough.md Stage 3's scan landing page (scanPage, still
+// used below for the logged-out case's eventual landing and kept
+// entirely intact — nothing about its own three branches changed) is no
+// longer where an already-identified scanner lands. Stage 10 (user
+// feedback): a resident who already has a room-number cookie expects
+// scanning a machine's code to open the same home page they already
+// reserve/claim from — not a separate, machine-scoped mini-page — so
+// this route now redirects there once identity is known. The logged-out
+// branch is unaffected: scanIdentityPage's own `redirect` field already
+// threads a just-identified visitor back through this exact route, so
+// after identity is set, the one extra hop lands here and continues
+// straight through to "/".
 app.get("/laundry/scan/:id", (c) => {
   const machineId = Number(c.req.param("id"));
   const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
@@ -185,9 +192,7 @@ app.get("/laundry/scan/:id", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(scanIdentityPage(machineId));
 
-  const now = Date.now();
-  const rows = queue.queueFor(machineId, now);
-  return c.html(scanPage(machine, rows, identity, now));
+  return c.redirect("/", 303);
 });
 
 // plans/laundry-presence.md Stage 1: one browser tab's own position

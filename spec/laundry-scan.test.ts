@@ -1,16 +1,20 @@
 import { expect, inject, it } from "vitest";
 import { claim, cleanupReservation, identityCookie, join, uniqueRoom } from "./support/queue-client.ts";
 
-// plans/3d-walkthrough.md Stage 3: GET /laundry/scan/:id's three branches
-// (claim-confirm, fresh reservation, read-only) and POST /identity's new
-// redirect field, against the real running app over HTTP. Uses machine 9
-// (a dryer), kept separate from every other spec file's machines (1, 2,
-// 3, 4-6, 7-8 are all claimed by other files — see each file's own
-// comment), so this file's own reservations can't interfere with theirs
-// and vice versa.
+// plans/3d-walkthrough.md Stage 3 built GET /laundry/scan/:id's three
+// branches (claim-confirm, fresh reservation, read-only) as a dedicated
+// page; Stage 10 (user feedback) changed where an *already-identified*
+// scanner lands — straight to the real home page, not that dedicated
+// page — so most of what this file checks now is "the redirect actually
+// happens," not the old page's own HTML content. The logged-out case
+// (scanIdentityPage, POST /identity's own redirect field) is unchanged
+// and still checked the same way. Uses machine 9 (a dryer), kept separate
+// from every other spec file's machines (1, 2, 3, 4-6, 7-8 are all
+// claimed by other files — see each file's own comment), so this file's
+// own reservations can't interfere with theirs and vice versa.
 const baseUrl = inject("baseUrl");
 const MACHINE_ID = 9; // a dryer — plan.md: any machine type works here, this one's simply unclaimed by every other spec file
-const OTHER_MACHINE_ID = 10; // a second, otherwise-unused dryer, for the "machine held by someone else" read-only case
+const OTHER_MACHINE_ID = 10; // a second, otherwise-unused dryer, for the "machine held by someone else" case
 
 async function qrcodePng(machineId: number): Promise<Response> {
   return fetch(new URL(`/machines/${machineId}/qrcode.png`, baseUrl));
@@ -19,6 +23,7 @@ async function qrcodePng(machineId: number): Promise<Response> {
 async function scanPage(cookie: string | undefined, machineId: number): Promise<Response> {
   return fetch(new URL(`/laundry/scan/${machineId}`, baseUrl), {
     headers: cookie ? { cookie } : {},
+    redirect: "manual",
   });
 }
 
@@ -72,30 +77,15 @@ it("rejects an attempted open redirect and falls back to /", async () => {
   expect(wrongPrefix.headers.get("location"), "a path outside /laundry/scan/ must be ignored").toBe("/");
 });
 
-it("shows a reservation form for an idle machine with no reservation, and claiming/joining it actually works", async () => {
+it("redirects an already-identified scanner straight to the real home page, for an idle machine", async () => {
   const room = await identityCookie(baseUrl, uniqueRoom());
 
   const idleRes = await scanPage(room, MACHINE_ID);
-  const idleHtml = await idleRes.text();
-  expect(idleHtml, "an idle machine with no reservation should offer a reservation form").toContain(`/machines/${MACHINE_ID}/reservations`);
-
-  const reservationId = await join(baseUrl, room, MACHINE_ID);
-
-  const confirmRes = await scanPage(room, MACHINE_ID);
-  const confirmHtml = await confirmRes.text();
-  expect(confirmHtml, "the front, waiting reservation's own room should see a claim confirm").toContain(`/reservations/${reservationId}/claim`);
-
-  const claimRes = await fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {
-    method: "POST",
-    headers: { cookie: room },
-    redirect: "manual",
-  });
-  expect(claimRes.status, "claiming from the scan page's own form target should succeed").toBeLessThan(400);
-
-  await cleanupReservation(baseUrl, room, reservationId);
+  expect(idleRes.status, "an already-identified scan should redirect, not render a page of its own").toBe(303);
+  expect(idleRes.headers.get("location"), "should land on the real home page").toBe("/");
 });
 
-it("shows a read-only board row (never a claim form for someone else's reservation) for a machine someone else holds", async () => {
+it("redirects an already-identified scanner to the real home page even when the machine is held by someone else", async () => {
   const owner = await identityCookie(baseUrl, uniqueRoom());
   const stranger = await identityCookie(baseUrl, uniqueRoom());
 
@@ -110,13 +100,18 @@ it("shows a read-only board row (never a claim form for someone else's reservati
   expect(claimStatus, "the owner's own claim should succeed, to put this reservation in an unambiguous non-waiting state").toBeLessThan(400);
 
   const strangerView = await scanPage(stranger, OTHER_MACHINE_ID);
-  const html = await strangerView.text();
-  // This is the one thing the scan page must never let a non-owner do:
-  // claim a reservation that isn't theirs. A "claimed" reservation has no
-  // claim action to begin with (queue.ts's claim() only ever acts on a
-  // "waiting" reservation), so the real check is simply that this
-  // specific reservation id never appears next to a claim form.
-  expect(html, "a non-owner must not see a claim form for someone else's reservation").not.toContain(`/reservations/${reservationId}/claim`);
+  // The scan route itself carries no per-machine knowledge once identity
+  // is known — the machine still having to exist (404 for a bad id) is
+  // the only branch left on this route; which state the machine is in is
+  // entirely the real home page's own business once redirected there.
+  expect(strangerView.status, "a stranger scanning a held machine should still just redirect home").toBe(303);
+  expect(strangerView.headers.get("location")).toBe("/");
 
   await cleanupReservation(baseUrl, owner, reservationId);
+});
+
+it("404s for a nonexistent machine even when already identified", async () => {
+  const room = await identityCookie(baseUrl, uniqueRoom());
+  const res = await scanPage(room, 999_999);
+  expect(res.status).toBe(404);
 });

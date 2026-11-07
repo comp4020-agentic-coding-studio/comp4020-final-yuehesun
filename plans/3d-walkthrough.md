@@ -2187,6 +2187,291 @@ offsets are a plain `footprint.d / 2 + clearance` everywhere now that
   state, not to player proximity) — not the same object as the proximity
   highlight ring on the floor, and not a bug.
 
+### Stage 10 — nine real problems found by actually using the Stage 9.x build
+
+User-reported after trying the deployed build with real reservations:
+collision gaps at the island, the scan landing page's own shape, visual
+polish (scale, basket geometry, the iron prop), a request for scroll-zoom,
+and a real data-pollution incident (`pnpm check` run against the user's
+own long-running `pnpm dev` server/database, found and fixed separately —
+not part of this stage's own code, but what led to spotting the "every
+machine full of waiting rooms" symptom this stage's own investigation
+started from). Each item below was investigated against the real running
+code/models before any fix was designed — see the per-item "confirmed"
+note.
+
+**1. Sink/table collision gap — the collision box is centered on the
+wrong point, not just sized from a stale guess.** Confirmed precisely by
+loading the real `kitchenSink.glb`/`table.glb`, applying this file's own
+exact placement code, and reading `Box3.setFromObject()` on the result:
+the sink's real rendered world-space center lands at `(x=-0.585,
+z=-0.775)`, but `addCollisionBox(islandX + sinkLocalX, islandZ, 0.5,
+0.5)` centers its box at `(x=-0.55, z=-0.3)` — a `z` offset of about
++0.48 between where the collision box sits and where the model actually
+renders. Same shape of error for the table (real center `z=-0.744` vs.
+the collision box's `z=-0.3`, off by about +0.44). Root cause: machine
+placement (the washers/dryers) already handles this correctly — a
+model's own origin is a floor *corner*, not its center (documented
+inline at the machine-placement code: `-bbox.min[0]*scale -
+footprint.w/2` etc.), so machine code offsets the model by its own
+measured bbox-min before treating "position" as true center. The
+sink/table code never received that same correction: `model.position.set
+(islandX + sinkLocalX - 0.25, 0, islandZ - 0.25)` is a hand-tuned offset
+that visually looked right when first placed (Stage 8.2/9.2), but
+`addCollisionBox` was then given the *un-corrected* anchor point
+(`islandX + sinkLocalX`, `islandZ`) as if it were the model's true
+center — it isn't, because of the same corner-origin quirk the machines
+already account for and these two props never did. The two collision
+boxes end up roughly half a model-depth south of where the sink/table
+actually are, leaving the real, rendered north face of both props
+(toward the room/machines) with no collision coverage at all — which is
+exactly the "walk straight through the middle, and around the north
+side" the user reported. **Fix**: add `sink`/`table` entries to
+`MODEL_BBOX` with their real measured min/max (sink: min `(0,0,-0.45)`,
+max `(0.43,0.49,0)`; table: min `(0,0,-0.447373331)`, max
+`(0.841487944,0.326733977,0)` — both already measured this session,
+numbers to be re-confirmed against `footprintOf()`'s own scaled output
+once `DECOR_SCALE` (item 3) is applied), then rewrite the island's
+placement to follow the exact same convention machine placement already
+uses: a `THREE.Group` at the true center point, the model added as a
+child offset by `-bbox.min*scale - footprint.w/2` (and the z equivalent),
+and `addCollisionBox` called with that same true-center point and
+`footprintOf()`-derived w/d — so the visible model, its collision box,
+and (for the table) the iron prop's position all derive from one
+consistent placement, the same single-source-of-truth pattern the
+machines already prove out, instead of three independently hand-tuned
+offsets that can silently drift apart exactly as they did here.
+
+**2. No character-to-character collision — deliberate, not a gap.**
+Confirmed in `plans/laundry-presence.md`'s own "Collision: deliberately
+none" section: a remote character is a moving target, which would need
+continuous per-frame re-checking against a system built entirely around
+static boxes computed once at scene-build time — a materially different
+system — and two people briefly sharing floor space while passing in a
+real laundry room is normal, not something that needs preventing. Nothing
+to fix here; reported back to the user as a confirmed design decision,
+not silently left alone.
+
+**3. Sink/table scale, and the iron prop.** Washers/dryers get
+`MACHINE_SCALE = 1.8` (Stage 9.4.4's deliberate "oversized interactable"
+convention); sink/table never received an equivalent factor — confirmed
+by grep, no scale multiplier touches either model. **Fix**: introduce
+`DECOR_SCALE` (a smaller, separately-tuned factor — these are backdrop
+detail the user doesn't *act on* the way a machine's QR/claim is, so they
+don't need the same "reads at a glance from across the room" treatment
+machines do; tentatively ~1.3, confirmed against the room's own
+`ISLAND_CLEARANCE` before landing on a final number) applied to both
+models in `footprintOf()`, the same single-source-of-truth pattern
+`MACHINE_SCALE` already uses — every placement, collision box, and the
+iron prop's own position all read `footprint.scale` automatically, so
+nothing can drift out of sync the way a second hand-copied number would.
+The black box next to the table **is** the iron (confirmed in code,
+`src/laundry-view.ts`'s own `buildTable`-area comment literally says `//
+a plain box "iron" prop`) — a flat-coloured placeholder, not a bug, but a
+genuinely unfinished placeholder as the user suspected. Researched before
+planning a fix: no real CC0 clothes-iron GLB model exists in Kenney's
+Furniture Kit, any other Kenney pack, poly.pizza, or Poly Haven (the only
+iron-appliance hit on poly.pizza is CC-BY, "Poly by Google," which fails
+this project's CC0-only sourcing convention per `public/models/
+SOURCES.md`'s own established rule — confirmed via a direct fetch of that
+model's license page, not assumed). **Fix**: build the iron procedurally,
+the same "shape says what it is, not colour" principle the carried-basket
+prop already uses — a flat angled sole-plate (a tapered box, wider at the
+heel) plus a small curved handle (a short `TorusGeometry` arc or an
+angled cylinder), both read as "iron" from silhouette alone. Position it
+relative to the table's own measured surface height
+(`tableWorldBox.max.y`, already how the current placeholder is placed)
+scaled by `DECOR_SCALE`, so it stays correctly seated on the table top
+regardless of the new scale factor — the existing placeholder's own
+"`tableBox.max.y + 0.04`" placement logic already does this relative
+positioning correctly; the fix keeps that approach and only replaces the
+placeholder's own geometry.
+
+**4. Carried-basket scale and shape.** Confirmed in code:
+`CylinderGeometry(0.13, 0.09, 0.16, 10)` — the `10` is the radial segment
+count, deliberately low on the status light (`20` segments) and the
+unclaimed-laundry ring (`24` segments) by comparison, which is why the
+basket alone reads as faceted/angular. **Fix**: raise the basket's radial
+segment count to 24 (matching the ring's own precedent, a cheap change —
+more triangles on one small prop is not a performance concern at this
+scene's scale) and scale the basket up. The basket's own documented
+clearance math (`plans/3d-walkthrough.md`'s "basket clipped into the
+body" fix: a measured ~0.03 clearance between the basket's near edge and
+the body model's own front surface at the current size/offset) means a
+size increase must re-derive the z-offset from the same measured body
+bbox, not just bump the existing `0.32` constant — a bigger basket at the
+same offset would clip back into the torso, reintroducing the exact bug
+that offset was built to fix. The same real `Box3` measurement technique
+used for that original fix is the right one to re-run here, not a guess.
+
+**5 + 6 (combined — the same place on the model, two changes to it at
+once).** Add a per-machine number, and replace the separate yellow
+"unclaimed laundry" ring with a colour on the existing status light
+instead of a second mesh. Currently `STATE_COLOR` has no entry for
+"unclaimed laundry waiting" as a light colour — that state is shown only
+via the separate `unclaimedMarkers` torus ring (Stage 8.4), stacked above
+the already-informative status light, which is the redundant "two
+indicator systems for related information" the user is right to call
+ugly. **Fix, in order** (removing the ring before freeing its old screen
+position avoids a moment where both exist and visually compete):
+  - Add a yellow entry to `STATE_COLOR` for the unclaimed-laundry case —
+    this needs a code change beyond the colour table alone, since
+    `applyMachineState`'s current `color = STATE_COLOR[entry.state]`
+    reads one state string per machine, while `unclaimedLaundry` is a
+    *separate* boolean passed alongside it (`entry.unclaimedLaundry`,
+    distinct from `entry.state`/`entry.label` — confirmed in
+    `src/app.ts`'s own `/laundry/machines-state` payload shape). The
+    light's colour logic needs an explicit precedence: unclaimed-laundry
+    yellow wins over whatever `entry.state`'s own colour would otherwise
+    be (a machine can be simultaneously "free" per queue state and still
+    hold someone's unclaimed laundry) — same precedence `setUnclaimedMarker`
+    already expresses as a separate visibility flag, just folded into the
+    one light's colour choice instead of a second mesh's visibility.
+  - Delete `unclaimedMarkers`/`setUnclaimedMarker`/the `TorusGeometry` ring
+    entirely, and the `UNCLAIMED_MARKER_COLOR` constant it used (becomes
+    dead code once the light carries this state).
+  - Add a number label above each machine, in the ring's old vacated
+    position (`footprint.h + 0.25`), using the existing `buildLabelSprite()`
+    helper already shared by the "DROP-OFF" sign and the presence room-
+    number tags — a third user of the same function, not a new one. Text
+    is the machine's own id (`"Washer " + id` is already the label used in
+    the examine overlay and the 2D board — reusing the exact same string
+    the user already sees elsewhere keeps "the number on the 3D model"
+    and "the number on the 2D board"/the scan overlay's own heading from
+    ever reading as two different numbering schemes).
+
+**7. Scroll-wheel zoom.** Evaluated: feasible, and a reasonable UX
+addition — the existing `CAM_DISTANCE`/`CAM_HEIGHT` are already plain
+mutable `var`s read fresh every `updateCamera()` call (not baked into a
+one-time calculation), so a `wheel` event handler that nudges
+`CAM_DISTANCE` within a clamped range (something like 1.8–5, tuned
+against `clampCameraPos`'s own wall margins so zooming in/out can't push
+the camera through a wall at either extreme) is a localized, low-risk
+change — it changes *how far back* the existing follow camera sits, not
+the movement/collision model at all. **Fix**: add the listener alongside
+the existing drag-look pointer handlers, `event.preventDefault()` to stop
+the whole page from scrolling while the canvas has focus (matching the
+existing `touch-action: none` precedent on the canvas wrap), and clamp
+the resulting distance the same way `clampCameraPos`/`clampToRoom` already
+clamp position.
+
+**8. Scanning a machine's QR code — redirect into the actual 2D home page
+with its reservation panel, not a standalone scan-specific page.** The
+user was explicit and corrected an earlier misread of this request:
+**the existing `scanPage`/`scanReservationForm`/`scanClaimConfirm`/
+`scanReadOnly` machinery is not to be deleted** (don't throw away a
+working, tested flow) — the fix is *only* about where a successful scan
+(by a browser that already has a `person` cookie) lands. Today
+`GET /laundry/scan/:id` always renders the dedicated `scanPage` (a
+machine-scoped mini-page with its own confirm/reserve/read-only
+sub-cases); the user wants this to instead land on the real home page
+(`/`) — the same `myStatusBlock`/board that a normal "type your room
+number" visitor already sees — rather than a separate page shape.
+Confirmed in code: `app.get("/laundry/scan/:id", ...)` currently always
+calls `scanPage(...)`, never `c.redirect("/")`. The already-logged-in
+case (an existing `person` cookie) is the one this stage's fix changes;
+the *logged-out* case (`scanIdentityPage`, ADR 0012's "same identity
+flow, not a second login") is unaffected — its own existing `redirect`
+field already threads the visitor back to `/laundry/scan/:id` after
+identity is set, so after this fix that one extra hop simply lands on the
+now-redirecting scan route and continues through to `/` exactly once.
+**Fix**: once identity is confirmed, `GET /laundry/scan/:id` with a
+known machine redirects (303) to `/` — plain `homePage`, no new
+query-string highlighting parameter, since the user did not ask for the
+home page to visually distinguish "you got here by scanning" from any
+other visit, only for scanning to land there instead of on a separate
+page. If a future crit wants "scroll to/highlight the scanned machine's
+row," that's a new, separate, explicitly-requested feature, not implied
+by this fix.
+
+**9. Confirmed: the character model is already bound to room-number
+identity.** Not a bug — the user's own observation (another resident's
+head shows the real room number) matches `plans/laundry-presence.md`'s
+existing design exactly: `buildLabelSprite(identity, ...)` renders the
+real `person` cookie value for every remote character, read from the same
+`presence.report()` record every other presence-aware code path already
+trusts. Reported back as confirmed, no code change.
+
+**What's explicitly NOT in this stage**: nothing in `src/queue.ts`
+changes (every item above is 3D-scene rendering, collision geometry, or
+routing — no fairness/ownership rule is touched); the stale-data
+incident that surfaced "every machine full of waiting reservations" is a
+closed, separate issue (the polluted `pnpm dev` database was already
+cleaned up, and future self-verification uses a scratch port/database
+per `CLAUDE.md`'s own rule — not something this stage's code needs to
+guard against, since it was a verification-process mistake, not an app
+bug).
+
+#### Stage 10 built and verified
+
+All nine items implemented against this plan, verified against a scratch
+server/database (never the user's own `pnpm dev` database), ports killed
+and confirmed free after. `pnpm check` green (40 tests, up one from 39 —
+`laundry-scan.test.ts`'s two rewritten tests split into three, matching
+its new "redirect, not render" shape). `tsc --noEmit` clean. `git diff`
+confirms `src/queue.ts` untouched.
+
+- **Item 1 (sink/table collision)**: fixed by routing both props through
+  `footprintOf()`/`MODEL_BBOX` and the machines' own Group+corner-offset
+  convention, exactly as planned. Verified two ways: a collision-grid
+  probe (the same technique that found the bug) now shows one solid,
+  gap-free rectangle under the island with no free points inside it
+  (previously the whole north side was open); a simulated walk from the
+  south spawn straight up the island's own center line (`x=0`) — the
+  exact path that used to pass straight through — now stops at `z=0.3`
+  and cannot proceed further north, confirmed via the real
+  `_debugCollisionBoxes()`/`collidesAt()` logic, not a visual impression.
+- **Item 3 (scale + iron)**: `DECOR_SCALE = 1.3` applied via
+  `footprintOf()`; confirmed by screenshot that the sink/table read as
+  proportionate next to the now-1.8x machines, not undersized. The
+  procedural iron (tapered `ExtrudeGeometry` sole + `TorusGeometry`
+  handle arc) renders sitting on the table's own real measured surface
+  height, confirmed by screenshot — not floating, not sunk into the
+  tabletop.
+- **Item 4 (basket)**: `BASKET_SCALE = 1.35`, segment count 10 → 24.
+  Screenshot confirms a visibly rounder basket, larger, still clear of
+  the character's own body (the re-derived `BASKET_Z` keeps the same
+  `BASKET_CLEARANCE` the original anti-clipping fix established,
+  regardless of scale).
+- **Items 5+6 (ring removed, light colour, number labels)**: confirmed
+  via a real claimed reservation (machine 1) and a real pre-existing
+  unclaimed-laundry case (machine 8, from the scratch database's own
+  state) that the status light actually changes colour —
+  `#2b5f8a` (claimed) and `#ffd54a` (unclaimed laundry), reading
+  `light.material.color` directly, not inferred from `entry.state` alone.
+  `window.__laundryUnclaimedMarkers` no longer exists (confirmed
+  `typeof` is `undefined`). Every machine group now has exactly one
+  `Sprite` child (the number label); screenshots show "Washer N"/"Dryer
+  N" legible above each machine, in the ring's old vacated position.
+- **Item 7 (scroll zoom)**: confirmed with a real `page.mouse.wheel()`
+  event — the camera's own world position changed between before/after
+  reads (not just that the event fired), via `_debugScene().cameraPos`.
+- **Item 8 (scan redirect)**: confirmed directly over HTTP — an
+  already-identified `GET /laundry/scan/:id` now returns `303` with
+  `location: /`, for both an idle machine and one someone else holds; a
+  nonexistent machine still 404s; the logged-out case still shows the
+  identity form with its own `redirect` field pointing back to the scan
+  URL, unchanged. `spec/laundry-scan.test.ts` rewritten to match (its two
+  old "page content" tests, which asserted the dedicated scan page's own
+  HTML, are now three tests asserting the redirect itself — the
+  logged-out and open-redirect-rejection tests are unchanged, since that
+  branch didn't change).
+- **Items 2 + 9**: no code change, confirmed decisions (character
+  collision deliberately absent per `plans/laundry-presence.md`;
+  identity-to-character binding already correct per
+  `buildLabelSprite(identity, ...)`).
+
+**What's still weak or worth a second pass**: the iron's exact silhouette
+(a tapered extruded sole + a half-torus handle) was not benchmarked
+against a reference photo the way the Flighty-derived home page redesign
+was — it reads as "a small appliance with a handle," which was the bar
+the research set (no real CC0 model exists), but a sharper shape is
+possible if a future pass wants to spend more time on it.
+`DECOR_SCALE`/`BASKET_SCALE`'s exact values (1.3, 1.35) are reasonable
+judgement calls checked against room clearance and the body's own
+bounding box, not independently re-confirmed by the user's own eye in a
+live session the way Stage 9.4's machine scale was.
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual
@@ -2201,3 +2486,9 @@ offsets are a plain `footprint.d / 2 + clearance` everywhere now that
   *existing* exported function's behaviour must be provably unchanged
   (covered by the existing `spec/*.test.ts` files continuing to pass
   unmodified).
+- Stage 10's own checks: the sink/table collision fix confirmed by the
+  same grid-probe technique used to find the bug (no free points
+  remaining in the gap region); a screenshot showing every machine's
+  number legible and distinct from the old ring's vacated position; a
+  scan-while-logged-in rehearsal landing on the real home page, not the
+  old scan-specific page; `src/queue.ts` diff-confirmed untouched.
