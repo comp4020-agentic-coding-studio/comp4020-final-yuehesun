@@ -584,6 +584,29 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   characterRoot.position.set(0, 0, southZ);
   scene.add(characterRoot);
 
+  // "This is you" marker — a small floating downward-pointing marker
+  // above the local player's own character, the same convention many
+  // multiplayer games use to tell a player which on-screen character they
+  // personally control. Added because the local player's own character is
+  // now a neutral grey-white (see the flatMat override below) specifically
+  // so it can never be confused with a remote character's identity-hashed
+  // colour — but that same neutrality means it no longer stands out on
+  // its own in a room with several other residents present, so an
+  // explicit marker replaces "stands out by colour" as the way to find
+  // yourself. Purely local: never sent over reportPresence(), since no
+  // other viewer needs to know which character is "you" from their own
+  // point of view — each viewer only ever sees this marker above their
+  // own character.
+  var selfMarker = new THREE.Mesh(
+    new THREE.ConeGeometry(0.07, 0.14, 4),
+    new THREE.MeshStandardMaterial({ color: 0xe6b422, emissive: 0x6b4f00, emissiveIntensity: 0.4 }),
+  );
+  selfMarker.rotation.x = Math.PI; // point the cone downward, toward the character's head
+  // 0.9 sits just above the character model's own ~0.67-unit height
+  // (confirmed via a real _debugCharacter() worldBox reading).
+  selfMarker.position.set(0, 0.9, 0);
+  characterRoot.add(selfMarker);
+
   var characterMixer = null;
   var walkAction = null, idleAction = null;
   // Hoisted out of the gltfLoader.load callback below (plans/laundry-
@@ -595,23 +618,55 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // and AnimationMixer.clipAction() is designed to bind the same clip to
   // multiple independent mixers with no cross-talk.
   var walkClip = null, idleClip = null;
+  // A plain red box read as "an alert colour", not "a laundry basket" —
+  // nothing about its shape said what it was, and its old colour
+  // (0xb5402a) sat at nearly the same luminance as the character's own
+  // former skin tone (0xd9a066), so the two blended together rather than
+  // reading as separate objects (confirmed with a relative-luminance
+  // check: contrast ratio ~1.02, i.e. indistinguishable). Redesigned as a
+  // tapered basket shape (a real wicker-basket silhouette, wide top/
+  // narrow base) in a fixed, desaturated wicker tone — colour no longer
+  // has to do the job of saying "this is a basket" at all, so it's free
+  // to be ordinary. BASKET_OWN_COLOR/BASKET_OTHER_COLOR now tint only the
+  // small "clothes poking out the top" detail, which is what still
+  // answers "whose is it" — splitting "what is this object" (shape +
+  // fixed wicker colour) from "whose is it" (the clothes colour) onto two
+  // different parts rather than overloading one colour with both jobs.
+  var BASKET_WICKER_COLOR = 0xc9a876;
   var BASKET_OWN_COLOR = 0xb5402a; // --alert, distinct and visible
   var BASKET_OTHER_COLOR = 0x2b5f8a; // --info, visually distinct from the player's own basket
-  var basketMesh = null;
+  var basketMesh = null; // THREE.Group: a wicker frustum body + a clothes-colour accent mesh
+  var basketClothesMesh = null;
   var basketVisible = false;
   var basketKind = "own"; // "own" | "other" — 8.4's two distinct carried-basket states
 
   function buildBasket() {
-    // A simple hand-built lattice-ish box prop — plan's own "not worth
-    // extensive sourcing effort for one small prop" note. Positioned at
+    // A simple hand-built prop — plan's own "not worth extensive sourcing
+    // effort for one small prop" note still holds; the shape itself
+    // (CylinderGeometry with different top/bottom radii, a tapered
+    // frustum) is what now reads as "basket", not colour. Positioned at
     // roughly waist/carry height in front of the character.
-    var basket = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.16, 0.16),
+    var group = new THREE.Group();
+    var body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.09, 0.16, 10),
+      new THREE.MeshStandardMaterial({ color: BASKET_WICKER_COLOR }),
+    );
+    body.castShadow = true;
+    group.add(body);
+
+    // A small accent mesh standing in for "clothes poking out the top" —
+    // this is the only part whose colour changes with basketKind.
+    basketClothesMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 6),
       new THREE.MeshStandardMaterial({ color: BASKET_OWN_COLOR }),
     );
-    basket.position.set(0, 0.32, 0.18);
-    basket.castShadow = true;
-    return basket;
+    basketClothesMesh.position.set(0, 0.1, 0);
+    basketClothesMesh.scale.set(1, 0.6, 1);
+    basketClothesMesh.castShadow = true;
+    group.add(basketClothesMesh);
+
+    group.position.set(0, 0.32, 0.18);
+    return group;
   }
 
   function setBasketVisible(visible) {
@@ -620,7 +675,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   }
   function setBasketKind(kind) {
     basketKind = kind;
-    if (basketMesh) basketMesh.material.color.setHex(kind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
+    if (basketClothesMesh) basketClothesMesh.material.color.setHex(kind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
   }
   window.__laundryBasket = {
     isVisible: function () { return basketVisible; },
@@ -633,7 +688,17 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     // single colour" and sidesteps the external-texture packaging caveat
     // research/3d-booking/asset-sourcing.md documented, since the material
     // never samples a texture to begin with.
-    var flatMat = new THREE.MeshStandardMaterial({ color: 0xd9a066 });
+    //
+    // Changed from the original warm skin tone (0xd9a066) to a neutral
+    // grey-white at the user's request, for two reasons: it no longer sits
+    // at nearly the same luminance as the basket's wicker colour (see
+    // BASKET_WICKER_COLOR above), and it reads as deliberately neutral —
+    // the local player never needs a colour to recognize themselves (they
+    // always know which character they're driving), while every remote
+    // character is coloured by colourForIdentity() (fixed 55% saturation,
+    // never this desaturated), so the two can never be confused for one
+    // another on anyone's screen.
+    var flatMat = new THREE.MeshStandardMaterial({ color: 0xe8e6e1 });
     model.traverse(function (node) {
       if (node.isMesh || node.isSkinnedMesh) {
         node.material = flatMat;
@@ -677,7 +742,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     // resolves" happens first, the other one's effect is still applied
     // correctly once this line runs.
     basketMesh.visible = basketVisible;
-    basketMesh.material.color.setHex(basketKind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
+    basketClothesMesh.material.color.setHex(basketKind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
     characterRoot.add(basketMesh);
 
     // Animations: the GLTF ships many (idle/walk/pick-up/etc. — confirmed
@@ -1431,13 +1496,20 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
 
   // --- render loop ---
   var last = performance.now();
-  // plans/laundry-presence.md: tracked across frames so the character's
-  // own facing can be snapped to the camera's look direction exactly
-  // once, on the moving-to-stopped transition — not left at whatever
-  // Math.atan2(dx, dz) last computed while walking, and not continuously
-  // bound to yaw either (that would make the character twitch-rotate on
-  // every small mouse movement while standing still, which doesn't match
-  // how a real person's body behaves while just looking around).
+  // Tracked across frames so reportPresence() below can broadcast whether
+  // this resident is currently moving (drives the walk/idle animation
+  // weight on every other viewer's screen).
+  //
+  // Stage 9.4/laundry-presence era code used to also snap
+  // characterRoot.rotation.y to the camera's own yaw the instant movement
+  // stopped — removed at the user's request: with drag-to-look as the
+  // camera scheme, "yaw" tracks wherever the player last dragged the
+  // camera to look, not necessarily the direction they were walking, so
+  // the character visibly spun to face the camera/viewer on every stop
+  // regardless of which way it had actually been walking. The character
+  // now simply keeps its last walking-direction facing (set via
+  // Math.atan2(dx, dz) below) once it stops, the same way a real person
+  // doesn't snap to face forward the instant they stop walking.
   var wasMoving = false;
 
   function frame(now) {
@@ -1463,16 +1535,10 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       // Facing tracks movement direction — the standard third-person
       // convention, not wherever the camera happens to be looking.
       characterRoot.rotation.y = Math.atan2(dx, dz);
-    } else if (wasMoving) {
-      // Just stopped: snap facing to match the camera's own look
-      // direction once, rather than leaving it pointed wherever the last
-      // step happened to aim it. This also matters now that
-      // characterRoot.rotation.y is broadcast to every other resident as
-      // this character's yaw (see reportPresence below) — a stale facing
-      // used to be a local-only cosmetic quirk; it would otherwise be a
-      // visibly wrong orientation on a remote viewer's own screen too.
-      characterRoot.rotation.y = yaw;
     }
+    // On stop, characterRoot.rotation.y is simply left at whatever it was
+    // during the last step — no snap to the camera's yaw (see the comment
+    // on wasMoving above for why that was removed).
     wasMoving = moving;
 
     if (walkAction && idleAction) {

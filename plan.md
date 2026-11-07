@@ -554,6 +554,35 @@ and the offer moves to the next person instead.
   build to inspect the skeleton's bone transforms without disturbing that
   session): `plans/3d-walkthrough.md`, "Stage 9.3" section. `pnpm check`
   green (39 tests); user-confirmed fixed by eye in their own browser.
+- **Four small follow-up polish items, all requested after the Stage 9.3
+  fix, verified and committed together.** (1) The carried-basket prop
+  redesigned from a plain red box (read as "an alert colour", not "a
+  laundry basket", and nearly the same luminance as the character's old
+  skin tone) into a tapered wicker-coloured frustum with a small coloured
+  "clothes poking out" accent — shape now says "this is a basket",
+  colour's only remaining job is "whose is it." (2) The local character's
+  own skin tone changed from a warm tan to a neutral grey-white, both to
+  fix the basket/skin colour clash (confirmed via a relative-luminance
+  check before changing anything: ~1.02 contrast ratio, i.e.
+  indistinguishable) and because the local player never needs a colour to
+  recognize themselves — only remote characters (coloured by
+  `colourForIdentity`, fixed 55% saturation, confirmed via a real
+  two-browser test to never collide with the new neutral tone) need
+  colour to tell people apart. (3) Removed a Stage 9.4/laundry-presence-
+  era behaviour where the character snapped to face the camera's own look
+  direction the instant movement stopped — with drag-to-look as the
+  camera scheme this meant a stopped character span to face the viewer
+  regardless of which way it had actually walked; it now simply keeps its
+  last walking-direction facing, confirmed by dragging the camera far
+  after stopping and checking `rotation.y` stayed exactly unchanged.
+  (4) Added a small floating "this is you" marker (a downward-pointing
+  cone) above the local player's own character — the common multiplayer-
+  game convention for telling players which on-screen character is
+  theirs, needed once the local character's new neutral colour no longer
+  stands out on its own; confirmed purely local (never broadcast via
+  `reportPresence`) via a real two-browser-context test showing the
+  marker absent from the other viewer's own screen. `pnpm check` green
+  (15 files, 39 tests); only `src/laundry-view.ts` changed.
 
 ## Final project deadline — read this before planning further work
 
