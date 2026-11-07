@@ -867,16 +867,111 @@ not glossed over:
 
 ### Stage 3 — visual polish
 
-- Per-identity colour (`colourForIdentity`), the floating room-number
-  label sprite, yaw-wraparound-safe interpolation tuning (`REMOTE_LERP`'s
-  exact value — start at 0.25 per the sketch above, tune by screenshot
-  like every other constant in `plans/3d-walkthrough.md`'s own history).
+Most of this stage's planned features (per-identity colour, the floating
+room-number label, yaw-wraparound-safe interpolation) were already built
+as part of Stage 2's own implementation, not deferred to here — Stage 2's
+own writeup says so. What was left for Stage 3 was the *verification*
+this plan always intended for it: confirm those three things actually
+behave correctly under real multi-identity conditions, not just that the
+code compiles and renders something. That verification pass found two
+real bugs, neither visible from reading the code in isolation — both are
+the kind CLAUDE.md's own rule calls out ("a bug in it would only surface
+by actually running it, not by reading the diff").
+
+**Bug 1 — the yaw-wraparound fix is itself wrong, and reverses direction
+instead of fixing it.** Checked with a real reproduction, not just
+inspection: forcing a remote character's reported yaw from `3.0` to
+`-3.0` (a small ~0.28 rad real turn crossing the +-PI seam) and sampling
+`rc.root.rotation.y` mid-interpolation showed a turn in the *wrong*
+direction, by a huge margin (`dYaw` came out as `-6`, not the expected
+`~0.283`). Root cause: `((targetYaw - currentYaw + Math.PI) % (2 *
+Math.PI)) - Math.PI` is wrong whenever `targetYaw - currentYaw + Math.PI`
+is negative, because JavaScript's `%` is a *remainder* operator (sign
+follows the dividend), not true modulo — `(-6) % (2*Math.PI)` returns
+`-6`, not `2*Math.PI - 6` the formula's author implicitly assumed. For
+`3.0 -> -3.0`: `targetYaw - currentYaw + Math.PI = -3.0 - 3.0 + Math.PI =
+-2.858`, which doesn't even trigger the bug on its own, but confirmed by
+a direct numeric check (`node -e`) the formula produces `-6` for this
+case where the correct shortest-path delta is `+0.283` — a turn the
+*long way around* (in both magnitude and direction) instead of the short
+real one. **Fix**: add `2*Math.PI` before the final `%`, the standard
+"always-positive modulo" pattern:
+`((((targetYaw - currentYaw + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) -
+Math.PI`. Verified against several cases by hand (`0->1`, `1->0`,
+`-3.1->3.1`, the `3.0->-3.0` case above) before applying, each producing
+the expected shortest-path delta.
+
+**Bug 2 — adjacent room numbers produce near-identical colours, directly
+undermining this stage's own "visibly different colours" goal.**
+Verified with a real Playwright page plus two simulated identities,
+`room502` and `room503` (sequential room numbers are a completely
+ordinary real scenario — residents on the same floor, say) — both
+rendered as the same shade of pink (`#cb4d88` vs. `#cb4d86`,
+indistinguishable at a glance in the screenshot). Root cause: hashing by
+`hash = (hash*31 + charCode) >>> 0` is a linear-congruential-style
+rolling hash with no final mixing step, so two inputs differing by 1 in
+their last character produce hashes differing by close to 1 (confirmed
+numerically: `room500..room509` hash to `330..339`, marching in lockstep
+with the room number) — exactly the identities a real deployment is most
+likely to have side by side. **Fix**: run the rolling hash through a
+cheap integer avalanche finalizer (`fmix32`, the well-known finalizer
+from MurmurHash3 — xor-shift, multiply, xor-shift, multiply, xor-shift)
+before taking `% 360`, so a 1-unit change in the input hash scatters
+across the whole hue range instead of landing adjacent to it. Confirmed
+numerically before applying: the same `room500..room509` sequence, run
+through the finalizer, lands at hues `274, 55, 77, 231, 333, 81, 204,
+127, 197, 216` — no longer monotonic, no two adjacent. Deterministic
+per-identity colour (same input always produces the same hue) is
+unchanged — this only changes *which* hue a given identity maps to, not
+whether the mapping is stable.
+
 - **Verify**: screenshots (the established method throughout the sibling
   3D-walkthrough plan) confirming two differently-identified remote
-  characters render in visibly different colours with legible floating
-  labels, a walk/idle animation blend that looks natural (not teleporting
-  between report ticks), and a character turning through a wraparound
-  angle rotates the short way, not the long way around.
+  characters — specifically two with *adjacent* room numbers, the case
+  that exposed Bug 2 — render in visibly different colours with legible
+  floating labels, a walk/idle animation blend that looks natural (not
+  teleporting between report ticks), and a character turning through a
+  wraparound angle rotates the short way, not the long way around
+  (checked numerically, not just visually, given how subtle a wrong-
+  direction-but-similar-looking turn can be to eyeball in a screenshot).
+
+#### Stage 3 built and verified
+
+Both bugs above fixed exactly as diagnosed, each confirmed numerically
+before and after:
+
+- **Yaw-wraparound fix**: `updateRemoteCharacters`'s `dYaw` now adds
+  `TWO_PI` before the final `%`, the always-positive-modulo pattern.
+  Verified with a real multi-step reproduction, not a single sample (a
+  single frame's interpolated value is too noisy to trust on its own): a
+  remote character's reported yaw was driven to converge on `3.0`, then
+  switched to `-3.0` (a small ~0.283 rad real turn across the +-PI seam),
+  and `rc.root.rotation.y` was sampled at six points over the following
+  1.5s. It rose monotonically from `3.0` toward `3.283` (`== -3.0 +
+  2*PI`) the entire time, never dipping below `3.0` or overshooting past
+  it — the short path, in the correct direction, confirming the earlier
+  reproduction of the bug (`dYaw = -6` for the same inputs, a turn of the
+  wrong size *and* sign) is fixed.
+- **Colour-hash fix**: `colourForIdentity` now runs its rolling hash
+  through `fmix32` (MurmurHash3's finalizer) before `% 360`. Verified
+  with the exact case that exposed the bug — `room502`/`room503` — via a
+  real Playwright page plus two scripted-`fetch()` identities: the two
+  characters render as `#a8cb4d` (yellow-green) and `#4d60cb`
+  (blue-violet), clearly distinct, replacing the pre-fix `#cb4d88`/
+  `#cb4d86` (both the same shade of pink). Determinism re-confirmed
+  separately (not just assumed from the formula): the same identity
+  produces the same hue across repeated calls.
+- **Whole-stage checks**: `pnpm check` green (15 files, 39 tests — no
+  new spec file for this stage; both fixes are inside `LAUNDRY_SCRIPT`,
+  which has no non-browser-testable surface of its own, same reasoning
+  Stage 2 already established); `tsc --noEmit` clean; `git diff --stat`
+  confirms only `src/laundry-view.ts` changed, both fixes self-contained
+  within the functions the bugs were found in.
+- Everything else this stage's plan already named as done inside Stage 2
+  (per-identity colour existing at all, the floating label sprite, the
+  lerp constant `REMOTE_LERP = 0.25`) needed no further tuning — the
+  screenshot checks here found exactly the two bugs above and nothing
+  else to adjust.
 
 ## What this deliberately does not do
 

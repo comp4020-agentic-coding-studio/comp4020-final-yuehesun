@@ -475,8 +475,7 @@ and the offer moves to the next person instead.
   interpolation, the labelled room number, explicit-leave removal, and
   independent `STALE_MS` timeout removal all confirmed; the facing-snap
   fix confirmed via a real mouse drag after stopping. `pnpm check` green
-  (14 files, 36 tests); `src/queue.ts` untouched. **Stage 3 (visual
-  polish — colour/interpolation tuning) not yet started.**
+  (14 files, 36 tests); `src/queue.ts` untouched.
 - **Stage 9.5 (north-wall machines facing the wall, fixed; an automated
   geometry test added) built and verified.** User-reported with a
   screenshot: north-wall washers/dryers showed their door to the wall,
@@ -510,6 +509,29 @@ and the offer moves to the next person instead.
   check` green (39 tests, up from 36); `src/queue.ts`,
   `src/presence.ts` untouched. See `plans/3d-walkthrough.md` Stage 9.5/
   "9.5 built and verified" for the full root-cause writeup.
+- **Laundry presence Stage 3 (visual polish) built and verified — two
+  real bugs found, not just tuning.** Most of this stage's planned work
+  (per-identity colour, the floating label, the lerp constant) was
+  already built in Stage 2; this stage's own verification pass against
+  real multi-identity conditions found two bugs neither visible from
+  reading the code alone: (1) the yaw-wraparound interpolation formula
+  in `updateRemoteCharacters` was itself wrong — JavaScript's `%` is a
+  remainder, not true modulo, so a negative numerator produced a
+  negative remainder instead of wrapping into `[0, 2*PI)` first, sending
+  some turns the long way around in the wrong direction (confirmed with
+  a real 3.0→-3.0 yaw report, sampled repeatedly: pre-fix gave `dYaw =
+  -6`, post-fix rose monotonically from `3.0` to the correct `3.283`);
+  (2) `colourForIdentity`'s rolling hash had no mixing step, so adjacent
+  room numbers (`room502`/`room503`, an entirely ordinary real case)
+  hashed to nearly the same hue — confirmed with a real two-identity
+  screenshot showing both as the same shade of pink, fixed by running
+  the hash through `fmix32` (MurmurHash3's avalanche finalizer) before
+  `% 360`, producing clearly distinct colours (`#a8cb4d` vs. `#4d60cb`)
+  for the same two identities. `pnpm check` green (39 tests); only
+  `src/laundry-view.ts` changed. See `plans/laundry-presence.md` Stage
+  3/"Stage 3 built and verified" for the full numeric verification.
+  **Laundry presence is now fully built (Stages 1-3) and verified
+  locally; not yet deployed.**
 
 ## Final project deadline — read this before planning further work
 

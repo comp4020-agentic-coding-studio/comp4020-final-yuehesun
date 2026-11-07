@@ -1123,10 +1123,30 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   // identity is always ADR 0004-validated (room + 1-4 digits) by the
   // server before it's ever broadcast, so there's no untrusted-input
   // concern in hashing it here.
+  //
+  // Stage 3 found the rolling hash alone wasn't enough: hash = hash*31 +
+  // charCode has no mixing step, so two identities differing by 1 in
+  // their last character (room502 vs room503 — an entirely ordinary case,
+  // two residents on the same floor) hash to nearly the same number and
+  // land on nearly the same hue, confirmed by a real two-identity
+  // screenshot (both rendered as the same shade of pink). fmix32 (the
+  // avalanche finalizer from MurmurHash3) spreads a 1-unit hash
+  // difference across the whole hue range before the final mod, while
+  // staying fully deterministic — the same identity still always maps to
+  // the same hue, just not one adjacent to its numeric neighbour's.
+  function fmix32(h) {
+    h = h >>> 0;
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x85ebca6b) >>> 0;
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35) >>> 0;
+    h ^= h >>> 16;
+    return h >>> 0;
+  }
   function colourForIdentity(identity) {
     var hash = 0;
     for (var i = 0; i < identity.length; i++) hash = (hash * 31 + identity.charCodeAt(i)) >>> 0;
-    var hue = hash % 360;
+    var hue = fmix32(hash) % 360;
     return new THREE.Color("hsl(" + hue + ", 55%, 55%)");
   }
 
@@ -1216,7 +1236,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       // a turn crossing the +-PI wraparound (e.g. from 3.0 to -3.0
       // radians, a small real turn) would otherwise spin the long way
       // around instead of the short real distance actually turned.
-      var dYaw = ((rc.targetYaw - rc.root.rotation.y + Math.PI) % (2 * Math.PI)) - Math.PI;
+      // Stage 3 found this formula itself was wrong: JavaScript's % is a
+      // remainder operator (sign follows the dividend), not true modulo,
+      // so a negative numerator here produced a negative remainder
+      // instead of wrapping into [0, TWO_PI) first, sending some turns
+      // the long way around in the wrong direction. Confirmed by forcing
+      // a 3.0 -> -3.0 yaw report (a small real turn across the seam) and
+      // sampling mid-interpolation: the old formula gave -6 instead of
+      // the correct ~0.283. Adding TWO_PI before the final % is the
+      // standard always-positive-modulo fix.
+      var TWO_PI = 2 * Math.PI;
+      var dYaw = (((rc.targetYaw - rc.root.rotation.y + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI - Math.PI;
       rc.root.rotation.y += dYaw * REMOTE_LERP;
 
       if (rc.walkAction && rc.idleAction) {
