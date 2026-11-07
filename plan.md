@@ -609,6 +609,24 @@ and the offer moves to the next person instead.
   underlying `basketKind` state Stage 8.4's handoff flow depends on is
   unchanged; it just no longer has a visual expression). `pnpm check`
   green (15 files, 39 tests); only `src/laundry-view.ts` changed.
+- **Basket clipped into the body — fixed by moving it, not the animation
+  system.** The user reported the basket looked like it floated/clipped
+  into the character's torso. Two options were weighed: give the arms a
+  real "holding" pose (the model's own `holding-both` clip, confirmed via
+  a real inspection of its tracks to move only `arm-left`/`arm-right`) or
+  just reposition the basket — the user chose the simpler reposition,
+  explicitly ruling out any animation change. Investigated before
+  touching any number: a real `Box3` reading of the body model's own
+  local bounding box (not a guess) showed its front surface sits at
+  z ~= 0.159, while the basket's old z = 0.18 position was its *center*,
+  not its near face — with the basket's own 0.13 top radius, its actual
+  near edge sat at 0.05, well inside the body's own z-range, which is
+  what caused the clipping. Moved to z = 0.32, confirmed via a real
+  `Box3.intersectsBox()` check (not just a screenshot) that the basket
+  and body boxes no longer overlap (clearance ~0.025), and via front/side
+  screenshots that the basket now reads as held in front of the body, not
+  embedded in it. `pnpm check` green (15 files, 39 tests); only
+  `src/laundry-view.ts` changed; no animation/clip code touched.
 
 ## Final project deadline — read this before planning further work
 

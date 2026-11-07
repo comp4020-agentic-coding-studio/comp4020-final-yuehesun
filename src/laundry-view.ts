@@ -658,11 +658,22 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     // (CylinderGeometry with different top/bottom radii, a tapered
     // frustum) is what reads as "basket", not colour. Positioned at
     // roughly waist/carry height in front of the character.
+    //
+    // z offset: measured the body model's own real bounding box in
+    // characterRoot-local space before picking a number (a real Box3
+    // reading, not a guess) — the body's front surface sits at
+    // z ~= 0.159. The basket's old z = 0.18 only cleared that by 0.02,
+    // but a Mesh's .position is its *center*, not its near face — with
+    // the basket's own 0.13 top radius, its near (body-facing) edge
+    // actually sat at 0.18 - 0.13 = 0.05, well inside the body's own
+    // z-range (-0.194 to 0.159), which is what clipped it into the torso.
+    // 0.32 puts the basket's near edge at 0.32 - 0.13 = 0.19, a real
+    // ~0.03 clearance outside the body's own front surface.
     var basket = new THREE.Mesh(
       new THREE.CylinderGeometry(0.13, 0.09, 0.16, 10),
       new THREE.MeshStandardMaterial({ color: BASKET_WICKER_COLOR }),
     );
-    basket.position.set(0, 0.32, 0.18);
+    basket.position.set(0, 0.32, 0.32);
     basket.castShadow = true;
     return basket;
   }
