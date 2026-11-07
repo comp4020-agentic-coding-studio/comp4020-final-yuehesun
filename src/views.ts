@@ -285,13 +285,16 @@ const STYLES = `
   .laundry-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
   .laundry-hint { margin: var(--space-3) 0; color: var(--ink-muted); font-size: var(--text-sm); }
   .laundry-crosshair { position: absolute; top: 50%; left: 50%; width: 0.5rem; height: 0.5rem; margin: -0.25rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); pointer-events: none; }
-  /* Stage 7: a real call-to-action on the home page, not just the quiet
-     top-nav text link (research/design-review.md's own "generic version"
-     self-check would flag a feature's only entry point being a plain-
-     weight nav link as easy to miss entirely). display:block + margin so
-     it reads as its own standing action, not an inline word in the
-     "signed in as" sentence above it. */
-  .laundry-entry-cta { display: block; width: fit-content; margin: var(--space-3) 0 var(--space-5); }
+  /* Stage 7, revised: a real call-to-action on the home page, not just the
+     quiet top-nav text link (research/design-review.md's own "generic
+     version" self-check would flag a feature's only entry point being a
+     plain-weight nav link as easy to miss entirely). A plain link button
+     wasn't loud enough either — still just text with a background —  so
+     the entry point is now its own panel, sharing .status-hero's exact
+     card recipe (same surface/border/radius/padding, same hero-label
+     treatment) so it reads as a standing feature of this page, not a
+     decoration bolted onto the signed-in line above it. */
+  .laundry-cta-intro { margin: 0 0 var(--space-4); line-height: 1.5; color: var(--ink); }
   /* Stage 7: the examine overlay — a 2D HTML layer, deliberately not a
      3D in-scene zoom, so the QR <img> renders at native pixel resolution
      with no WebGL texture-filtering softness to fight (the real
@@ -1158,7 +1161,16 @@ export function homePage(
             <button class="btn-quiet" type="submit">Switch room</button>
           </form>
         </p>
-        <a class="btn-primary laundry-entry-cta" href="/laundry">Go to the laundry</a>
+        <div class="status-hero laundry-cta-panel">
+          <p class="hero-label">3D walkthrough</p>
+          <p class="laundry-cta-intro">
+            Walk the real laundry room in first person — see other residents'
+            characters moving through the same shared queue, and scan a
+            machine's real QR code with your phone to reserve or claim it on
+            the spot.
+          </p>
+          <a class="btn-primary" href="/laundry">Go to the laundry</a>
+        </div>
         <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
           ${myStatusBlock(mine, myOffers, now, pendingPickups)}
         </div>

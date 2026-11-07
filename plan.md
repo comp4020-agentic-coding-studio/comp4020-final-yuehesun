@@ -33,11 +33,13 @@ This satisfies the final project's three fixed requirements: **multi-user**
 **persists** (your place in line, and every machine's state, survives
 reloads, restarts and redeploys).
 
-**Our definition of "good"** (see `README.md`): fair and seen to be fair;
-the queue decides, not the people in it; talking is optional; honest about
-real-time limits; keeps only what the queue needs (no profile, no history);
-and stays scoped to one laundry room rather than becoming a generic
-booking product.
+**Our definition of "good"** (see `README.md`): calm — the room recedes
+to the edge of your attention and only calls you back at the two moments
+that matter (one person ahead, your turn); the queue's documented rule
+decides your place, not whoever argues loudest; talking is optional;
+honest about real-time limits; keeps only what the queue needs (no
+profile, no history); and stays scoped to one laundry room rather than
+becoming a generic booking product.
 
 See [`docs/adr/0001-app-concept.md`](docs/adr/0001-app-concept.md) for why
 this app over the alternatives considered.
