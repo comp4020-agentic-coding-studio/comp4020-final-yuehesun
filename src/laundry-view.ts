@@ -572,36 +572,45 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   }
   window.__laundryDropoffSpotMeshes = dropoffSpotMeshes;
 
-  // "DROP-OFF" billboard label (plans/3d-walkthrough.md Stage 9.2's
-  // explicit requirement: large, legible text, readable from a normal
-  // approach distance, not a tiny sign). A THREE.Sprite with a
-  // THREE.CanvasTexture always faces the camera regardless of approach
-  // angle, with zero new dependencies (no font-loading library, matching
-  // docs/adr/0003's no-build-step constraint).
-  function makeTextSprite(text) {
+  // Billboard text labels: a THREE.Sprite with a THREE.CanvasTexture
+  // always faces the camera regardless of approach angle, with zero new
+  // dependencies (no font-loading library, matching docs/adr/0003's
+  // no-build-step constraint). Shared by the "DROP-OFF" sign
+  // (plans/3d-walkthrough.md Stage 9.2 — large, legible, readable from a
+  // normal approach distance) and plans/laundry-presence.md's small
+  // per-character room-number tag — factored into one function with
+  // options rather than two copies of the same canvas-drawing code,
+  // since a tag floating above someone's head wants a much smaller scale
+  // and a less visually dominant panel than a floor-mounted sign does.
+  function buildLabelSprite(text, opts) {
+    opts = opts || {};
     var canvas = document.createElement("canvas");
     canvas.width = 512; canvas.height = 128;
     var ctx = canvas.getContext("2d");
-    // An opaque panel behind the text, not a transparent background —
-    // keeps the label legible regardless of whatever's visually behind
-    // it in the 3D scene (wall, shelving, open floor).
-    ctx.fillStyle = "#f6f3ec"; // --paper
+    // An opaque panel behind the text by default — keeps the label
+    // legible regardless of whatever's visually behind it in the 3D
+    // scene (wall, shelving, open floor). A per-character tag asks for a
+    // semi-transparent panel instead (opts.panelAlpha), so a cluster of
+    // floating name tags doesn't read as a row of solid signs.
+    var panelAlpha = opts.panelAlpha != null ? opts.panelAlpha : 1;
+    ctx.fillStyle = "rgba(246, 243, 236, " + panelAlpha + ")"; // --paper
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "#ded7c8"; // --rule
+    ctx.strokeStyle = "rgba(222, 215, 200, " + panelAlpha + ")"; // --rule
     ctx.lineWidth = 6;
     ctx.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
-    ctx.fillStyle = "#1c1a17"; // --ink
-    ctx.font = "bold 64px sans-serif";
+    ctx.fillStyle = opts.textColor || "#1c1a17"; // --ink
+    ctx.font = "bold " + (opts.fontPx || 64) + "px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
     var texture = new THREE.CanvasTexture(canvas);
-    var material = new THREE.SpriteMaterial({ map: texture });
+    var material = new THREE.SpriteMaterial({ map: texture, transparent: panelAlpha < 1 });
     var sprite = new THREE.Sprite(material);
-    sprite.scale.set(1.6, 0.4, 1); // matches the canvas's own 4:1 aspect ratio
+    var scale = opts.scale || [1.6, 0.4]; // defaults match the canvas's own 4:1 aspect ratio
+    sprite.scale.set(scale[0], scale[1], 1);
     return sprite;
   }
-  var dropoffLabel = makeTextSprite("DROP-OFF");
+  var dropoffLabel = buildLabelSprite("DROP-OFF");
   dropoffLabel.position.set(westX + bookcaseFootprint.d + 0.2, bookcaseFootprint.h + 0.75, dropoffCenterZ);
   scene.add(dropoffLabel);
 
@@ -640,6 +649,15 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
 
   var characterMixer = null;
   var walkAction = null, idleAction = null;
+  // Hoisted out of the gltfLoader.load callback below (plans/laundry-
+  // presence.md): these are the already-loaded, already-root-motion-
+  // stripped clip objects — upsertRemoteCharacter() reuses them directly
+  // via its own clipAction() calls on a separate AnimationMixer, rather
+  // than re-loading/re-fixing the character model a second time per
+  // remote character. No .clone() needed: a clip is plain keyframe data,
+  // and AnimationMixer.clipAction() is designed to bind the same clip to
+  // multiple independent mixers with no cross-talk.
+  var walkClip = null, idleClip = null;
   var BASKET_OWN_COLOR = 0xb5402a; // --alert, distinct and visible
   var BASKET_OTHER_COLOR = 0x2b5f8a; // --info, visually distinct from the player's own basket
   var basketMesh = null;
@@ -754,9 +772,9 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   gltfLoader.load("/models/character.glb", function (gltf) {
     window.__laundryGltfAnimations = gltf.animations.map(function (a) { return a.name; });
     characterMixer = new THREE.AnimationMixer(characterRoot.children[0] || characterRoot);
-    var walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");
-    var idleClip = THREE.AnimationClip.findByName(gltf.animations, "idle");
-    if (walkClip) { walkAction = characterMixer.clipAction(stripRootMotion(walkClip)); walkAction.play(); walkAction.setEffectiveWeight(0); }
+    walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");
+    idleClip = THREE.AnimationClip.findByName(gltf.animations, "idle");
+    if (walkClip) { stripRootMotion(walkClip); walkAction = characterMixer.clipAction(walkClip); walkAction.play(); walkAction.setEffectiveWeight(0); }
     if (idleClip) { idleAction = characterMixer.clipAction(idleClip); idleAction.play(); idleAction.setEffectiveWeight(1); }
   });
 
@@ -1151,6 +1169,171 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     laundrySource.addEventListener("machine-" + m.id, refetchMachineState);
   });
 
+  // --- plans/laundry-presence.md: seeing other residents' characters in
+  // the shared 3D room. Deliberately a separate SSE stream from /events
+  // above — presence is continuous, high-frequency state (a walking
+  // character's position changes every frame), not a discrete change
+  // signal, so it doesn't belong on the same digest-diffing tick. ---
+  var tabId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : String(Math.random());
+
+  var lastReportAt = 0;
+  var REPORT_INTERVAL_MS = 200;
+  function reportPresence(now) {
+    if (now - lastReportAt < REPORT_INTERVAL_MS) return;
+    lastReportAt = now;
+    fetch("/laundry/presence", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tabId: tabId,
+        x: characterRoot.position.x,
+        z: characterRoot.position.z,
+        yaw: characterRoot.rotation.y,
+        moving: wasMoving,
+      }),
+      keepalive: true, // survives a page unload that happens to race the last report
+    }).catch(function () { /* a dropped report just means this tick's position arrives late/not at all — the next tick corrects it */ });
+  }
+
+  function sendLeaveBeacon() {
+    var body = JSON.stringify({ tabId: tabId });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/laundry/presence/leave", new Blob([body], { type: "application/json" }));
+    }
+  }
+  window.addEventListener("pagehide", sendLeaveBeacon);
+
+  // A deterministic hash, not a random colour — the same room number
+  // always renders the same colour across every connected browser and
+  // across a reload, which matters for actually recognizing "that's
+  // room304 again," not an arbitrary colour that changes every visit.
+  // identity is always ADR 0004-validated (room + 1-4 digits) by the
+  // server before it's ever broadcast, so there's no untrusted-input
+  // concern in hashing it here.
+  function colourForIdentity(identity) {
+    var hash = 0;
+    for (var i = 0; i < identity.length; i++) hash = (hash * 31 + identity.charCodeAt(i)) >>> 0;
+    var hue = hash % 360;
+    return new THREE.Color("hsl(" + hue + ", 55%, 55%)");
+  }
+
+  var remoteCharacters = {}; // tabId -> { root, mixer, walkAction, idleAction, targetX, targetZ, targetYaw }
+  window.__laundryRemoteCharacters = remoteCharacters; // Playwright-inspectable, same convention as every other piece of this file's state
+
+  function buildRemoteCharacter(identity) {
+    var root = new THREE.Group();
+    scene.add(root);
+
+    // Declared before the loadModel() call below, not after — character.glb
+    // is already in modelCache by the time any remote character is ever
+    // built (the local player's own character loads it first, earlier in
+    // this script), so loadModel's callback fires synchronously, before
+    // control would otherwise reach an entry declaration placed after
+    // this call. Caught by reading the code, not by running it: an entry
+    // declared after this block would be referenced (inside the callback)
+    // before it's ever assigned, on every remote character after the
+    // first.
+    var entry = { root: root, mixer: null, walkAction: null, idleAction: null, targetX: 0, targetZ: 0, targetYaw: 0, walkWeight: 0 };
+
+    loadModel("/models/character.glb", function (model) {
+      var flatMat = new THREE.MeshStandardMaterial({ color: colourForIdentity(identity) });
+      model.traverse(function (node) {
+        if (node.isMesh || node.isSkinnedMesh) {
+          node.material = flatMat;
+          node.castShadow = true;
+          // Same Stage 9.1 fix the local character needs, applied here
+          // pre-emptively rather than waiting to rediscover the same bug
+          // on a remote instance: a SkinnedMesh's bind-pose bounding
+          // sphere goes stale the instant it animates away from rest,
+          // which otherwise wrongly frustum-culls it off-screen.
+          node.frustumCulled = false;
+        }
+      });
+      root.add(model);
+
+      if (walkClip && idleClip) {
+        entry.mixer = new THREE.AnimationMixer(model);
+        entry.walkAction = entry.mixer.clipAction(walkClip);
+        entry.walkAction.play();
+        entry.walkAction.setEffectiveWeight(0);
+        entry.idleAction = entry.mixer.clipAction(idleClip);
+        entry.idleAction.play();
+        entry.idleAction.setEffectiveWeight(1);
+      }
+    });
+
+    var label = buildLabelSprite(identity, { scale: [0.9, 0.22], panelAlpha: 0.75, fontPx: 48 });
+    label.position.set(0, 1.35, 0);
+    root.add(label);
+
+    return entry;
+  }
+
+  function upsertRemoteCharacter(rec) {
+    var entry = remoteCharacters[rec.tabId];
+    if (!entry) {
+      entry = buildRemoteCharacter(rec.identity);
+      entry.root.position.set(rec.x, 0, rec.z);
+      entry.root.rotation.y = rec.yaw;
+      remoteCharacters[rec.tabId] = entry;
+    }
+    entry.targetX = rec.x;
+    entry.targetZ = rec.z;
+    entry.targetYaw = rec.yaw;
+    entry.moving = rec.moving;
+  }
+
+  function removeRemoteCharacter(tabId) {
+    var entry = remoteCharacters[tabId];
+    if (!entry) return;
+    scene.remove(entry.root);
+    entry.root.traverse(function (node) {
+      if (node.isSprite && node.material && node.material.map) node.material.map.dispose();
+    });
+    delete remoteCharacters[tabId];
+  }
+
+  var REMOTE_LERP = 0.25; // snappier than CAM_LERP's 0.12 — a report arrives only every ~200-250ms, so a laggier lerp would visibly trail
+  function updateRemoteCharacters(dt) {
+    Object.keys(remoteCharacters).forEach(function (id) {
+      var rc = remoteCharacters[id];
+      rc.root.position.x += (rc.targetX - rc.root.position.x) * REMOTE_LERP;
+      rc.root.position.z += (rc.targetZ - rc.root.position.z) * REMOTE_LERP;
+      // Yaw needs shortest-path interpolation, not a naive linear lerp —
+      // a turn crossing the +-PI wraparound (e.g. from 3.0 to -3.0
+      // radians, a small real turn) would otherwise spin the long way
+      // around instead of the short real distance actually turned.
+      var dYaw = ((rc.targetYaw - rc.root.rotation.y + Math.PI) % (2 * Math.PI)) - Math.PI;
+      rc.root.rotation.y += dYaw * REMOTE_LERP;
+
+      if (rc.walkAction && rc.idleAction) {
+        var targetWeight = rc.moving ? 1 : 0;
+        rc.walkWeight = rc.walkWeight + (targetWeight - rc.walkWeight) * 0.2;
+        rc.walkAction.setEffectiveWeight(rc.walkWeight);
+        rc.idleAction.setEffectiveWeight(1 - rc.walkWeight);
+      }
+      if (rc.mixer) rc.mixer.update(dt);
+    });
+  }
+
+  var presenceSource = new EventSource("/laundry/presence-stream");
+  presenceSource.addEventListener("positions", function (e) {
+    var records = JSON.parse(e.data);
+    var seenTabIds = {};
+    records.forEach(function (rec) {
+      if (rec.tabId === tabId) return; // skip our own report — the broadcast includes every connected tab, including this one
+      seenTabIds[rec.tabId] = true;
+      upsertRemoteCharacter(rec);
+    });
+    // The server's record set is authoritative — remove any locally-
+    // tracked remote character no longer present in this broadcast
+    // (it left, or went stale server-side), rather than the client
+    // deciding this on its own.
+    Object.keys(remoteCharacters).forEach(function (id) {
+      if (!seenTabIds[id]) removeRemoteCharacter(id);
+    });
+  });
+
   // --- Stage 7.3: the examine overlay (QR codes) + Stage 8.4: the
   // drop-off confirm overlay. Both are 2D HTML layers over the 3D view,
   // not a 3D in-scene zoom — a native-resolution <img> is what makes the
@@ -1251,6 +1434,15 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
 
   // --- render loop ---
   var last = performance.now();
+  // plans/laundry-presence.md: tracked across frames so the character's
+  // own facing can be snapped to the camera's look direction exactly
+  // once, on the moving-to-stopped transition — not left at whatever
+  // Math.atan2(dx, dz) last computed while walking, and not continuously
+  // bound to yaw either (that would make the character twitch-rotate on
+  // every small mouse movement while standing still, which doesn't match
+  // how a real person's body behaves while just looking around).
+  var wasMoving = false;
+
   function frame(now) {
     var dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -1274,7 +1466,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       // Facing tracks movement direction — the standard third-person
       // convention, not wherever the camera happens to be looking.
       characterRoot.rotation.y = Math.atan2(dx, dz);
+    } else if (wasMoving) {
+      // Just stopped: snap facing to match the camera's own look
+      // direction once, rather than leaving it pointed wherever the last
+      // step happened to aim it. This also matters now that
+      // characterRoot.rotation.y is broadcast to every other resident as
+      // this character's yaw (see reportPresence below) — a stale facing
+      // used to be a local-only cosmetic quirk; it would otherwise be a
+      // visibly wrong orientation on a remote viewer's own screen too.
+      characterRoot.rotation.y = yaw;
     }
+    wasMoving = moving;
 
     if (walkAction && idleAction) {
       var targetWalkWeight = moving ? 1 : 0;
@@ -1285,6 +1487,8 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
 
     setHighlight(nearestInteractable());
     updateCamera();
+    reportPresence(now);
+    updateRemoteCharacters(dt);
     renderer.render(scene, camera);
     window.requestAnimationFrame(frame);
   }

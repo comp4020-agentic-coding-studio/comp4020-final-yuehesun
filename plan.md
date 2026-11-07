@@ -445,10 +445,38 @@ and the offer moves to the next person instead.
   session's background fork, concurrently editing `src/laundry-view.ts`)
   — deliberately scoped to files Stage 9.4 never touches
   (`src/presence.ts`, `src/app.ts`, `src/server.ts`, a new spec file) so
-  the two could proceed without conflict; **Stage 2 (the client-side
-  half, which does touch `src/laundry-view.ts`'s render loop) is
-  deliberately held until Stage 9.4 lands and commits**, to avoid basing
-  new work on a file mid-rewrite.
+  the two could proceed without conflict.
+- **Laundry presence Stage 2 (client-side reporting/receiving, and the
+  local facing fix) built and verified, once Stage 9.4 landed.**
+  `reportPresence`/`updateRemoteCharacters` wired into the existing
+  `frame(now)` loop; `buildRemoteCharacter`/`upsertRemoteCharacter`/
+  `removeRemoteCharacter` render other residents' characters (shared
+  `character.glb`, per-identity flat colour via a deterministic hash, a
+  floating room-number label reusing a refactored
+  `buildLabelSprite(text, opts)` shared with the "DROP-OFF" sign); the
+  character-facing-doesn't-track-camera-direction fix (`wasMoving`
+  tracking, a one-time snap on the moving-to-stopped transition) landed
+  in the same stage, since the broadcast yaw this stage adds needed it to
+  be correct. One real bug caught by reading the code before running it
+  (an `entry` variable referenced inside a `loadModel()` callback before
+  its own declaration — harmless only on the very first call, since
+  `loadModel()` is synchronous whenever its URL is already cached, which
+  `character.glb` always is by the time a remote character is ever
+  built) and two verification-process mistakes (a `pkill -f` that
+  silently failed to kill a `DATABASE_PATH=...`-prefixed background
+  server, since the prefix is a shell assignment invisible to the
+  spawned process's own argv; and an early "label doesn't render" result
+  that was actually a camera-framing problem — the screenshot was taken
+  before walking close enough to the remote character to frame it) are
+  recorded in full in `plans/laundry-presence.md`'s "Stage 2 built and
+  verified" section. Verified end-to-end: a real Playwright page plus a
+  second identity simulated via scripted `fetch()` reports (no second
+  browser, per the plan's own design) — appearance, movement
+  interpolation, the labelled room number, explicit-leave removal, and
+  independent `STALE_MS` timeout removal all confirmed; the facing-snap
+  fix confirmed via a real mouse drag after stopping. `pnpm check` green
+  (14 files, 36 tests); `src/queue.ts` untouched. **Stage 3 (visual
+  polish — colour/interpolation tuning) not yet started.**
 
 ## Final project deadline — read this before planning further work
 

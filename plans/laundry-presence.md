@@ -783,6 +783,88 @@ camera angle).
   small mouse movement while stationary, and not left facing the stale
   pre-stop direction either.
 
+#### Stage 2 built and verified
+
+Implemented per the plan above, almost verbatim — Stage 9.4 had already
+shipped drag-to-look by the time this stage was built, so the `dragging`
+flag/mousedown-mousemove-mouseup wiring this section originally planned
+to add was already in place; `reportPresence` and `updateRemoteCharacters`
+were simply wired into the existing per-frame `frame(now)` loop. One
+design gap, two real bugs, and one verification-methodology lesson, all
+found during this stage's own build/verify pass — recorded here in full,
+not glossed over:
+
+- **A real interface gap caught before writing any client code**: the
+  `PresenceRecord` shape sketched in this plan's own Architecture section
+  didn't include `tabId` (it was only ever the `Map`'s key, never part of
+  the stored/broadcast value) — but the client-side design two sections
+  later assumes every broadcast record carries its own `rec.tabId`, to
+  tell its own report apart from everyone else's and to key
+  `remoteCharacters` by. Fixed in `src/presence.ts` (Stage 1, committed
+  separately) by adding `tabId` to the interface and to the object
+  `report()` constructs — caught by re-reading the plan's own two halves
+  against each other before implementing Stage 1, not discovered at
+  runtime.
+- **A real bug caught by reading the code, not by running it**:
+  `buildRemoteCharacter()`'s first draft declared `var entry = {...}`
+  *after* the `loadModel(...)` call whose callback closes over `entry`.
+  `loadModel()` is only asynchronous the *first* time a given URL is
+  requested — `character.glb` is already in `modelCache` by the time any
+  remote character is ever built (the local player's own character loads
+  it first), so the callback fires synchronously, before control would
+  ever reach an `entry` declaration placed after the call. This would
+  have thrown `ReferenceError: Cannot access 'entry' before
+  initialization` on every remote character after the very first one —
+  the same general bug class (an uncaught exception inside code that
+  runs every frame silently kills the render loop) Stage 9.2's own
+  `ensureRingFor`/`dropoffGroup` bug already produced once this session.
+  Fixed by declaring `entry` before the `loadModel()` call. Worth keeping
+  in mind for any future code added to this file: `loadModel()`'s
+  sync-if-cached/async-if-not duality is a real, non-obvious hazard any
+  callback closing over a not-yet-declared variable can hit.
+- **A real verification mistake, not a product bug, caught by checking
+  the actual served page source rather than trusting that an edit took
+  effect**: tuning the room-number label's height (`label.position.set`)
+  required several screenshot iterations, and more than one of those
+  iterations were run against a *stale* server process — killing a
+  `nohup ... &`-started process by `pkill -f` matching the
+  `DATABASE_PATH=...` prefix silently fails, since that prefix is a shell
+  variable assignment, not part of the spawned process's own argv, so
+  `pkill -f` can't see it. The fix each time was to find the actual PID
+  via `ss -tlnp` and `kill -9` it directly, and to confirm the server was
+  serving the intended code by `curl`-ing the page source and grepping
+  for the exact literal being tuned, before trusting any screenshot taken
+  against it. The label's own final height (`1.35`, well clear of the
+  character's head) was correct on the very first real attempt once this
+  was sorted out — the apparent "label doesn't render" symptom in the
+  intervening screenshots was entirely this verification mistake, not a
+  rendering bug.
+- **A second, genuine verification mistake worth recording** (distinct
+  from the stale-server one above): an early screenshot taken to confirm
+  the label's visibility was shot from the local player's spawn point,
+  several units away from the remote character's reported position and
+  with the camera still aimed at the local player's own idle pose —
+  `_projectToScreen` confirmed the label's world position was projecting
+  to a negative Y (off the top of the canvas), which is a framing
+  problem, not a rendering problem. Walking the local character closer to
+  the remote one before screenshotting resolved it immediately. Lesson:
+  a "nothing appears" result from a presence screenshot needs ruling out
+  camera framing (is the thing actually in view at all) before it's
+  trusted as evidence the thing isn't rendering.
+- **Verified**: a real Playwright page (room A) plus a second identity's
+  position reported via scripted `fetch()` calls (room B, no second
+  browser, per this plan's own design) — room B's character appears after
+  a report, visibly labelled with its own room number once room A walks
+  close enough to frame it, interpolates toward a new position after a
+  second report, disappears after an explicit leave, and separately
+  disappears after `STALE_MS` with no report and no leave at all (the
+  timeout fallback path, checked independently from the explicit-leave
+  path). The facing-snap-on-stop fix was confirmed with a real
+  mousedown/mousemove/mouseup drag performed after stopping, showing the
+  character's own model visibly turn to match the new look direction.
+  `pnpm check` green (14 files, 36 tests) against a scratch server
+  throughout; `src/queue.ts` untouched.
+
 ### Stage 3 — visual polish
 
 - Per-identity colour (`colourForIdentity`), the floating room-number
