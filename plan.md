@@ -477,6 +477,39 @@ and the offer moves to the next person instead.
   fix confirmed via a real mouse drag after stopping. `pnpm check` green
   (14 files, 36 tests); `src/queue.ts` untouched. **Stage 3 (visual
   polish — colour/interpolation tuning) not yet started.**
+- **Stage 9.5 (north-wall machines facing the wall, fixed; an automated
+  geometry test added) built and verified.** User-reported with a
+  screenshot: north-wall washers/dryers showed their door to the wall,
+  not the room, despite Stage 9.4.3's `frontSign` fix. Root cause
+  confirmed before fixing (not assumed from the 9.4.3 commit's own
+  claim): `frontSign` only flipped the status light's/QR anchor's own
+  *offset* sign, never the model's actual `group.rotation.y`, so a
+  backwards machine's light still read as "facing the room" while the
+  door underneath it stayed wrong — a real Playwright probe of
+  `window.__laundryMachineGroups` plus a standalone rotation check
+  confirmed the north wall's `Math.PI` sent the model's local +Z to its
+  own wall side, not the room. Fix: room geometry (wall positions, each
+  machine's x/z/facing) extracted out of `LAUNDRY_SCRIPT` into a new
+  plain-TypeScript module, `src/laundry-layout.ts` (no `THREE`/DOM
+  import), with `facing` now derived per wall from each wall's own
+  declared interior direction instead of a hand-picked constant;
+  `laundryPage()` computes it once server-side and hands it to the
+  client via the existing JSON data island, so there's exactly one copy
+  of this arithmetic, not two that can drift apart the way `facing` and
+  `frontSign` already had. `frontSign` itself is deleted as redundant.
+  `spec/laundry-layout.test.ts` (new, pure-function, no Playwright/
+  browser) asserts every machine's facing dots `>0.9` against its own
+  wall's interior direction — confirmed to actually fail against the old
+  bug (reverting the fix locally reproduces a `-1.0` dot) and pass after
+  it, so this class of bug (not just this one instance) has a real
+  regression check now. Also answered, from the code and confirmed by a
+  forced-visible screenshot: the yellow ring above a machine is
+  `unclaimedMarkers` (Stage 8.4's "unclaimed laundry waiting" marker),
+  sharing its colour with the highlight ring on purpose (both mean
+  "needs attention") but a distinct mesh/trigger — not a bug. `pnpm
+  check` green (39 tests, up from 36); `src/queue.ts`,
+  `src/presence.ts` untouched. See `plans/3d-walkthrough.md` Stage 9.5/
+  "9.5 built and verified" for the full root-cause writeup.
 
 ## Final project deadline — read this before planning further work
 

@@ -4,6 +4,7 @@ import type { QueueRow } from "./queue.ts";
 import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
 import { identityPage, machineCard, page, type Html } from "./views.ts";
+import { layoutRoom } from "./laundry-layout.ts";
 
 // plans/3d-walkthrough.md: a third-person 3D walkthrough of the laundry
 // room, reachable from the home page at any time (not gated on having a
@@ -48,116 +49,42 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var wrap = document.getElementById("laundry-canvas-wrap");
   var dataEl = document.getElementById("laundry-machines");
   if (!wrap || !dataEl) return;
-  var machines = JSON.parse(dataEl.textContent || "[]");
+  var pageData = JSON.parse(dataEl.textContent || "{}");
+  var machines = pageData.machines || [];
 
   // --- Stage 9.2 floor plan (plans/3d-walkthrough.md's own
   // user-confirmed sketch, replacing Stage 8.2's single-wall layout
   // entirely): machines split across two walls (north -Z, east +X); the
   // whole west wall (-X) is the drop-off/public zone; sink+ironing merge
   // into one free-standing island in open floor, not against any wall;
-  // spawn/entry at the south wall (+Z). The split is computed from the
-  // real {id, label, type} list, not hardcoded to any specific count
-  // (this file's own long-standing principle) — against the real seeded
-  // data (8 washers, 2 dryers) this resolves to north=5 washers, east=3
-  // washers+2 dryers, matching the user-confirmed layout, but the
-  // formula holds if the seed data ever changes. ---
-  var SPACING = 1.6;
+  // spawn/entry at the south wall (+Z). Stage 9.5: this geometry (room
+  // size, wall positions, each machine's x/z/facing) is computed once,
+  // server-side, by src/laundry-layout.ts's layoutRoom() — not
+  // recomputed here — so a non-browser test (spec/laundry-layout.test.ts)
+  // can check the same numbers this scene actually renders, instead of a
+  // second hand-copied version of this arithmetic that could silently
+  // drift from the real one. ---
+  var layout = pageData.layout;
+  var roomHalfWidth = layout.roomHalfWidth;
+  var roomHalfDepth = layout.roomHalfDepth;
+  var northZ = layout.northZ;
+  var eastX = layout.eastX;
+  var westX = layout.westX;
+  var southZ = layout.southZ;
+  // placedMachines is north-wall-then-east-wall, not machines[]'s own id
+  // order — every lookup below keys off p.id, never array index, so this
+  // reordering can't misplace a machine's live state or QR link.
+  var placedMachines = layout.placedMachines;
+  var orderedMachines = placedMachines.map(function (p) {
+    return machines.find(function (m) { return m.id === p.id; });
+  });
+
   // A rough waist-ish height for things that aren't the machine models
   // themselves (the drop-off anchor, the unclaimed-laundry marker above a
   // machine) — not used for the machine models' own placement, which uses
   // each model's real measured bbox (footprintOf) instead, per this
   // stage's own bbox-measurement fix below.
   var GENERIC_WAIST_HEIGHT = 0.9;
-  var dryers = machines.filter(function (m) { return m.type === "dryer"; });
-  var allWashers = machines.filter(function (m) { return m.type !== "dryer"; });
-  var eastSlotCount = Math.round(machines.length / 2);
-  var eastDryerCount = Math.min(dryers.length, eastSlotCount);
-  var eastWasherCount = Math.max(0, eastSlotCount - eastDryerCount);
-  var northWashers = allWashers.slice(0, allWashers.length - eastWasherCount);
-  var eastWashers = allWashers.slice(allWashers.length - eastWasherCount);
-  // Washers nearest the shared corner with the north wall (continuing the
-  // washer run visually around the bend), dryers nearest the south end of
-  // the east wall — any leftover dryers beyond what the east wall can
-  // take (not the case for the real seeded data: 2 dryers, 5 east slots)
-  // fall back to the north wall rather than being silently dropped.
-  var eastMachines = eastWashers.concat(dryers.slice(0, eastDryerCount));
-  var northMachines = northWashers.concat(dryers.slice(eastDryerCount));
-
-  var WALL_MARGIN = 0.9; // machines pulled in from the wall by this much, unchanged from Stage 8.2
-  var CORNER_MARGIN = 0.7; // gap from the shared north/east corner before the first machine on either wall
-  var SOUTH_OPEN_DEPTH = 2.2; // open floor between the east wall's row and the south (entrance) wall — tighter than Stage 8.2's 7-unit aisle, since this room is meant to read as smaller, but still enough for the third-person follow camera (see CAM_WALL_MARGIN's clamp below); tuned by screenshot like every other constant in this file, not derived
-  var WEST_ZONE_DEPTH = 0.5; // how far the drop-off shelving projects from the west wall (a bookcase's own measured depth, see MODEL_BBOX.bookcase)
-  var ISLAND_CLEARANCE = 2.4; // the sink+iron island's own footprint plus walking room around it
-  // With 5 machines now on each of two walls instead of 10 on one long
-  // wall, the room becomes close to square rather than one long wide
-  // rectangle. Worked out against the real seeded counts (8 washers, 2
-  // dryers): northRowWidth/eastRowDepth both come out to 5*SPACING=8.0,
-  // giving roomHalfWidth ≈ 4.7 (full width ≈ 9.4) against Stage 8.2's own
-  // built full width of 19.4 — almost exactly half, which is what "within
-  // half the current width" asked for, confirmed by this stage's own
-  // screenshot check below rather than assumed from the arithmetic alone.
-  // Depth stays close to Stage 8.2's own (an east wall of 5 machines
-  // needs roughly the same minimum run a 10-wide single wall did), which
-  // is expected and fine — the request was specifically about width.
-
-  var northRowWidth = northMachines.length * SPACING;
-  var eastRowDepth = eastMachines.length * SPACING;
-
-  var roomHalfWidth = Math.max(northRowWidth / 2 + CORNER_MARGIN, WEST_ZONE_DEPTH + ISLAND_CLEARANCE);
-  var roomHalfDepth = (CORNER_MARGIN + eastRowDepth + SOUTH_OPEN_DEPTH) / 2;
-  var northZ = -roomHalfDepth + WALL_MARGIN;
-  var eastX = roomHalfWidth - WALL_MARGIN;
-  var westX = -roomHalfWidth + WALL_MARGIN;
-  var southZ = roomHalfDepth - 1.5; // spawn point, with enough clearance behind it for the follow camera
-
-  // East-wall machines face -X (into the room). The exact rotation sign
-  // was picked by this stage's own screenshot check (this file's
-  // established method for every orientation/size constant below), not
-  // derived from first principles against the north wall's own Math.PI
-  // convention.
-  var EAST_FACING = -Math.PI / 2;
-
-  // frontSign: a real bug this stage's own verification found (not
-  // present before this stage, since nothing visible ever used this
-  // sign before) — the model's own front face (the door, bbox.max.z)
-  // always lands at group-local z = +footprint.d/2 after centering,
-  // regardless of wall. But which *world* direction that local +Z axis
-  // points at depends entirely on the group's own rotation, and north's
-  // Math.PI and east's -Math.PI/2 don't send local +Z toward the room in
-  // the same way: confirmed by placing a huge, unmissable coloured
-  // marker at local z=+0.5 on an instance of each wall and screenshotting
-  // from where the player actually stands — on the north wall, local
-  // +Z pointed at the wall itself (invisible from the room); on the east
-  // wall, local +Z pointed into the room (visible). frontSign flips the
-  // sign so "the room-facing side" always means the same local-z sign
-  // everywhere else in this file, instead of every future placement
-  // (the status light, the examine anchor, anything added later) having
-  // to independently re-derive which sign its own wall needs.
-  var placedMachines = [];
-  northMachines.forEach(function (m, i) {
-    placedMachines.push({
-      m: m,
-      x: -northRowWidth / 2 + SPACING / 2 + i * SPACING,
-      z: northZ,
-      facing: Math.PI, // faces +Z, into the room — unchanged from Stage 8.2
-      wall: "north",
-      frontSign: -1,
-    });
-  });
-  eastMachines.forEach(function (m, i) {
-    placedMachines.push({
-      m: m,
-      x: eastX,
-      z: northZ + CORNER_MARGIN + SPACING / 2 + i * SPACING,
-      facing: EAST_FACING,
-      wall: "east",
-      frontSign: 1,
-    });
-  });
-  // placedMachines is north-wall-then-east-wall, not machines[]'s own id
-  // order — every lookup below keys off p.m.id, never array index, so
-  // this reordering can't misplace a machine's live state or QR link.
-  var orderedMachines = placedMachines.map(function (p) { return p.m; });
 
   // --- renderer / scene / camera ---
   var scene = new THREE.Scene();
@@ -324,8 +251,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var qrAnchors = {}; // machineId -> THREE.Object3D, the point the examine overlay's "you are here" check uses
 
   placedMachines.forEach(function (p) {
-    var m = p.m;
-    var type = m.type === "dryer" ? "dryer" : "washer";
+    var type = p.type === "dryer" ? "dryer" : "washer";
     var bbox = MODEL_BBOX[type];
     var footprint = footprintOf(type);
     // A machine rotated 90° (the east wall) has its local w/d swapped in
@@ -343,9 +269,9 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     var group = new THREE.Group();
     group.position.set(p.x, 0, p.z);
     group.rotation.y = p.facing;
-    group.userData.machineId = m.id;
+    group.userData.machineId = p.id;
     scene.add(group);
-    machineGroups[m.id] = group;
+    machineGroups[p.id] = group;
 
     // The model root is offset by the *negative of its own measured
     // bbox min, scaled* — not a symmetric "-w/2" guess — this is what
@@ -392,28 +318,16 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     //
     // Group-local z: the model's own front face (the door, bbox.max.z)
     // always lands at local z = +footprint.d/2 after the centering
-    // translation above, on *every* wall — but which *world* direction
-    // that local +Z axis actually points at depends on the group's own
-    // rotation (p.facing), and north's Math.PI vs. east's -Math.PI/2
-    // don't send local +Z toward the room the same way. A real bug this
-    // stage's own verification found (not present before this stage,
-    // since nothing visible ever depended on this sign before): a flat
-    // "+footprint.d/2" literal, used both here and by the pre-existing
-    // examine anchor below, put both on the *wall* side of the model on
-    // the north wall specifically, while happening to land correctly on
-    // the east wall — confirmed by placing a large, unmissable coloured
-    // marker at local z=+0.5 on an instance of each wall and
-    // screenshotting from where the player actually stands (visible on
-    // east, invisible on north). This was never visibly broken before
-    // because the only thing using this sign was the invisible QR/
-    // examine anchor, and the proximity check's own generous
-    // INTERACT_RANGE (1.3) happened to reach through the model and the
-    // wall from the room side anyway on the north wall. p.frontSign
-    // (set per-wall above, where p.wall is also decided) encodes which
-    // local-z sign actually faces the room for this specific machine's
-    // own rotation, so every placement below reads it once instead of
-    // each independently re-deriving (or getting wrong) which sign its
-    // own wall needs.
+    // translation above, and (Stage 9.5) p.facing is now derived from
+    // each wall's own interior direction (src/laundry-layout.ts's
+    // facingToward), so local +Z reliably points into the room on every
+    // wall — a plain "+footprint.d/2" is correct everywhere with no
+    // per-wall sign needed. (Stage 9.4.3 had instead patched this with a
+    // per-wall frontSign flip on this offset, which happened to make the
+    // light/anchor land on the room side even though the model's own
+    // rotation (p.facing) was still wrong on the north wall; Stage 9.5
+    // fixed facing itself and removed frontSign as redundant, see
+    // plans/3d-walkthrough.md Stage 9.5.)
     var lightRadius = footprint.w * 0.1;
     var statusLight = new THREE.Mesh(
       new THREE.CylinderGeometry(lightRadius, lightRadius, 0.02, 20),
@@ -432,22 +346,18 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     // it clears the door, and a mirrored x there is cosmetically
     // identical (the corner it lands in just swaps left/right), not a
     // correctness bug the way the front/back z confusion was.
-    statusLight.position.set(footprint.w * 0.32, footprint.h * 0.76, p.frontSign * (footprint.d / 2 + 0.01));
+    statusLight.position.set(footprint.w * 0.32, footprint.h * 0.76, footprint.d / 2 + 0.01);
     group.add(statusLight);
-    statusLights[m.id] = statusLight;
+    statusLights[p.id] = statusLight;
 
     // Examine-target anchor: a plain Object3D at the machine's
     // aisle-facing side, waist height — the point the proximity check
     // (below) measures distance to, and where the examine overlay
-    // conceptually "is." Same frontSign fix as the status light above —
-    // this anchor was silently on the wall side of the model on the
-    // north wall, reachable only because INTERACT_RANGE (1.3) is wide
-    // enough to span through the model and the wall from the room side
-    // anyway.
+    // conceptually "is." Same facing fix as the status light above.
     var anchor = new THREE.Object3D();
-    anchor.position.set(0, footprint.h * 0.5, p.frontSign * (footprint.d / 2 + 0.1));
+    anchor.position.set(0, footprint.h * 0.5, footprint.d / 2 + 0.1);
     group.add(anchor);
-    qrAnchors[m.id] = anchor;
+    qrAnchors[p.id] = anchor;
   });
   window.__laundryMachineGroups = machineGroups; // Playwright-inspectable escape hatch
   window.__laundryStatusLights = statusLights;
@@ -501,10 +411,13 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   var bookcaseSpacing = bookcaseFootprint.w + BOOKCASE_GAP;
   var bookcaseRunWidth = BOOKCASE_COUNT * bookcaseFootprint.w + (BOOKCASE_COUNT - 1) * BOOKCASE_GAP;
   var dropoffCenterZ = (northZ + southZ) / 2;
-  // Facing +X, into the room from the west wall — mirrors the east-wall
-  // machines' -X facing (both face toward the room's open floor). Picked
-  // by this stage's own screenshot check, like every other facing/size
-  // constant in this file, not derived from first principles.
+  // Facing +X, into the room from the west wall — rotateY(local +Z,
+  // Math.PI/2) = (1, 0), matching the west wall's own interior direction
+  // (+X), the same facingToward(dx,dz) convention
+  // src/laundry-layout.ts's layoutRoom() now uses for the north/east
+  // machines (Stage 9.5) — this constant was already correct (confirmed
+  // by screenshot, the drop-off sign and shelf fronts read correctly
+  // facing the room), unlike the north-wall machines' old facing.
   var BOOKCASE_FACING = Math.PI / 2;
 
   var dropoffSpotMeshes = {}; // spot name -> Mesh, recoloured when occupied
@@ -1598,6 +1511,13 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
 `;
 
 export function laundryPage(machines: Machine[]): Html {
+  // Stage 9.5: the room's geometry (wall positions, each machine's
+  // x/z/facing) is computed once here, server-side, by
+  // src/laundry-layout.ts's layoutRoom() — the same function
+  // spec/laundry-layout.test.ts checks directly — and handed to the
+  // client as data, instead of LAUNDRY_SCRIPT recomputing it independently
+  // in the browser from just {id, label, type}.
+  const layout = layoutRoom(machines.map((m) => ({ id: m.id, type: m.type })));
   return page(
     "The laundry room",
     html`<p class="laundry-hint">
@@ -1614,7 +1534,10 @@ export function laundryPage(machines: Machine[]): Html {
       </div>
     </div>
     <script type="application/json" id="laundry-machines">${raw(
-      JSON.stringify(machines.map((m) => ({ id: m.id, label: m.label, type: m.type }))),
+      JSON.stringify({
+        machines: machines.map((m) => ({ id: m.id, label: m.label, type: m.type })),
+        layout,
+      }),
     )}</script>
     <script type="importmap">${raw(IMPORT_MAP)}</script>
     <script type="module">${raw(LAUNDRY_SCRIPT)}</script>`,

@@ -1691,6 +1691,246 @@ against.
   `src/presence.ts`, `src/pickup-spots.ts`, and the presence spec/ADR
   from the concurrent presence work are untouched.
 
+### Stage 9.5 — north-wall machines face the wall, not the room; an automated test for facing, not just a screenshot
+
+User-reported, with a screenshot: most north-wall washers/dryers show
+their door and control panel to the wall, not the room. Confirmed before
+writing a fix, not assumed: a small headless-Playwright probe
+(`window.__laundryMachineGroups`, read-only, no code change) dumped every
+machine's real `group.rotation.y` —
+
+```
+north wall (machines 1-5): rotY = Math.PI (3.14159...)
+east wall  (machines 6-10): rotY = -Math.PI/2
+```
+
+— then a standalone rotation check confirmed what those numbers do to the
+model's own local +Z axis (bbox.max.z, the door/panel face, per
+`MODEL_BBOX`'s own convention):
+
+```
+rotateY(local +Z, theta=Math.PI)     -> world (0, -1)   // north wall
+rotateY(local +Z, theta=-Math.PI/2)  -> world (-1, 0)   // east wall
+```
+
+The room interior from the north wall's own position is world `+Z`
+(south, toward the spawn point); from the east wall it's world `-X`
+(west, into the room). So the east wall's `-Math.PI/2` is correct — its
+local +Z does point at `(-1, 0)`, matching the interior direction — but
+the north wall's `Math.PI` sends local +Z to `(0, -1)`, the *wall's own
+far side*, not `(0, 1)`. The comment on that line (`"faces +Z, into the
+room — unchanged from Stage 8.2"`) was simply wrong and had been wrong
+since Stage 8.2; nothing visible depended on the model's own front-face
+rotation before 9.4.3 added the status light, and the status light/anchor
+bug 9.4.3 found and "fixed" was a *different* bug on the same root cause,
+not this one.
+
+**Why 9.4.3's `frontSign` fix didn't catch this.** `frontSign` only
+flips the *sign used by code placing things relative to the model* (the
+status light's and QR anchor's own offset) — it was never applied to
+`group.rotation.y = p.facing` itself, the actual model rotation. 9.4.3's
+own screenshot check only looked at whether the light was visible from
+the room, which it now is (on the *back* of a backwards-facing machine,
+which still reads as "the side facing the room" once the whole model is
+rotated 180°) — it never checked the door/panel geometry itself, so a
+light correctly showing through to the room side of a machine that is
+itself facing backward passed that check without anyone noticing the
+machine was backward. This is why the status light "looked fine" in the
+9.4.3 screenshots while the machines underneath it were already wrong.
+
+**The actual fix**: stop hand-picking `facing` per wall by trial
+screenshot and derive it from each wall's own interior direction, the
+same `atan2` convention `characterRoot.rotation.y` already uses elsewhere
+in this file for "rotation that makes local +Z point at a given world
+direction":
+
+```js
+function facingToward(dx, dz) { return Math.atan2(dx, dz); }
+// north wall: interior is +Z from the wall -> facingToward(0, 1) = 0
+// east wall:  interior is -X from the wall -> facingToward(-1, 0) = -Math.PI/2
+// west wall (bookcases): interior is +X     -> facingToward(1, 0) = Math.PI/2
+```
+
+North wall's `facing` becomes `0` (not `Math.Pi`); east wall's `facing`
+stays `-Math.PI/2` (already correct, now derived rather than guessed);
+`BOOKCASE_FACING` stays `Math.PI/2` (already correct by the same check:
+`rotateY(local +Z, Math.PI/2) = (1, 0)`, the room's +X from the west
+wall). Once `facing` is correct on every wall, `frontSign` becomes
+redundant — the "room-facing side" is just local `+Z` everywhere, with no
+per-wall sign flip needed — so `frontSign` is deleted from
+`placedMachines`, and the status light's/anchor's offsets drop back to a
+single `+1` (equivalently, no sign at all). This is a net deletion, not
+a parallel system kept alongside the fix: keeping `frontSign` around
+after fixing `facing` would leave two independent "which way is the room"
+encodings that could drift apart again exactly the way they already did
+once.
+
+**Automated test, not just another screenshot.** A screenshot confirms
+today's build; it doesn't stop the next wall, the next furniture item, or
+the next hand-picked rotation constant from repeating the same mistake
+unnoticed, the way 9.4.3's own screenshot check did. The real risk this
+class of bug shares: a `rotation.y` constant picked by eye for one wall,
+with no check tying it back to *that wall's own* interior direction.
+Three constraints on any fix:
+
+- It must check the real code's own numbers, not a hand-copied re-
+  statement of them (`sim/`'s rule against copying queue logic into a
+  test applies here too: a copied rotation formula could pass while the
+  real one is wrong).
+- `LAUNDRY_SCRIPT` runs as a `<script type="module">` string embedded by
+  `laundryPage()`, with no bundler (ADR 0003's no-build-step constraint)
+  — nothing in `spec/` can `import` a function out of it directly today.
+- It must not need a browser. No `spec/*.test.ts` file uses Playwright
+  today, and this repo's Dockerfile/CI image has no Chromium in it — a
+  geometry check doesn't need to render anything to verify a rotation
+  constant maps a local direction to the correct world direction; adding
+  a whole browser dependency to CI for this one check would be a heavy,
+  slow way to test arithmetic.
+
+**Design**: pull the *whole* room-geometry computation out of
+`LAUNDRY_SCRIPT` into a small, plain TypeScript module,
+`src/laundry-layout.ts`, with no `THREE`/DOM import — not just
+`placedMachines`'s x/z/facing. `roomHalfWidth`/`roomHalfDepth`/`northZ`/
+`eastX`/`westX`/`southZ` are derived from the same `SPACING`/
+`CORNER_MARGIN`/etc. constants `placedMachines` already depends on;
+splitting only the machine positions out and leaving the room-shape
+numbers to be recomputed a second time inside `LAUNDRY_SCRIPT` would
+create exactly the duplication this stage exists to remove — two
+independent copies of "where is the north wall" that could silently
+drift apart the same way `facing` and `frontSign` already did once.
+
+```ts
+// src/laundry-layout.ts
+export interface PlacedMachine {
+  id: number;
+  type: string;
+  x: number;
+  z: number;
+  facing: number; // radians; rotateY(local +Z, facing) must point at (interiorX, interiorZ)
+  wall: "north" | "east";
+}
+
+export interface LaundryLayout {
+  roomHalfWidth: number;
+  roomHalfDepth: number;
+  northZ: number;
+  eastX: number;
+  westX: number;
+  southZ: number;
+  placedMachines: PlacedMachine[];
+}
+
+export function layoutRoom(machines: { id: number; type: string }[]): LaundryLayout {
+  // the exact SPACING/eastSlotCount/northMachines/eastMachines/room-size
+  // arithmetic already in LAUNDRY_SCRIPT, moved here verbatim (not
+  // re-derived), plus facing computed via facingToward(interiorX, interiorZ)
+  // instead of a hand-picked constant per wall.
+}
+```
+
+`laundryPage()` (`src/laundry-view.ts`) calls `layoutRoom(machines)` once
+server-side and serializes the result into the existing
+`<script type="application/json" id="laundry-machines">` data island
+(replacing the current bare `{id,label,type}` list with
+`{machines, layout}`, so the client still gets each machine's own
+`label` for the UI text it already reads); `LAUNDRY_SCRIPT`'s client code
+reads `roomHalfWidth`/`northZ`/`placedMachines`/etc. straight from that
+JSON instead of recomputing any of it, removing the duplication risk
+entirely rather than keeping two copies in sync by hand.
+`footprintOf`/`MODEL_BBOX`/`WEST_ZONE_DEPTH`/`ISLAND_CLEARANCE`-derived
+prop placement (sink, table, bookcases, lamps) stay in `LAUNDRY_SCRIPT`,
+reading the now-shared `westX`/`northZ`/`southZ` rather than
+recomputing them — they're genuinely display/model-only (bbox
+measurements, `THREE` geometry), not something a non-browser test needs.
+
+`spec/laundry-layout.test.ts` (pure function test, no server, no
+Playwright, following this file's own existing non-Playwright pattern):
+for every entry `layoutRoom(SEED_MACHINES).placedMachines` returns,
+compute the world direction its own `facing` sends local `+Z` to
+(`{x: Math.sin(facing), z: Math.cos(facing)}`, the same formula
+`facingToward`'s inverse implies), compute that wall's own defined
+interior direction (`north: (0,1)`, `east: (-1,0)`), and assert the dot
+product of the two is `> 0.9` (clearly toward the room, not merely
+non-negative — a wall rotated 90° off would dot to 0, not negative, and
+should still fail). This fails loudly on exactly the bug just found
+(north's old `Math.PI` dots to `-1` against `(0,1)`) and on the general
+class (any future wall whose `facing` doesn't actually point at its own
+declared interior direction), without rendering anything.
+
+**Verify**: `layoutRoom` output's `x`/`z`/`wall`/room-size values for the
+real seeded machine list match today's already-verified-by-screenshot
+positions exactly (a regression check on the extraction itself, not just
+the new facing logic); `spec/laundry-layout.test.ts` fails against the
+pre-fix `Math.PI` north constant (confirmed by temporarily reverting it
+in a throwaway check) and passes after the fix; a fresh Playwright
+screenshot (scratch server, port ≥8094, killed and port-confirmed-free
+after) of the north wall shows every door/panel facing the room, matching
+the east wall's already-correct appearance; `pnpm check` green.
+
+#### 9.5 built and verified
+
+Implemented per the plan above. `src/laundry-layout.ts` (new file, no
+`THREE`/DOM import) holds `layoutRoom()`: the exact room-size/wall-position
+arithmetic previously inline in `LAUNDRY_SCRIPT`, plus `facing` now derived
+per wall from `facingToward(interiorX, interiorZ)` instead of a hand-picked
+constant. `laundryPage()` calls it once and serializes
+`{ machines, layout }` into the existing JSON data island;
+`LAUNDRY_SCRIPT`'s client code reads `roomHalfWidth`/`northZ`/
+`placedMachines`/etc. from that JSON instead of recomputing any of it.
+`frontSign` is gone entirely — the status light's and QR anchor's own
+offsets are a plain `footprint.d / 2 + clearance` everywhere now that
+`facing` itself is correct on every wall.
+
+- **Root cause, confirmed before fixing**: a headless Playwright probe
+  read `window.__laundryMachineGroups`' real `rotation.y` values
+  (north wall: `Math.PI`; east wall: `-Math.PI/2`), and a standalone
+  rotation check confirmed what those do to the model's local +Z (the
+  door/panel face): north's `Math.PI` sends it to world `(0,-1)`, the
+  wall's own far side, not `(0,1)` (the room, toward the south/spawn
+  wall) — the line's own comment ("faces +Z, into the room") had been
+  wrong since Stage 8.2. East's `-Math.PI/2` was already correct
+  (`(-1,0)`, matching its own interior direction). 9.4.3's `frontSign`
+  never touched `group.rotation.y` itself — it only flipped the *status
+  light's and QR anchor's own offset sign* — so a backwards machine's
+  light still ended up showing through to the room side, which is why
+  9.4.3's own screenshot check passed while the door underneath stayed
+  wrong.
+- **Fix verified**: `window.__laundryMachineGroups` reads `rotY: 0` for
+  all 5 north-wall machines after the fix (was `Math.PI`); positions
+  (`x`/`z`) for every machine are bit-for-bit unchanged from before the
+  fix, confirming `layoutRoom()`'s extraction didn't also shift anything
+  it wasn't meant to. A fresh screenshot from the same vantage as the
+  user's original bug report shows all 5 north-wall doors/panels facing
+  the room, matching the east wall's unchanged appearance; a second
+  screenshot of the west wall (drop-off shelving, sink, ironing table)
+  confirms no regression there.
+- **Automated test**: `spec/laundry-layout.test.ts`, a pure-function test
+  (no server, no Playwright) against the real `layoutRoom()`. Confirmed
+  to actually catch the bug class, not just the one instance: temporarily
+  reverting the north wall's `facing` back to a hardcoded `Math.PI` made
+  the facing-direction test fail with `dot = -1.00` against the north
+  wall's own declared interior direction; restoring the fix made it pass
+  again. A second test pins the real seeded split (5 north / 5 east, IDs
+  1-5 north and 6-10 east) as a regression check on the extraction itself,
+  separate from the facing logic.
+- **Whole-stage checks**: `pnpm check` green (39 tests, up from 36 —
+  the 3 new `laundry-layout.test.ts` cases) against a scratch server
+  (port 8095, killed and port-confirmed-free after); `tsc --noEmit`
+  clean; `git status` confirms only `src/laundry-view.ts` changed plus
+  the two new files (`src/laundry-layout.ts`,
+  `spec/laundry-layout.test.ts`) — no other stage's files touched.
+- The yellow ring above a machine (the user's second question, answered
+  from the code, then confirmed by forcing it visible in a screenshot)
+  is `unclaimedMarkers` (Stage 8.4): a small gold torus shown above any
+  machine still holding someone else's unclaimed laundry, visible to
+  every viewer regardless of who could act on it. It intentionally
+  shares `UNCLAIMED_MARKER_COLOR` with the highlight ring's and flash
+  colour's own `0xffd54a` (both signal "something needs attention"), but
+  is a separate mesh with its own distinct shape (a floating ring above
+  the model) and visibility rule (tied to `unclaimedLaundry` server
+  state, not to player proximity) — not the same object as the proximity
+  highlight ring on the floor, and not a bug.
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual
