@@ -199,13 +199,45 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // Object3D.clone() when there's no skeleton to rebind.
   var gltfLoader = new GLTFLoader();
   var modelCache = {};
+
+  // Retries a failed GLTF load a few times before giving up — found
+  // investigating a real user report: the character's walk/idle
+  // animations never played at all on one real page load, self-resolving
+  // on a later reload with no code change. Fly.io's "stop when idle, cold
+  // start on the next request" deploy mode (fly.toml's
+  // auto_stop_machines) means the very first request after a cold start
+  // can hit a flaky network moment neither this file nor the browser's
+  // own HTTP stack retries on its own — gltfLoader.load()'s error
+  // callback here used to just console.error and give up silently (for
+  // character.glb's own animation-data load, there wasn't even an error
+  // callback at all, so a failure was invisible and permanent for that
+  // page load). A few retries with a short backoff covers a transient
+  // blip without masking a genuinely broken/missing file (which will
+  // still fail after every retry and log clearly).
+  var LOAD_RETRY_ATTEMPTS = 3;
+  var LOAD_RETRY_DELAY_MS = 400;
+  function loadGltfWithRetry(url, onSuccess, onFailure) {
+    var attempt = 0;
+    function tryLoad() {
+      attempt++;
+      gltfLoader.load(url, onSuccess, undefined, function (err) {
+        if (attempt < LOAD_RETRY_ATTEMPTS) {
+          console.warn("retrying " + url + " after load failure (attempt " + attempt + "/" + LOAD_RETRY_ATTEMPTS + ")", err);
+          setTimeout(tryLoad, LOAD_RETRY_DELAY_MS);
+        } else {
+          console.error("failed to load " + url + " after " + LOAD_RETRY_ATTEMPTS + " attempts", err);
+          if (onFailure) onFailure(err);
+        }
+      });
+    }
+    tryLoad();
+  }
+
   function loadModel(url, onReady) {
     if (modelCache[url]) { onReady(cloneSkinned(modelCache[url].scene)); return; }
-    gltfLoader.load(url, function (gltf) {
+    loadGltfWithRetry(url, function (gltf) {
       modelCache[url] = gltf;
       onReady(cloneSkinned(gltf.scene));
-    }, undefined, function (err) {
-      console.error("failed to load " + url, err);
     });
   }
 
@@ -797,7 +829,14 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     return clip;
   }
 
-  gltfLoader.load("/models/character.glb", function (gltf) {
+  // Real bug this used to have no protection against at all: unlike
+  // loadModel() above (which at least logged a failure), this call had no
+  // error callback whatsoever — a failed load here silently left
+  // walkClip/idleClip/characterMixer at null forever, for the rest of
+  // that page load, with nothing printed anywhere to explain why the
+  // character's limbs never moved. Now goes through the same
+  // loadGltfWithRetry() path as every other model load.
+  loadGltfWithRetry("/models/character.glb", function (gltf) {
     window.__laundryGltfAnimations = gltf.animations.map(function (a) { return a.name; });
     characterMixer = new THREE.AnimationMixer(characterModel || characterRoot);
     walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");

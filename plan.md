@@ -627,6 +627,36 @@ and the offer moves to the next person instead.
   screenshots that the basket now reads as held in front of the body, not
   embedded in it. `pnpm check` green (15 files, 39 tests); only
   `src/laundry-view.ts` changed; no animation/clip code touched.
+- **Intermittent "limbs never animate" report on the deployed site,
+  self-resolving on reload — root-caused to a real missing-retry gap, not
+  a logic bug.** The user saw their own character's walk animation never
+  play at all on one real page load; a hard refresh fixed it with no code
+  change in between. Two timing-based theories (the two separate
+  `character.glb` requests racing, or network latency reordering their
+  callbacks) were investigated and ruled out with real evidence: a
+  request-interception test showed the browser's own fetch cache collapses
+  both requests into one in-flight load (so there's only ever one network
+  request to begin with), and a throttled-network trace (150ms latency,
+  CDP-level) confirmed the body-model callback always fires before the
+  animation-data callback regardless of latency — the two loads aren't
+  actually racing. The real cause: `gltfLoader.load()` for the
+  animation-only load (the second `character.glb` fetch, for
+  walk/idle clip data) had no error callback at all, and `loadModel()`'s
+  own error callback just logged and gave up — a transient network
+  failure on either load silently left the animation system (or that one
+  model) broken for the rest of that page's life, with nothing ever
+  retrying and nothing printed to explain why. `fly.toml`'s
+  `auto_stop_machines`/`min_machines_running = 0` setup (the machine cold-
+  starts on the first request after being idle) makes exactly this kind of
+  one-off network blip more likely right after a cold start, matching the
+  user's own "self-resolves on reload" report. Fixed with a shared
+  `loadGltfWithRetry()` helper (3 attempts, 400ms backoff) used by both
+  `loadModel()` and the animation-only load. Verified by deliberately
+  aborting the first `character.glb` request in a real browser test and
+  confirming the retry recovers and the walk animation plays normally
+  (a leg bone's own rotation sampled across 6 frames, all distinct).
+  `pnpm check` green (15 files, 39 tests); only `src/laundry-view.ts`
+  changed.
 
 ## Final project deadline — read this before planning further work
 
