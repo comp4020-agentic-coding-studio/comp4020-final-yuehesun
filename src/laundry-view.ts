@@ -607,6 +607,19 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   selfMarker.position.set(0, 0.9, 0);
   characterRoot.add(selfMarker);
 
+  // Real bug introduced by selfMarker above: characterMixer (below) used
+  // to bind to characterRoot.children[0], an assumption that the
+  // character model is always characterRoot's first child. Adding
+  // selfMarker as characterRoot's first child (before the model loads)
+  // silently broke that assumption — children[0] became the marker cone
+  // (no skeleton, no animation) instead of the model, so the
+  // AnimationMixer drove a mesh with nothing to animate, and the real
+  // character never visibly moved its limbs even though its position
+  // was correct. characterModel is set explicitly where the model is
+  // actually added (below), so the mixer always binds to the real thing
+  // regardless of sibling order or how many other objects (markers,
+  // baskets) get added to characterRoot.
+  var characterModel = null;
   var characterMixer = null;
   var walkAction = null, idleAction = null;
   // Hoisted out of the gltfLoader.load callback below (plans/laundry-
@@ -627,46 +640,31 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // tapered basket shape (a real wicker-basket silhouette, wide top/
   // narrow base) in a fixed, desaturated wicker tone — colour no longer
   // has to do the job of saying "this is a basket" at all, so it's free
-  // to be ordinary. BASKET_OWN_COLOR/BASKET_OTHER_COLOR now tint only the
-  // small "clothes poking out the top" detail, which is what still
-  // answers "whose is it" — splitting "what is this object" (shape +
-  // fixed wicker colour) from "whose is it" (the clothes colour) onto two
-  // different parts rather than overloading one colour with both jobs.
+  // to be ordinary. A first pass also tinted a small "clothes poking out
+  // the top" accent by basketKind (own/other); dropped at the user's
+  // request — the basket is now a single plain wicker colour regardless
+  // of kind. basketKind itself (and setBasketKind) stays: Stage 8.4's
+  // handoff flow still needs the own/other distinction as real state (it
+  // drives which notice/spot text is shown), it just no longer has any
+  // visual expression on the basket prop itself.
   var BASKET_WICKER_COLOR = 0xc9a876;
-  var BASKET_OWN_COLOR = 0xb5402a; // --alert, distinct and visible
-  var BASKET_OTHER_COLOR = 0x2b5f8a; // --info, visually distinct from the player's own basket
-  var basketMesh = null; // THREE.Group: a wicker frustum body + a clothes-colour accent mesh
-  var basketClothesMesh = null;
+  var basketMesh = null; // THREE.Mesh: a plain wicker frustum
   var basketVisible = false;
-  var basketKind = "own"; // "own" | "other" — 8.4's two distinct carried-basket states
+  var basketKind = "own"; // "own" | "other" — 8.4's two distinct carried-basket states; tracked but no longer shown visually
 
   function buildBasket() {
     // A simple hand-built prop — plan's own "not worth extensive sourcing
     // effort for one small prop" note still holds; the shape itself
     // (CylinderGeometry with different top/bottom radii, a tapered
-    // frustum) is what now reads as "basket", not colour. Positioned at
+    // frustum) is what reads as "basket", not colour. Positioned at
     // roughly waist/carry height in front of the character.
-    var group = new THREE.Group();
-    var body = new THREE.Mesh(
+    var basket = new THREE.Mesh(
       new THREE.CylinderGeometry(0.13, 0.09, 0.16, 10),
       new THREE.MeshStandardMaterial({ color: BASKET_WICKER_COLOR }),
     );
-    body.castShadow = true;
-    group.add(body);
-
-    // A small accent mesh standing in for "clothes poking out the top" —
-    // this is the only part whose colour changes with basketKind.
-    basketClothesMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 8, 6),
-      new THREE.MeshStandardMaterial({ color: BASKET_OWN_COLOR }),
-    );
-    basketClothesMesh.position.set(0, 0.1, 0);
-    basketClothesMesh.scale.set(1, 0.6, 1);
-    basketClothesMesh.castShadow = true;
-    group.add(basketClothesMesh);
-
-    group.position.set(0, 0.32, 0.18);
-    return group;
+    basket.position.set(0, 0.32, 0.18);
+    basket.castShadow = true;
+    return basket;
   }
 
   function setBasketVisible(visible) {
@@ -675,7 +673,6 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   }
   function setBasketKind(kind) {
     basketKind = kind;
-    if (basketClothesMesh) basketClothesMesh.material.color.setHex(kind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
   }
   window.__laundryBasket = {
     isVisible: function () { return basketVisible; },
@@ -722,6 +719,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       }
     });
     characterRoot.add(model);
+    characterModel = model;
 
     basketMesh = buildBasket();
     // Stage 9.6: apply whatever basketVisible/basketKind already is,
@@ -742,7 +740,6 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     // resolves" happens first, the other one's effect is still applied
     // correctly once this line runs.
     basketMesh.visible = basketVisible;
-    basketClothesMesh.material.color.setHex(basketKind === "other" ? BASKET_OTHER_COLOR : BASKET_OWN_COLOR);
     characterRoot.add(basketMesh);
 
     // Animations: the GLTF ships many (idle/walk/pick-up/etc. — confirmed
@@ -791,7 +788,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
 
   gltfLoader.load("/models/character.glb", function (gltf) {
     window.__laundryGltfAnimations = gltf.animations.map(function (a) { return a.name; });
-    characterMixer = new THREE.AnimationMixer(characterRoot.children[0] || characterRoot);
+    characterMixer = new THREE.AnimationMixer(characterModel || characterRoot);
     walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");
     idleClip = THREE.AnimationClip.findByName(gltf.animations, "idle");
     if (walkClip) { stripRootMotion(walkClip); walkAction = characterMixer.clipAction(walkClip); walkAction.play(); walkAction.setEffectiveWeight(0); }

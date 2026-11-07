@@ -583,6 +583,32 @@ and the offer moves to the next person instead.
   `reportPresence`) via a real two-browser-context test showing the
   marker absent from the other viewer's own screen. `pnpm check` green
   (15 files, 39 tests); only `src/laundry-view.ts` changed.
+- **A real animation-binding bug introduced by the self-marker fix above,
+  found and fixed the same session.** The user reported the local
+  character showed the new neutral colour but its limbs never visibly
+  moved, on the deployed site. Root cause: `characterMixer` bound to
+  `characterRoot.children[0]`, an assumption that the character model is
+  always `characterRoot`'s first child — true until the self-marker fix
+  added `selfMarker` as `characterRoot`'s first child *before* the model
+  loads, silently making `children[0]` the markerless cone instead of the
+  model. The AnimationMixer therefore drove an object with no skeleton,
+  so walk/idle animations played against nothing while
+  `characterRoot.position` (and therefore the character's on-screen
+  location) stayed correct — this is the same bug shape as the Stage 9.3
+  shared-skeleton bug, a different root cause producing the same
+  "position is right, animation looks dead" symptom. Fixed by tracking
+  the actual loaded model in its own `characterModel` variable, set where
+  the model is added, and binding the mixer to that directly regardless
+  of sibling order. Verified by sampling a leg bone's own local rotation
+  across 8 frames while walking — confirmed genuinely changing frame to
+  frame (not frozen at the bind pose), not just inferred from the walk
+  weight ramping. Also addressed, in the same commit: the carried-basket
+  prop's "clothes poking out" colour accent (added in the item above) was
+  dropped at the user's request — the basket is now a single plain wicker
+  colour, no own/other colour distinction on the prop itself (the
+  underlying `basketKind` state Stage 8.4's handoff flow depends on is
+  unchanged; it just no longer has a visual expression). `pnpm check`
+  green (15 files, 39 tests); only `src/laundry-view.ts` changed.
 
 ## Final project deadline — read this before planning further work
 
