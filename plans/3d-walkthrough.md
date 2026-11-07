@@ -1421,6 +1421,208 @@ own scope (Stage 9.2 is layout-constants-only, per that section's own
 is real work for a dedicated stage of its own, not a drive-by fix bundled
 into the layout commit.
 
+### Stage 9.4 — look interaction, machine detail diagnosis, a real indicator light, and an intentionally oversized interactable
+
+Written after the user tried the Stage 9.2 build and raised four
+questions about feel/visual polish. Each is investigated before any code
+changes below, per this plan's own evidence-over-guessing discipline.
+
+**9.4.1 — look control: drag-to-look, not move-to-look.** Confirmed by
+reading the code: the current scheme is real pointer lock (`requestLock()`
+calling `renderer.domElement.requestPointerLock()`, a `pointerlockchange`
+listener, raw `mousemove` driving yaw/pitch whenever the lock is active) —
+a first-person-shooter convention, not the "hold the mouse button down to
+orbit, release to stop, cursor always visible" convention a 3D modelling
+tool like SketchUp uses. The touch path (`lookZone`'s `touchstart`/
+`touchmove`/`touchend`) is already drag-based, so desktop is the one
+being brought in line with what touch already does, not a brand-new
+interaction being invented.
+
+**Change**: remove pointer lock entirely — `requestLock()`,
+`requestPointerLock()`, the `pointerlockchange` listener, the
+`laundry-lock-hint` element's visibility logic (the hint text and
+element can go too, since "press ESC to exit look mode" stops being true)
+— and replace the `document`-level raw `mousemove` listener with a
+`mousedown`/`mousemove`/`mouseup` pair scoped to `renderer.domElement`:
+`mousedown` records the starting cursor position and sets a `dragging`
+flag; `mousemove` only updates yaw/pitch while `dragging` is true, using
+the delta since the last move (not `movementX`/`movementY`, which are a
+pointer-lock-specific API — a plain mouse's `clientX`/`clientY` delta
+works without lock); `mouseup` (and `mouseleave`, so dragging doesn't get
+stuck on if the cursor leaves the canvas mid-drag) clears the flag.
+
+**The one real interaction conflict this change creates, thought through
+before coding**: `renderer.domElement`'s existing `click` listener is
+what fires `handleInteract()` (open a machine's QR, trigger a handoff,
+etc.) — `click` fires after `mouseup` whenever `mousedown` and `mouseup`
+land on the same element, which includes the end of an intentional
+look-drag. Without a fix, every look-drag would also fire an unwanted
+interact action the instant the mouse is released. **Fix**: track the
+total cursor movement between the drag's `mousedown` and `mouseup`
+(Euclidean pixel distance); in the `click` handler, skip
+`handleInteract()` if that distance exceeded a small threshold (a
+handful of pixels — enough to absorb natural hand jitter on a deliberate
+click, not so much that a real look-drag could pass as a click). This is
+the same "was this a click or a drag" distinction every drag-to-pan map
+UI already has to solve, not a novel problem — no library needed for a
+handful of lines.
+**Also remove**: the `renderer.domElement.addEventListener("click",
+requestLock)` fallback line (there's nothing left to lock), and
+`hideExamineOverlay()`'s own `requestLock()` call (closing the examine
+overlay no longer needs to re-acquire anything).
+**Unaffected**: `yaw`/`pitch` state, `updateCamera()`, `clampToRoom`,
+touch controls, and every other piece of camera math — only *how yaw/
+pitch get updated from desktop mouse input* changes, not what they mean
+or what consumes them.
+
+**9.4.2 — why the washers look like they have different detail levels.**
+Investigated directly, not guessed: extracted `washer.glb` into an
+isolated preview scene (the same throwaway-preview method Stage 8.1 used
+for every model before trusting it) and confirmed **every washer is the
+exact same model** — one GLTF file, loaded once through the existing
+`modelCache`, `clone()`d for every placement, 6 real meshes / 6 real
+materials including a `glass` material for the door. A clean, well-lit,
+head-on screenshot of this single file shows a full circular door, a
+handle notch, and a two-slot control panel — identical detail on every
+instance, confirmed by also inspecting the north-wall and east-wall
+instances directly in the running room. **There is no model-detail bug.**
+The visual impression of "some look plainer" is a rendering/perception
+effect of the room's own tuned-down lighting (deliberately subtle
+ambient+hemisphere, per this stage's own "three additive light sources
+compound fast" lesson above) combined with viewing distance/angle and
+`scene.fog` — a curved door reads as a flat rectangle once its shading
+gradient gets compressed by distance, fog, and flat ambient light. Also
+relevant to 9.4.3 below: the status-light post currently sits right in
+front of this same door, which can visually compete with it.
+**No model/asset change needed for this item** — see 9.4.3 for the
+actual fix being made (a stronger light source directly on/near the
+door reads as "more detail," without touching the model file at all),
+and 9.4.4 for the complementary fix (making the machine itself bigger,
+which is a far more direct answer to "I can't make out the detail" than
+re-lighting alone).
+
+**9.4.3 — the status light and the unclaimed-laundry ring: what they are,
+and a more elegant design.** For the record (the user asked what these
+even are): the free-standing post + coloured sphere is `statusLights`
+(every machine's live free/claimed/running/your-turn/waiting state,
+matching the 2D board's own colour key exactly — this is load-bearing
+information, not decoration); the floating gold ring above a machine is
+`unclaimedMarkers` (Stage 8.4's "this machine still has someone's
+finished laundry sitting in it" flag, visible to everyone so a passerby
+can see a handoff opportunity). Both are confirmed real, both are
+currently the simplest possible placeholder shape (a sphere on a stalk;
+a floating torus) — exactly the kind of "wire it up first, make it look
+good later" debt this plan has accumulated elsewhere too.
+
+**Confirmed correct per the user's own read of the model**: `washer.glb`'s
+front face is not entirely door — the measured bbox is a rectangle, but
+the door itself only occupies the lower-center two-thirds or so, leaving
+a real flat strip across the top (the control-panel area, already
+slotted in the model) and flat corners to either side of the door at
+any height. A corner of the front face, away from the door's own raised
+panel, is a real, flat, unobstructed mounting surface — the exact
+"the previous attempt got wedged against the door's proud panel" failure
+mode from Stage 8.2's own post-mortem (quoted in this file above) doesn't
+apply to a *side* corner, only to a *center* mount close to the door.
+
+**Change**: replace the stalk-mounted sphere with a small flush-mounted
+disc (a slightly flattened cylinder or a `PlaneGeometry` with a circular
+alpha-masked material — a flat disc reads as "an indicator light on a
+panel" more than a sphere does, which reads as "a ball on a stick") at
+the **top corner of the front face farthest from the door's own
+geometry** — concretely, at local `(footprint.w * 0.85, footprint.h *
+0.9, footprint.frontZ + small clearance)`, i.e. high and to one side,
+inside the flat control-panel strip rather than anywhere near the door's
+own raised panel. `postHeight`/`post`/`postZ` and the free-standing
+cylinder mesh are removed entirely — the disc mounts with a tiny
+clearance offset from `footprint.frontZ` directly (a few millimetres,
+not the 0.25-unit stand-off the old stalk needed, since this position
+was chosen specifically to avoid the door geometry the old center mount
+kept colliding with). **This must be verified by screenshot before
+trusting the numbers above** — this plan's own repeated lesson (the
+original post-mounted light exists *because* an earlier flush attempt at
+a different position failed silently) means "looks right on paper" does
+not get skipped past a real render check this time either.
+**Unclaimed-laundry ring**: kept as a ring (a correct, established
+convention — "a status ring above an object" is a readable game-UI
+pattern), but re-sized/re-positioned relative to `footprint.h` directly
+once the new indicator-light position is settled, so the two don't
+visually collide once the light moves from "off to the side on a stalk"
+to "flush on the front face." Not merged into a door-material glow (the
+alternative discussed and rejected): the user's own objection — a real
+appliance's door does not change colour to signal status, so recolouring
+it would read as *less* realistic, not more, even though it would have
+been the smaller code change.
+
+**9.4.4 — deliberately oversized machines, Kenney-asset-package style.**
+The user's own framing — many open-world/sim games deliberately render
+a key interactable larger than strict human-scale proportion would
+suggest, specifically so a player can read its state/detail at a
+glance, trading literal realism for legibility. Checked for feasibility
+before committing to it, not assumed safe:
+
+- **Floor-space impact: negligible.** `SPACING` (1.6 units between
+  machine centers) was sized for the *old* ~0.39-wide model; even at a
+  generous 1.8x scale (a washer becoming ~0.70 wide, ~0.85 tall), two
+  adjacent machines' footprints (each ~0.70 wide, centered 1.6 apart)
+  leave roughly 0.9 units of clear gap between their outer edges — ample
+  room for both the character's own collision radius (`PLAYER_RADIUS =
+  0.3`, i.e. a 0.6-wide character) and comfortable walking clearance.
+  **No `SPACING`/room-size change needed** — Stage 9.2's own halved room
+  footprint survives this change untouched.
+- **Ceiling clearance: checked, fine.** A scaled height of ~0.85 against
+  `wallHeight = 2.6` and the lamp fixtures' own mount height
+  (`wallHeight - 0.3 = 2.3`) leaves well over a metre of clearance above
+  the tallest scaled machine — no risk of a machine visually poking into
+  a lamp or the ceiling plane.
+- **Character stays at its current scale** — confirmed with the user:
+  this is specifically the "make the interactable bigger relative to the
+  avatar" game convention, not a uniform scene re-scale. Only the washer/
+  dryer models (and everything that attaches to them: collision boxes,
+  the indicator light from 9.4.3, the unclaimed-laundry ring, the
+  examine/QR proximity anchor) scale up; the character, the room shell,
+  the bookcases, the island, and the camera rig's own distances are
+  unaffected.
+
+**Implementation — one scale constant, applied consistently, not a
+second set of guessed numbers**: introduce `var MACHINE_SCALE = 1.8;`
+(exact value to be tuned by screenshot, this plan's established method —
+1.8 is a starting point, not a final answer) and apply it in exactly two
+places: (1) `modelRoot.scale.setScalar(MACHINE_SCALE)` on the loaded
+GLTF root, inside the existing `loadModel(url, ...)` callback; (2)
+`footprintOf(type)` multiplies the real measured `w`/`d`/`h`/`frontZ` by
+`MACHINE_SCALE` before returning them. Because every other computed
+value in this file (`addCollisionBox`'s args, the model's own centering
+offset, the indicator-light position from 9.4.3, the QR anchor, the
+unclaimed-ring height) already reads its numbers from `footprintOf()`'s
+return value rather than from `MODEL_BBOX` directly, scaling inside
+`footprintOf()` alone is sufficient to keep every one of those
+*consistent with the visually scaled model* automatically — no second
+place has to remember to apply the same factor. **This also fixes a
+real pre-existing inconsistency this session's own investigation found**:
+the unclaimed-laundry marker's vertical offset is currently a hardcoded
+literal (`0.47 + 0.25`, with a comment calling `0.47` "the real washer/
+dryer model's own measured height") instead of reading `footprint.h` —
+harmless today only because `0.47` happens to equal the real unscaled
+height, but it would silently stop matching the model's real (now
+scaled) top the moment `MACHINE_SCALE` changes anything, without any
+error or visual cue pointing at why. This gets fixed to read
+`footprintOf(type).h` the same way every other placement in this file
+already does, as part of this same stage — not deferred, since shipping
+`MACHINE_SCALE` without this fix would reintroduce exactly the class of
+silent-drift bug `footprintOf()` itself exists to prevent.
+
+**Verification for this whole stage**: Playwright screenshots (the
+established method throughout this plan) confirming — drag-to-look
+works and releasing the drag doesn't fire a stray interact; a plain
+click-without-drag still opens a machine's examine overlay; the new
+indicator-light position sits flush on the panel, clearly visible,
+clearly not overlapping the door, on both a north-wall and an east-wall
+(rotated) machine; the unclaimed-ring still reads correctly relative to
+the taller scaled machine; a real walk between two adjacent scaled
+machines confirms no new collision/clipping; `pnpm check` green
+throughout, `src/queue.ts` untouched.
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual

@@ -360,6 +360,52 @@ and the offer moves to the next person instead.
   against the Stage 9.2 plan's own verification checklist end-to-end in
   one pass (individual requirements were spot-checked during build, but
   not yet gathered as one dedicated final review), and deploying.
+- **Stage 9.4 (drag-to-look, machine-detail investigation, a flush
+  indicator light, oversized interactables) planned and being
+  implemented in the background** — see `plans/3d-walkthrough.md` Stage
+  9.4 for the full design (written before any code, per `CLAUDE.md`'s
+  planning-first rule). Prompted by the user trying the Stage 9.2 build
+  and raising four separate questions; each was investigated directly
+  (not guessed) before the plan was written — confirmed every washer
+  model is identical (a lighting/distance perception effect, not a real
+  model-detail bug), confirmed the status light's free-standing-stalk
+  design and the unclaimed-laundry ring are both real, load-bearing UI
+  (not placeholder cruft), and confirmed a 1.8x machine scale is
+  floor-space- and ceiling-safe without touching Stage 9.2's own halved
+  room dimensions.
+- **A new, separate plan file, `plans/laundry-presence.md`, written (no
+  code yet) for a genuinely new subsystem**: letting residents see each
+  other's characters moving in the shared 3D room, prompted by the user
+  noticing the room number a visitor signs in with was never actually
+  bound to the character they control (`laundryPage()` never receives an
+  `identity`, unlike every 2D-board render function), making the 3D room
+  visually single-player despite sitting on a fully real multi-user
+  queue underneath. Given its own file (not folded into
+  `plans/3d-walkthrough.md`, which was already 1600+ lines) because it's
+  architecturally a new kind of thing — a new always-on transport
+  (`src/presence.ts`, a second SSE stream separate from
+  `src/realtime.ts`'s existing change-signal tick, since presence is
+  continuous high-frequency state, not a discrete change signal), new
+  in-memory (never persisted, never in `src/schema.ts`) server state, and
+  client-side handling of multiple remote character instances — not a
+  small addition to the existing single-character room code. Full design
+  written: wire format, the exact `src/presence.ts`/`src/app.ts`
+  additions, client-side reporting/receiving/interpolation (including a
+  yaw-wraparound bug class identified and designed around before any code
+  exists), a full ADR draft (`docs/adr/0014-laundry-presence.md`,
+  recording that this only works because of `fly.toml`'s single-machine,
+  `--ha=false` deployment), and a fix for the character's own
+  look-direction-independent facing (a real, separate local bug that
+  becomes visible to *other* residents the moment presence ships, so it's
+  folded into this same plan's Stage 2 rather than left for later). Two
+  claims an earlier draft of this plan made were checked against the real
+  codebase and found wrong before committing to them — no existing
+  `spec/*.test.ts` file reads an SSE stream, and no existing spec uses
+  Playwright/browser contexts for multi-actor scenarios (they all use a
+  second cookie string) — both corrected in the plan itself, each flagged
+  explicitly as a correction rather than silently fixed, so a future
+  reader doesn't wonder why the plan second-guesses itself. **Not yet
+  implemented** — explicitly deferred to a future session.
 
 ## Final project deadline — read this before planning further work
 
