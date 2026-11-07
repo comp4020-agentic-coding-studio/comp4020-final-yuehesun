@@ -1623,6 +1623,74 @@ the taller scaled machine; a real walk between two adjacent scaled
 machines confirms no new collision/clipping; `pnpm check` green
 throughout, `src/queue.ts` untouched.
 
+#### 9.4 built and verified
+
+Implemented per the plan above, with one real geometric bug found during
+9.4.3's own screenshot verification — not present in the pre-stage code
+as a visible defect, only exposed by adding something visible to check
+against.
+
+- **9.4.1 (drag-to-look)**: pointer lock, `requestLock()`, the
+  `pointerlockchange` listener, and the `laundry-lock-hint` element/CSS
+  are all gone. `mousedown`/`mousemove`/`mouseup`/`mouseleave` on
+  `renderer.domElement` now drive yaw/pitch directly from `clientX`/
+  `clientY` deltas while a `dragging` flag is set. Verified with real
+  (non-debug-hook) Playwright mouse events: a `mousedown` + ten
+  `mousemove` steps + `mouseup` changes the character's yaw and leaves
+  the examine overlay closed; a plain `mousedown`+`mouseup` at the same
+  point (no movement) opens the overlay when standing next to a machine;
+  the same drag sequence performed *while already standing next to a
+  machine* (the actual scenario `CLICK_DRAG_THRESHOLD` exists for) does
+  not also open the overlay.
+- **9.4.2**: confirmed diagnosis-only, as planned — no code change. Every
+  washer instance is the same `washer.glb`, clone()'d through the shared
+  model cache; the perceived detail difference is lighting/distance/fog,
+  not a loading or asset bug.
+- **9.4.3 (flush-mounted status light)**: the free-standing stalk+sphere
+  is replaced with a `CylinderGeometry` disc mounted directly on
+  `footprintOf()`'s own `frontZ`, offset to the top corner of the face
+  away from the door. **A real bug found by this exact verification,
+  not present before this stage's own visible light made it checkable**:
+  the light (and the pre-existing QR/examine proximity anchor, which
+  shares the same front-face-offset logic) used one hardcoded sign for
+  "toward the room," which only happens to be correct on one wall — which
+  wall is correct depends on each wall's own rotation (`p.facing`),
+  since a model's local +Z axis points at a different world direction on
+  the north wall than on the east wall. The north-wall lights were
+  real-world positioned on the *wall* side of the model, nearly invisible
+  from the room; the east wall (where the single hardcoded sign was
+  already correct) looked fine, which is what let the bug through
+  unnoticed until the north wall's lights were screenshotted. The
+  examine anchor had the identical bug since an earlier stage, silently
+  masked because `INTERACT_RANGE` (1.3) is wide enough to reach through
+  the model and the wall from the room side regardless of which side the
+  anchor actually sits on — it never rendered anything, so nothing ever
+  made the misplacement visible before now. **Fix**: each `placedMachines`
+  entry now carries a `frontSign` (`-1` north, `+1` east), and both the
+  light's and the anchor's offset use `p.frontSign * (footprint.d / 2 +
+  clearance)` instead of one fixed sign. Confirmed by screenshot on both
+  walls after the fix: all 5 north-wall lights clearly visible, matching
+  the east wall's already-correct appearance, with no regression there.
+- **9.4.4 (`MACHINE_SCALE = 1.8`)**: applied inside `footprintOf()` only
+  for `"washer"`/`"dryer"`, so every derived value (collision boxes, the
+  model's own centering offset, the status light, the QR anchor, the
+  unclaimed-ring height) reads the scaled numbers from one place. Also
+  fixed the unclaimed-laundry ring's pre-existing hardcoded `0.47 + 0.25`
+  height literal to read `footprintOf(type).h + 0.25` instead, so it
+  stays correct now that the real top of the model has moved. Verified:
+  a real (non-teleported) walk through the gap between two adjacent
+  north-wall machines, driven by the real `pressKey`/`releaseKey` +
+  per-frame movement/collision code, reaches the far side with no
+  stopping and the character's x position held exactly at the gap's
+  midpoint throughout; a forced-visible unclaimed-ring screenshot against
+  a scaled machine shows the ring sitting cleanly above the model with no
+  clipping or overlap with the status light.
+- **Whole-stage checks**: `pnpm check` (typecheck + all 36 spec tests)
+  green against a scratch server; `git diff --stat` confirms only
+  `src/laundry-view.ts` and `src/views.ts` changed — `src/queue.ts`,
+  `src/presence.ts`, `src/pickup-spots.ts`, and the presence spec/ADR
+  from the concurrent presence work are untouched.
+
 ## What I check after this stage
 
 - A real two-device rehearsal (one screen running `/laundry`, one actual

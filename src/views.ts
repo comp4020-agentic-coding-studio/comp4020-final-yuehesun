@@ -292,11 +292,6 @@ const STYLES = `
      it reads as its own standing action, not an inline word in the
      "signed in as" sentence above it. */
   .laundry-entry-cta { display: block; width: fit-content; margin: var(--space-3) 0 var(--space-5); }
-  /* Stage 7: the pointer-lock exit hint, shown only while actually locked
-     (toggled by JS) — persistent but unobtrusive, in a corner rather than
-     centered, so it informs without competing with the crosshair. */
-  .laundry-lock-hint { position: absolute; top: var(--space-3); right: var(--space-3); background: rgba(0,0,0,0.55); color: #fff; font-size: var(--text-xs); padding: 0.3rem 0.6rem; border-radius: 0.4rem; pointer-events: none; display: none; }
-  .laundry-lock-hint.is-visible { display: block; }
   /* Stage 7: the examine overlay — a 2D HTML layer, deliberately not a
      3D in-scene zoom, so the QR <img> renders at native pixel resolution
      with no WebGL texture-filtering softness to fight (the real

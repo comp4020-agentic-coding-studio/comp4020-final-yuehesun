@@ -361,18 +361,33 @@ and the offer moves to the next person instead.
   one pass (individual requirements were spot-checked during build, but
   not yet gathered as one dedicated final review), and deploying.
 - **Stage 9.4 (drag-to-look, machine-detail investigation, a flush
-  indicator light, oversized interactables) planned and being
-  implemented in the background** — see `plans/3d-walkthrough.md` Stage
-  9.4 for the full design (written before any code, per `CLAUDE.md`'s
-  planning-first rule). Prompted by the user trying the Stage 9.2 build
-  and raising four separate questions; each was investigated directly
-  (not guessed) before the plan was written — confirmed every washer
-  model is identical (a lighting/distance perception effect, not a real
-  model-detail bug), confirmed the status light's free-standing-stalk
-  design and the unclaimed-laundry ring are both real, load-bearing UI
-  (not placeholder cruft), and confirmed a 1.8x machine scale is
-  floor-space- and ceiling-safe without touching Stage 9.2's own halved
-  room dimensions.
+  indicator light, oversized interactables) implemented and verified.**
+  See `plans/3d-walkthrough.md` Stage 9.4/"9.4 built and verified" for
+  the full design and build record. Prompted by the user trying the
+  Stage 9.2 build and raising four separate questions; each was
+  investigated directly (not guessed) before the plan was written —
+  confirmed every washer model is identical (a lighting/distance
+  perception effect, not a real model-detail bug), confirmed the status
+  light's free-standing-stalk design and the unclaimed-laundry ring are
+  both real, load-bearing UI (not placeholder cruft), and confirmed a
+  1.8x machine scale is floor-space- and ceiling-safe without touching
+  Stage 9.2's own halved room dimensions. Pointer lock replaced with
+  drag-to-look (verified with real mouse events: drag rotates the camera
+  without firing a stray interact, a plain click still opens the examine
+  overlay). A real geometric bug found during the new indicator light's
+  own screenshot verification — not visible before, since nothing
+  previously rendered at that position — meant the status light, and the
+  pre-existing QR/examine proximity anchor, used one hardcoded "toward
+  the room" sign that only happens to be correct on one wall; fixed with
+  a per-wall `frontSign` factor, confirmed by screenshot on both walls.
+  `MACHINE_SCALE = 1.8` applied inside `footprintOf()` only for washers/
+  dryers, so collision boxes, the light, the anchor, and the unclaimed
+  ring all stay in sync automatically; also fixed a pre-existing
+  hardcoded-literal bug in the unclaimed-ring's height offset. Verified:
+  a real walk through the gap between two adjacent scaled machines
+  reaches the far side with no clipping; `pnpm check` green (14 files, 36
+  tests); `src/queue.ts` and the concurrent presence-work files
+  untouched, confirmed by diff.
 - **A new, separate plan file, `plans/laundry-presence.md`, written (no
   code yet) for a genuinely new subsystem**: letting residents see each
   other's characters moving in the shared 3D room, prompted by the user

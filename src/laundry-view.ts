@@ -117,6 +117,22 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   // convention.
   var EAST_FACING = -Math.PI / 2;
 
+  // frontSign: a real bug this stage's own verification found (not
+  // present before this stage, since nothing visible ever used this
+  // sign before) — the model's own front face (the door, bbox.max.z)
+  // always lands at group-local z = +footprint.d/2 after centering,
+  // regardless of wall. But which *world* direction that local +Z axis
+  // points at depends entirely on the group's own rotation, and north's
+  // Math.PI and east's -Math.PI/2 don't send local +Z toward the room in
+  // the same way: confirmed by placing a huge, unmissable coloured
+  // marker at local z=+0.5 on an instance of each wall and screenshotting
+  // from where the player actually stands — on the north wall, local
+  // +Z pointed at the wall itself (invisible from the room); on the east
+  // wall, local +Z pointed into the room (visible). frontSign flips the
+  // sign so "the room-facing side" always means the same local-z sign
+  // everywhere else in this file, instead of every future placement
+  // (the status light, the examine anchor, anything added later) having
+  // to independently re-derive which sign its own wall needs.
   var placedMachines = [];
   northMachines.forEach(function (m, i) {
     placedMachines.push({
@@ -125,6 +141,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       z: northZ,
       facing: Math.PI, // faces +Z, into the room — unchanged from Stage 8.2
       wall: "north",
+      frontSign: -1,
     });
   });
   eastMachines.forEach(function (m, i) {
@@ -134,6 +151,7 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
       z: northZ + CORNER_MARGIN + SPACING / 2 + i * SPACING,
       facing: EAST_FACING,
       wall: "east",
+      frontSign: 1,
     });
   });
   // placedMachines is north-wall-then-east-wall, not machines[]'s own id
@@ -256,9 +274,28 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     dryer: { min: [0, 0, -0.35], max: [0.39, 0.47, 0.03] },
     bookcase: { min: [0, 0, -0.25], max: [0.4, 0.88, 0] }, // bookcaseOpen.glb, measured the same way (Stage 9.2)
   };
+  // Stage 9.4.4: washers/dryers are rendered deliberately larger than
+  // their real measured size — the "oversized interactable" convention
+  // many open-world/sim games use so a key object's state/detail reads
+  // at a glance, trading literal human-scale realism for legibility. Not
+  // a uniform scene scale: the character, room shell, bookcases and
+  // island are all unaffected (MACHINE_SCALE is applied only for the
+  // "washer"/"dryer" types below, never "bookcase"). Checked against
+  // SPACING (1.6) and wallHeight (2.6) before picking 1.8 — see
+  // plans/3d-walkthrough.md Stage 9.4.4 for the floor-space/ceiling-
+  // clearance arithmetic that confirmed this doesn't need a room-size or
+  // spacing change.
+  var MACHINE_SCALE = 1.8;
   function footprintOf(type) {
     var b = MODEL_BBOX[type] || MODEL_BBOX.washer;
-    return { w: b.max[0] - b.min[0], d: b.max[2] - b.min[2], frontZ: b.max[2], h: b.max[1] };
+    var scale = (type === "washer" || type === "dryer") ? MACHINE_SCALE : 1;
+    return {
+      w: (b.max[0] - b.min[0]) * scale,
+      d: (b.max[2] - b.min[2]) * scale,
+      frontZ: b.max[2] * scale,
+      h: b.max[1] * scale,
+      scale: scale, // the one place model-placement code below reads this, so modelRoot.scale and every derived position stay consistent with a single source of truth
+    };
   }
 
   // --- machines: real washer.glb/dryer.glb models, tagged with their
@@ -311,67 +348,104 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     machineGroups[m.id] = group;
 
     // The model root is offset by the *negative of its own measured
-    // bbox min*, not a symmetric "-w/2" guess — this is what makes
-    // "position" on the group mean "the model's true horizontal center,
-    // floor-level" exactly, regardless of where the model's own corner
-    // origin happens to sit relative to its geometry. Confirmed necessary
-    // by this stage's own bbox measurement: the model is NOT symmetric
-    // around its origin (min.x is 0, not -w/2), so halving width/depth
-    // and negating was silently wrong even though it looked like a
-    // reasonable centering formula.
+    // bbox min, scaled* — not a symmetric "-w/2" guess — this is what
+    // makes "position" on the group mean "the model's true horizontal
+    // center, floor-level" exactly, regardless of where the model's own
+    // corner origin happens to sit relative to its geometry. Confirmed
+    // necessary by this stage's own bbox measurement: the model is NOT
+    // symmetric around its origin (min.x is 0, not -w/2), so halving
+    // width/depth and negating was silently wrong even though it looked
+    // like a reasonable centering formula. Stage 9.4.4: bbox.min itself
+    // is still the raw unscaled measurement (MODEL_BBOX never changes),
+    // so it's multiplied by footprint.scale here to land in the same
+    // scaled units footprint.w/d already are — modelRoot.scale is set to
+    // the same factor below, so the model's own geometry and this
+    // centering offset agree on what "scaled" means.
     var url = "/models/" + type + ".glb";
     loadModel(url, function (modelRoot) {
-      modelRoot.position.set(-bbox.min[0] - footprint.w / 2, 0, -bbox.min[2] - footprint.d / 2);
+      modelRoot.scale.setScalar(footprint.scale);
+      modelRoot.position.set(
+        -bbox.min[0] * footprint.scale - footprint.w / 2,
+        0,
+        -bbox.min[2] * footprint.scale - footprint.d / 2,
+      );
       modelRoot.traverse(function (node) {
         if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; }
       });
       group.add(modelRoot);
     });
 
-    // Status light placement. Several earlier attempts in this stage
-    // mounted this flush (or nearly flush) against the model's own
-    // measured front face — each one was invisible in a real screenshot
-    // despite checking out numerically (correct world position, correct
-    // colour, correct visibility flag, outside the model's axis-aligned
-    // bounding box). The actual cause, found only by snapping the camera
-    // to point-blank range at the light's own world position (a solid,
-    // featureless colour filled the whole frame): the real model's door
-    // is a separate raised panel that sits proud of the body's flat face
-    // by a few millimetres — a bounding-box check can't see that detail,
-    // so a disc placed "just outside the box" can still end up wedged
-    // between the body and the door geometry rather than clear of both.
-    // Rather than continuing to chase the model's exact surface
-    // topology, the light now stands clear of the whole machine on a
-    // simple vertical post — unambiguous clearance a bounding-box number
-    // can actually guarantee, at the cost of looking a little more like a
-    // signal light on a short stalk than a built-in indicator lamp (a
-    // reasonable trade for actually being visible, confirmed by the
-    // screenshot this fix is verified against below).
-    var postHeight = footprint.h * 0.4;
-    var postZ = footprint.d / 2 + 0.25; // well clear of the door's own raised panel, not flush against it
-    var post = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.012, postHeight, 8),
-      new THREE.MeshStandardMaterial({ color: 0x6b6358 }),
-    );
-    post.position.set(footprint.w * 0.5, postHeight / 2, postZ);
-    group.add(post);
-
+    // Status light placement — Stage 9.4.3 replaces the free-standing
+    // stalk+sphere (Stage 8.2's workaround, kept below in history) with a
+    // small disc flush-mounted on the model's own front face, in the top
+    // corner away from the door. The earlier stalk existed specifically
+    // because a *center* mount close to the door kept getting wedged
+    // against the door's own raised panel (a bounding-box check can't see
+    // that it sits proud of the body by a few millimetres) — but the
+    // model's front face is not entirely door: the circular door only
+    // occupies roughly the lower-center two-thirds, leaving a real flat
+    // strip across the top (the control-panel area) and flat corners
+    // beside the door at any height. A corner mount, high on that flat
+    // strip, doesn't go near the door geometry the center mount collided
+    // with, so it can sit genuinely flush rather than needing the old
+    // stand-off distance.
+    //
+    // Group-local z: the model's own front face (the door, bbox.max.z)
+    // always lands at local z = +footprint.d/2 after the centering
+    // translation above, on *every* wall — but which *world* direction
+    // that local +Z axis actually points at depends on the group's own
+    // rotation (p.facing), and north's Math.PI vs. east's -Math.PI/2
+    // don't send local +Z toward the room the same way. A real bug this
+    // stage's own verification found (not present before this stage,
+    // since nothing visible ever depended on this sign before): a flat
+    // "+footprint.d/2" literal, used both here and by the pre-existing
+    // examine anchor below, put both on the *wall* side of the model on
+    // the north wall specifically, while happening to land correctly on
+    // the east wall — confirmed by placing a large, unmissable coloured
+    // marker at local z=+0.5 on an instance of each wall and
+    // screenshotting from where the player actually stands (visible on
+    // east, invisible on north). This was never visibly broken before
+    // because the only thing using this sign was the invisible QR/
+    // examine anchor, and the proximity check's own generous
+    // INTERACT_RANGE (1.3) happened to reach through the model and the
+    // wall from the room side anyway on the north wall. p.frontSign
+    // (set per-wall above, where p.wall is also decided) encodes which
+    // local-z sign actually faces the room for this specific machine's
+    // own rotation, so every placement below reads it once instead of
+    // each independently re-deriving (or getting wrong) which sign its
+    // own wall needs.
+    var lightRadius = footprint.w * 0.1;
     var statusLight = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07, 16, 16),
+      new THREE.CylinderGeometry(lightRadius, lightRadius, 0.02, 20),
       new THREE.MeshStandardMaterial({ color: 0x9aa7b0, emissive: 0x9aa7b0, emissiveIntensity: 1.2 }),
     );
-    statusLight.position.set(footprint.w * 0.5, postHeight + 0.07, postZ);
+    statusLight.rotation.x = Math.PI / 2; // cylinder's flat circular face points along the model's own front, not +Y
+    // (footprint.w * 0.32, footprint.h * 0.76) confirmed against an
+    // isolated preview of washer.glb with height-fraction reference
+    // lines overlaid at 0.68-0.82 — 0.88 (the first value tried) landed
+    // on the model's sloped top-panel transition, not the flat front
+    // face, and was mostly hidden; 0.76 sits cleanly inside the flat
+    // control-panel strip, confirmed by that same preview screenshot.
+    // The x offset (0.32, "slightly off from center toward one side,
+    // away from the door") doesn't need a wall-dependent sign — it's
+    // only ever read in front-view screenshots on both walls to confirm
+    // it clears the door, and a mirrored x there is cosmetically
+    // identical (the corner it lands in just swaps left/right), not a
+    // correctness bug the way the front/back z confusion was.
+    statusLight.position.set(footprint.w * 0.32, footprint.h * 0.76, p.frontSign * (footprint.d / 2 + 0.01));
     group.add(statusLight);
     statusLights[m.id] = statusLight;
 
     // Examine-target anchor: a plain Object3D at the machine's
     // aisle-facing side, waist height — the point the proximity check
     // (below) measures distance to, and where the examine overlay
-    // conceptually "is." Facing is always +Z in local space here since
-    // every machine in this one-wall layout faces the same way into the
-    // room.
+    // conceptually "is." Same frontSign fix as the status light above —
+    // this anchor was silently on the wall side of the model on the
+    // north wall, reachable only because INTERACT_RANGE (1.3) is wide
+    // enough to span through the model and the wall from the room side
+    // anyway.
     var anchor = new THREE.Object3D();
-    anchor.position.set(0, footprint.h * 0.5, footprint.d / 2 + 0.1);
+    anchor.position.set(0, footprint.h * 0.5, p.frontSign * (footprint.d / 2 + 0.1));
     group.add(anchor);
     qrAnchors[m.id] = anchor;
   });
@@ -776,28 +850,42 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
     if (k in keys) keys[k] = false;
   });
 
-  // Stage 7.2: pointer lock requested automatically on entry (best-effort
-  // — many browsers decline a lock request not tied to a user gesture),
-  // with a click-to-lock fallback kept for exactly that case. The corner
-  // hint (laundry-lock-hint, already styled in src/views.ts) tracks real
-  // lock state via pointerlockchange, not the request itself, so it's
-  // accurate regardless of which path actually acquired the lock.
-  var lockHint = document.getElementById("laundry-lock-hint");
-  function requestLock() {
-    if (renderer.domElement.requestPointerLock) renderer.domElement.requestPointerLock();
-  }
-  requestLock();
-  renderer.domElement.addEventListener("click", requestLock);
-  document.addEventListener("pointerlockchange", function () {
-    var locked = document.pointerLockElement === renderer.domElement;
-    if (lockHint) lockHint.classList.toggle("is-visible", locked);
+  // Stage 9.4.1: drag-to-look (hold the mouse button, move, release —
+  // the SketchUp/3D-modelling-tool convention), replacing Stage 7.2's
+  // pointer-lock FPS-style "just move the mouse" scheme entirely. The
+  // cursor stays visible throughout; nothing is ever locked, so there's
+  // no lock state to hint at and no ESC-to-exit affordance needed. The
+  // touch path below already works this way (touchstart/touchmove/
+  // touchend on a drag zone) — this brings desktop in line with that,
+  // not a new interaction being invented.
+  //
+  // dragDistance accumulates total on-screen pixel movement between
+  // mousedown and mouseup; the click handler further down skips
+  // handleInteract() when this exceeds CLICK_DRAG_THRESHOLD, since a
+  // "click" event always fires after mouseup even when mousedown and
+  // mouseup were the two ends of a deliberate look-drag — without this
+  // check, every look-drag would also fire an unwanted interact the
+  // instant the mouse is released.
+  var CLICK_DRAG_THRESHOLD = 6; // pixels; absorbs natural hand jitter on a real click, not a real drag
+  var dragging = false;
+  var dragLast = { x: 0, y: 0 };
+  var dragDistance = 0;
+  renderer.domElement.addEventListener("mousedown", function (e) {
+    dragging = true;
+    dragDistance = 0;
+    dragLast = { x: e.clientX, y: e.clientY };
   });
-  document.addEventListener("mousemove", function (e) {
-    if (document.pointerLockElement !== renderer.domElement) return;
-    yaw -= e.movementX * LOOK_SENSITIVITY;
-    pitch -= e.movementY * LOOK_SENSITIVITY;
+  renderer.domElement.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - dragLast.x, dy = e.clientY - dragLast.y;
+    dragLast = { x: e.clientX, y: e.clientY };
+    dragDistance += Math.hypot(dx, dy);
+    yaw -= dx * LOOK_SENSITIVITY;
+    pitch -= dy * LOOK_SENSITIVITY;
     pitch = Math.max(-0.6, Math.min(0.9, pitch));
   });
+  renderer.domElement.addEventListener("mouseup", function () { dragging = false; });
+  renderer.domElement.addEventListener("mouseleave", function () { dragging = false; });
 
   // --- touch: a left-side joystick for movement, a drag-anywhere-else
   // zone for look — only shown on a touch-capable viewport. Unchanged
@@ -993,7 +1081,17 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
         new THREE.TorusGeometry(0.12, 0.025, 8, 24),
         new THREE.MeshStandardMaterial({ color: UNCLAIMED_MARKER_COLOR, emissive: UNCLAIMED_MARKER_COLOR, emissiveIntensity: 0.4 }),
       );
-      ring.position.set(0, 0.47 + 0.25, 0); // 0.47 ≈ the real washer/dryer model's own measured height (MODEL_BBOX)
+      // Stage 9.4.4 fix: this used to be a hardcoded literal (0.47 + 0.25,
+      // "0.47 ≈ the real washer/dryer model's own measured height") —
+      // harmless only by coincidence, since 0.47 happened to equal the
+      // real unscaled height; it would have silently stopped matching the
+      // model's real (now MACHINE_SCALE'd) top the moment the scale
+      // changed, with nothing pointing at why. Reading footprint.h here
+      // keeps this in sync with the model's actual current size the same
+      // way every other placement in this file already does.
+      var mInfo = machines.find(function (mm) { return mm.id === machineId; });
+      var footprint = footprintOf(mInfo && mInfo.type === "dryer" ? "dryer" : "washer");
+      ring.position.set(0, footprint.h + 0.25, 0);
       ring.rotation.x = Math.PI / 2;
       group.add(ring);
       unclaimedMarkers[machineId] = ring;
@@ -1072,7 +1170,6 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   function hideExamineOverlay() {
     if (!overlay) return;
     overlay.classList.add("is-hidden");
-    requestLock();
   }
   if (overlayClose) overlayClose.addEventListener("click", hideExamineOverlay);
 
@@ -1144,7 +1241,8 @@ import { GLTFLoader } from "${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js";
   window.__laundryInteract = handleInteract; // Playwright-inspectable: simulate the interact action deterministically
 
   renderer.domElement.addEventListener("click", function () {
-    if (overlay && !overlay.classList.contains("is-hidden")) return; // clicking to re-lock the pointer shouldn't also fire an interaction
+    if (overlay && !overlay.classList.contains("is-hidden")) return; // a click landing on the open overlay shouldn't also fire an interaction underneath it
+    if (dragDistance > CLICK_DRAG_THRESHOLD) return; // this click was the release end of a look-drag, not a deliberate click
     handleInteract();
   });
   window.addEventListener("keydown", function (e) {
@@ -1299,14 +1397,13 @@ export function laundryPage(machines: Machine[]): Html {
   return page(
     "The laundry room",
     html`<p class="laundry-hint">
-      Walk around with <strong>WASD</strong> and look around by moving your
-      mouse (or use the on-screen controls on a touch device). Walk up to a
-      machine or the drop-off table and press <strong>E</strong> (or click)
-      to interact.
+      Walk around with <strong>WASD</strong> and look around by holding the
+      mouse button and dragging (or use the on-screen controls on a touch
+      device). Walk up to a machine or the drop-off table and press
+      <strong>E</strong> (or click) to interact.
     </p>
     <div class="laundry-canvas-wrap" id="laundry-canvas-wrap">
       <div class="laundry-crosshair"></div>
-      <div class="laundry-lock-hint" id="laundry-lock-hint">Press ESC to exit look mode</div>
       <div class="laundry-examine-overlay is-hidden" id="laundry-examine-overlay">
         <div id="laundry-examine-body"></div>
         <button type="button" class="btn-quiet" id="laundry-examine-close">Close</button>
