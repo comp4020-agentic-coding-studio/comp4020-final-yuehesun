@@ -1461,8 +1461,18 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
 
       canHandoffOn[entry.id] = !!(entry.unclaimedLaundry && entry.unclaimedLaundry.canHandOff);
 
+      // plans/laundry-scan-gated-claim.md Stage 6.2: switched from
+      // entry.isMine (true for ANY active reservation on this machine —
+      // still queued, already claimed, already running) to entry.isMyTurn
+      // (true only when this viewer is front-of-queue and still
+      // "waiting" — exactly claim()'s own scan-gate precondition). A
+      // resident holding two machines at once (MAX_ACTIVE_PER_TYPE = 2)
+      // used to see this marker on both regardless of which one actually
+      // needed a scan-and-claim right now; isMyTurn already existed on
+      // this same payload (src/app.ts's GET /laundry/machines-state) and
+      // was simply never read here before.
       var mineMarker = mineMarkers[entry.id];
-      if (mineMarker) mineMarker.visible = !!entry.isMine;
+      if (mineMarker) mineMarker.visible = !!entry.isMyTurn;
     });
     stateEverPainted = true;
   }
