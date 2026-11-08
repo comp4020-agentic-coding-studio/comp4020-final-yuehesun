@@ -86,9 +86,33 @@ export async function cancel(baseUrl: string, cookie: string, reservationId: num
 // Best-effort teardown — a test's own reservations might already be past
 // cancelling (claimed/running/missed) by the time cleanup runs, and that's
 // fine; the point is never leaving a trace on whatever app this ran
-// against, including if someone points it at a live deployment.
+// against, including if someone points it at a live deployment. NOTE:
+// cancel() has no effect on a reservation that's already "done" (a
+// finished wash nobody acknowledged collecting) — a test that drives a
+// reservation to "done" and shares its machine id with a later test must
+// also call acknowledgePickup below, or the machine is left with a real
+// unacknowledged-laundry record that plans/laundry-handoff-decouple-
+// from-claim.md's own start() precondition will now correctly reject a
+// later claim-and-start attempt against (found exactly this way: a
+// pre-existing gap in offer.test.ts's own cleanup, surfaced by this new
+// precondition, not a defect in the precondition itself).
 export async function cleanupReservation(baseUrl: string, cookie: string, reservationId: number): Promise<void> {
   await fetch(new URL(`/reservations/${reservationId}/cancel`, baseUrl), {
+    method: "POST",
+    headers: { cookie },
+    redirect: "manual",
+  }).catch(() => undefined);
+}
+
+// plans/laundry-handoff-decouple-from-claim.md: a finished reservation
+// nobody handed off still needs this — the ordinary "collected it
+// myself, nobody moved it" case acknowledgePickup already supports
+// (src/queue.ts's own comment: pickupSpot can be null here). Used by
+// any test that drives a reservation all the way to "done" and shares
+// its machine id with a later test, so the machine doesn't carry a real
+// unacknowledged-laundry record past this test's own teardown.
+export async function acknowledgePickup(baseUrl: string, cookie: string, reservationId: number): Promise<void> {
+  await fetch(new URL(`/reservations/${reservationId}/acknowledge-pickup`, baseUrl), {
     method: "POST",
     headers: { cookie },
     redirect: "manual",

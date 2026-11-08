@@ -3,7 +3,7 @@ import type { HtmlEscapedString } from "hono/utils/html";
 import type { Machine, Offer, Reservation } from "./schema.ts";
 import { DRYING_TYPES } from "./drying-types.ts";
 import { WASHING_TYPES } from "./washing-types.ts";
-import type { DoneUnacknowledged, DryerOption, QueueRow } from "./queue.ts";
+import type { DoneUnacknowledged, DryerOption, HandoffSuggestion, QueueRow } from "./queue.ts";
 import type { SimulationResults } from "../scripts/simulate.ts";
 import { BOARD_STATE_CLASS, boardStateFor, boardStateLabel, boardTimeLeftSeconds } from "./board-state.ts";
 
@@ -852,10 +852,16 @@ function noticeBanner(row: QueueRow): Html {
 // my own clothes and haven't collected them yet" case needs no banner at
 // all, since nothing unusual happened; 8.4a's basket-visibility check
 // handles that case silently via the 3D scene alone.
+// plans/laundry-handoff-decouple-from-claim.md point 6c: reworded for a
+// clearer, more urgent framing per the user's own request — names both
+// facts (the wash finished, where it is now) with a gentler sense of
+// urgency ("soon," not an open-ended "when you can"). Wording-only
+// change; the notice itself (placeLaundry()'s own "laundry_moved" write)
+// is unchanged.
 function pendingPickupCard(item: DoneUnacknowledged): Html {
   if (item.pickupSpot == null) return raw("");
   return html`<div class="notice-banner">
-    <span>Your laundry was moved to <strong>Shelf ${item.pickupSpot}</strong> — collect it when you can.</span>
+    <span>Your laundry has finished washing and was moved to <strong>Drop-off Shelf ${item.pickupSpot}</strong> — please collect it soon.</span>
     <form method="post" action="/reservations/${item.reservationId}/acknowledge-pickup">
       <button class="btn-quiet" type="submit">Got it</button>
     </form>
@@ -887,10 +893,24 @@ function dryingTypeOptions(): Html {
 function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
   const verb = machineType === "dryer" ? "dry" : "wash";
   return html`${row.status === "waiting" && row.position === 1
-      ? html`<form method="post" action="/reservations/${row.reservationId}/claim"><button class="btn-primary" type="submit">Claim (scan)</button></form>`
+      ? html`<form
+          method="post"
+          action="/reservations/${row.reservationId}/claim"
+          hx-post="/reservations/${row.reservationId}/claim"
+          hx-target="#claim-feedback-${row.reservationId}"
+          hx-swap="innerHTML"
+        ><button class="btn-primary" type="submit">Claim (scan)</button></form>
+        <div id="claim-feedback-${row.reservationId}"></div>`
       : raw("")}
     ${row.status === "claimed"
-      ? html`<form method="post" action="/reservations/${row.reservationId}/start"><button class="btn-primary" type="submit">Start the ${verb}</button></form>`
+      ? html`<form
+          method="post"
+          action="/reservations/${row.reservationId}/start"
+          hx-post="/reservations/${row.reservationId}/start"
+          hx-target="#start-feedback-${row.reservationId}"
+          hx-swap="innerHTML"
+        ><button class="btn-primary" type="submit">Start the ${verb}</button></form>
+        <div id="start-feedback-${row.reservationId}"></div>`
       : raw("")}
     ${row.status === "waiting" || row.status === "claimed"
       ? html`<form method="post" action="/reservations/${row.reservationId}/cancel"><button class="btn-quiet" type="submit">Cancel</button></form>`
@@ -1000,6 +1020,31 @@ function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Ht
   </div>`;
 }
 
+// plans/laundry-handoff-decouple-from-claim.md: appears the instant this
+// resident's own claim succeeds on a machine that still has the previous
+// resident's laundry in it — independent of, and not gated on, anything
+// happening in the 3D scene (a genuinely separate phone sees this with
+// no dependency on the 3D scene's own pickup prompt ever firing). "Yes"
+// calls confirmHandoff() directly (not placeLaundry, which requires an
+// existing IN_TRANSIT record this resident may never have created) via a
+// plain form POST, so it works as a complete, standalone confirm action
+// — the same "Yes"/"No" two-button shape as dryerPromptCard above, named
+// by machine since MAX_ACTIVE_PER_TYPE = 2 can put two of these on
+// screen at once, each independently dismissible/actionable.
+function handoffPromptCard(claimReservationId: number, suggestion: HandoffSuggestion): Html {
+  return html`<div class="decision-card">
+    <span>Did you move <strong>${suggestion.previousRoom}</strong>'s laundry on <strong>${suggestion.machineLabel}</strong> to the drop-off area?</span>
+    <div>
+      <form method="post" action="/machines/${suggestion.machineId}/confirm-handoff" style="display:inline">
+        <button class="btn-primary" type="submit">Yes</button>
+      </form>
+      <form method="post" action="/reservations/${claimReservationId}/dismiss-handoff-prompt" style="display:inline">
+        <button class="btn-quiet" type="submit">No</button>
+      </form>
+    </div>
+  </div>`;
+}
+
 // A status hero's own clock-time figure, plain under the hero so a
 // glance at both tells you exactly when, not just "how long" — design
 // plan's wireframe keeps one plain-line reason, not a second number.
@@ -1040,6 +1085,7 @@ function statusHero(
   now: number,
   aheadLabel: string | undefined,
   dryerSuggestion: DryerOption | undefined,
+  handoffSuggestion: HandoffSuggestion | undefined,
 ): Html {
   const { cls, label } = stateWordFor(row, true, machine.type);
   const countdownTarget = heroCountdownTarget(row);
@@ -1079,19 +1125,20 @@ function statusHero(
     ${statusDots(row.status, machine.type)}
     <div class="hero-actions">${actionButtons(row, machine.type)}</div>
     ${dryerSuggestion ? dryerPromptCard(row.reservationId, dryerSuggestion) : raw("")}
+    ${handoffSuggestion ? handoffPromptCard(row.reservationId, handoffSuggestion) : raw("")}
   </div>`;
 }
 
 export function myStatusBlock(
-  mine: { machine: Machine; row: QueueRow; aheadLabel?: string; dryerSuggestion?: DryerOption }[],
+  mine: { machine: Machine; row: QueueRow; aheadLabel?: string; dryerSuggestion?: DryerOption; handoffSuggestion?: HandoffSuggestion }[],
   myOffers: OfferRow[],
   now: number,
   pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
   if (mine.length === 0 && myOffers.length === 0 && pendingPickups.length === 0) return raw("");
   return html`${pendingPickups.map((p) => pendingPickupCard(p))}${myOffers.map((o) => offerCard(o, now))}
-    ${mine.map(({ machine, row, aheadLabel, dryerSuggestion }) =>
-      html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion)}`,
+    ${mine.map(({ machine, row, aheadLabel, dryerSuggestion, handoffSuggestion }) =>
+      html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion, handoffSuggestion)}`,
     )}`;
 }
 
@@ -1173,13 +1220,20 @@ export function homePage(
   myOffers: OfferRow[],
   now: number,
   getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
+  getHandoffSuggestion: (reservationId: number) => HandoffSuggestion | undefined,
   pendingPickups: DoneUnacknowledged[] = [],
 ): Html {
   const mine = machines.flatMap((m) => {
     const rowsForMachine = rowsByMachine.get(m.id) ?? [];
     const row = rowsForMachine.find((r) => r.person === identity);
     return row
-      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row, m.type), dryerSuggestion: getDryerSuggestion(row.reservationId) }]
+      ? [{
+          machine: m,
+          row,
+          aheadLabel: aheadLabelFor(rowsForMachine, row, m.type),
+          dryerSuggestion: getDryerSuggestion(row.reservationId),
+          handoffSuggestion: getHandoffSuggestion(row.reservationId),
+        }]
       : [];
   });
   const washers = machines.filter((m) => m.type === "washer");
@@ -1235,6 +1289,33 @@ export function scanRequiredPage(): Html {
       <p><a class="btn-primary" href="/laundry">Go to the laundry</a></p>
       <p><a href="/">← All machines</a></p>`,
   );
+}
+
+// plans/laundry-scan-gated-claim.md Stage 6.1: the same "scan first"
+// message as scanRequiredPage above, but as a bare fragment — no page()
+// wrapper, no nav, no <!doctype> — for htmx to swap into the small
+// #claim-feedback-${id} div actionButtons() renders right under the
+// Claim button, instead of navigating the whole page to a new document.
+// Reuses .notice-banner, the same class noticeBanner()/pendingPickupCard()
+// already use for "something happened, here's what to do" messages that
+// don't take over the page.
+export function scanRequiredBanner(): Html {
+  return html`<div class="notice-banner">
+    <span>Scan the machine's code first — in the 3D laundry room, or with your phone's camera on the real machine.</span>
+    <a class="btn btn-quiet" href="/laundry">Go to the laundry</a>
+  </div>`;
+}
+
+// plans/laundry-handoff-decouple-from-claim.md: start()'s own new
+// precondition — the machine must actually be empty of the previous
+// resident's laundry before a wash can begin. Same inline-banner shape
+// as scanRequiredBanner above, reached the same way (an htmx request to
+// the Start button's own route, rendered at 200 so htmx actually swaps
+// it in).
+export function handoffRequiredBanner(): Html {
+  return html`<div class="notice-banner">
+    <span>Move the previous resident's laundry out first — in the 3D laundry room, or from your own home page.</span>
+  </div>`;
 }
 
 // README.md, rendered to HTML (src/readme.ts) and published in full here —

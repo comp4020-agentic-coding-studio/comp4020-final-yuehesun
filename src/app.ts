@@ -13,7 +13,7 @@ import { readSimulationResults } from "./simulation-results.ts";
 import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredPage, simulationPage } from "./views.ts";
+import { aheadLabelFor, errorPage, handoffRequiredBanner, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredBanner, scanRequiredPage, simulationPage } from "./views.ts";
 import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
 import { scanUrlFor } from "./qr.ts";
@@ -75,7 +75,16 @@ app.get("/", (c) => {
   const rowsByMachine = new Map(allMachines.map((m) => [m.id, queue.queueFor(m.id, now)]));
   const myOffers = pendingOffersFor(identity, now);
   const pendingPickups = queue.doneUnacknowledgedFor(identity);
-  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer, pendingPickups));
+  // plans/laundry-handoff-decouple-from-claim.md: curried to the same
+  // single-argument shape suggestedDryer already has, since
+  // suggestedHandoff additionally needs to confirm the reservation is
+  // this exact viewer's own (a check suggestedDryer doesn't need, since
+  // it's only ever called on rows already scoped to this identity by
+  // homePage's own `mine` filter — suggestedHandoff adds this itself, for
+  // the same reason loadOwned exists, not relying on the caller to have
+  // scoped it already).
+  const getHandoffSuggestion = (reservationId: number) => queue.suggestedHandoff(reservationId, identity);
+  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer, getHandoffSuggestion, pendingPickups));
 });
 
 // plans/3d-walkthrough.md Stage 8.1: the real CC0 GLTF models (washer,
@@ -161,8 +170,17 @@ app.get("/laundry/machines-state", (c) => {
       nextRoom: front ? (front.person === identity ? "you" : front.person) : undefined,
       isMyTurn: front?.person === identity && front.status === "waiting",
       isMine: mine,
+      // plans/laundry-handoff-decouple-from-claim.md: widened from
+      // front.status === "waiting" only to "waiting" | "claimed", to
+      // match isFrontWaitingHolder's own widened check — claim is now
+      // unconditional on this machine's laundry state, so the resident
+      // entitled to pick it up is still the machine's front holder even
+      // after they've claimed (not just while still waiting).
       unclaimedLaundry: unclaimed
-        ? { room: unclaimed.personName, canHandOff: front?.person === identity && front.status === "waiting" }
+        ? {
+            room: unclaimed.personName,
+            canHandOff: front?.person === identity && (front.status === "waiting" || front.status === "claimed"),
+          }
         : undefined,
     };
   });
@@ -358,7 +376,13 @@ app.get("/my-status", (c) => {
     const rowsForMachine = queue.queueFor(m.id, now);
     const row = rowsForMachine.find((r) => r.person === identity);
     return row
-      ? [{ machine: m, row, aheadLabel: aheadLabelFor(rowsForMachine, row, m.type), dryerSuggestion: queue.suggestedDryer(row.reservationId) }]
+      ? [{
+          machine: m,
+          row,
+          aheadLabel: aheadLabelFor(rowsForMachine, row, m.type),
+          dryerSuggestion: queue.suggestedDryer(row.reservationId),
+          handoffSuggestion: queue.suggestedHandoff(row.reservationId, identity),
+        }]
       : [];
   });
   const myOffers = pendingOffersFor(identity, now);
@@ -475,15 +499,44 @@ function actionRoute(path: string, name: string, act: (id: number, identity: str
   });
 }
 
-// plans/laundry-scan-gated-claim.md Stage 3: claim gets its own route
+// plans/laundry-scan-gated-claim.md Stage 3/6.1: claim gets its own route
 // instead of actionRoute()'s generic wrapper, solely so its one new
-// rejection reason ("scan the machine's code first") can render through
-// scanRequiredPage() — a page that names where to go, not just that the
-// action failed — while every other rejection from the same call
-// (ownership, front-of-queue, window timing) still renders through the
-// same errorPage() every other action uses. No change to queue.claim()
-// itself or to any other action's own route.
+// rejection reason ("scan the machine's code first") can render
+// differently from every other rejection (ownership, front-of-queue,
+// window timing), which still render through the same errorPage() every
+// other action uses. No change to queue.claim() itself or to any other
+// action's own route.
+//
+// Stage 6.1: the home page's Claim button is now an htmx request
+// (src/views.ts's actionButtons(), hx-target="#claim-feedback-:id"), so a
+// resident clicking it with no scan recorded sees an inline notice
+// instead of the whole page navigating to scanRequiredPage() — but every
+// existing non-browser caller (spec/*.test.ts, sim/driver.ts, a plain
+// curl) still gets exactly the old shape, nothing broken for them.
+// htmx itself is what makes this branch possible to do safely:
+// - It sends "HX-Request: true" on every request it issues (confirmed
+//   against htmx's own docs, not assumed) — the one reliable way to tell
+//   an htmx-originated request apart from a plain form POST or a test's
+//   bare fetch(), without adding a new query param or header convention
+//   of this app's own.
+// - htmx's default response handling never swaps a non-2xx response's
+//   body into hx-target at all (it only fires htmx:responseError and
+//   leaves the target untouched) — so returning the old scanRequiredPage()
+//   at its real 409 status, unchanged, for an htmx request would make the
+//   Claim button look like it silently does nothing. The inline banner
+//   below is returned at 200 instead, specifically so htmx actually
+//   swaps it in; the real failure is still logged server-side exactly as
+//   before, and a non-htmx caller (every spec file, sim/driver.ts) still
+//   sees the real 409/403/404 status it already asserts on.
+// - A 3xx status is intercepted by the browser's own XHR/fetch layer
+//   before htmx's own header/response logic ever runs, so an htmx request
+//   can't be redirected via Location the way a plain form submit is —
+//   htmx's own documented alternative is the HX-Redirect response
+//   header, which triggers a full client-side navigation exactly like a
+//   3xx would for a plain form. Used only for the htmx branch below; the
+//   non-htmx branch keeps the original 303 redirect unchanged.
 app.post("/reservations/:id/claim", (c) => {
+  const isHtmx = c.req.header("HX-Request") === "true";
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(errorPage("sign in first", 400), 400);
 
@@ -492,18 +545,53 @@ app.post("/reservations/:id/claim", (c) => {
   if (!result.ok) {
     logging.logEvent("reservation_claimed_denied", { id, room: identity, reason: result.message });
     if (result.message === "scan the machine's code first") {
+      if (isHtmx) return c.html(scanRequiredBanner(), 200);
       return c.html(scanRequiredPage(), result.status);
     }
     return c.html(errorPage(result.message, result.status), result.status);
   }
   logging.logEvent("reservation_claimed", { id, room: identity });
+  if (isHtmx) {
+    c.header("HX-Redirect", "/");
+    return c.body(null, 200);
+  }
   return c.redirect("/", 303);
 });
-actionRoute("/reservations/:id/start", "reservation_started", queue.start);
+// plans/laundry-handoff-decouple-from-claim.md: start() gets its own
+// route instead of actionRoute()'s generic wrapper, for the same reason
+// claim() does above — its one new rejection reason ("move the previous
+// resident's laundry out first") renders through an inline htmx banner,
+// not a full-page errorPage() navigation, while every other rejection
+// from start() (not claimed yet) still renders through errorPage() same
+// as before. No change to queue.start() itself beyond its own new
+// precondition.
+app.post("/reservations/:id/start", (c) => {
+  const isHtmx = c.req.header("HX-Request") === "true";
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(errorPage("sign in first", 400), 400);
+
+  const id = Number(c.req.param("id"));
+  const result = queue.start(id, identity);
+  if (!result.ok) {
+    logging.logEvent("reservation_started_denied", { id, room: identity, reason: result.message });
+    if (result.message === "move the previous resident's laundry out first") {
+      if (isHtmx) return c.html(handoffRequiredBanner(), 200);
+      return c.html(errorPage(result.message, result.status), result.status);
+    }
+    return c.html(errorPage(result.message, result.status), result.status);
+  }
+  logging.logEvent("reservation_started", { id, room: identity });
+  if (isHtmx) {
+    c.header("HX-Redirect", "/");
+    return c.body(null, 200);
+  }
+  return c.redirect("/", 303);
+});
 actionRoute("/reservations/:id/cancel", "reservation_cancelled", queue.cancel);
 actionRoute("/reservations/:id/finish", "reservation_finished", queue.finish);
 actionRoute("/reservations/:id/dismiss-notice", "notice_dismissed", queue.dismissNotice);
 actionRoute("/reservations/:id/dismiss-dryer-prompt", "dryer_prompt_dismissed", queue.dismissDryerPrompt);
+actionRoute("/reservations/:id/dismiss-handoff-prompt", "handoff_prompt_dismissed", queue.dismissHandoffPrompt);
 actionRoute("/offers/:id/accept", "offer_accepted", queue.acceptOffer);
 actionRoute("/offers/:id/decline", "offer_declined", queue.declineOffer);
 // Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): the original owner
@@ -536,6 +624,31 @@ app.post("/machines/:id/place", (c) => {
   const result = queue.placeLaundry(machineId, identity);
   if (!result.ok) return c.json({ error: result.message }, result.status);
   return c.json({ spot: result.spot });
+});
+
+// plans/laundry-handoff-decouple-from-claim.md: the home page's "Yes, I
+// moved it" card — a plain form POST (not JSON over fetch, unlike
+// /pickup and /place above, since this is reached from a regular <form>
+// on the home page, not the 3D scene's own JS). Calls confirmHandoff, not
+// placeLaundry directly, so it works as a standalone confirm action for
+// a resident who never touched the 3D scene's pickup step at all. Once
+// this succeeds, suggestedHandoff() naturally stops returning this
+// machine's suggestion (unacknowledgedLaundryOn no longer finds anything
+// to report), so the card disappears on the next render with no separate
+// dismissal needed — "Yes" and "No" both end the card's life, just via
+// different underlying facts.
+app.post("/machines/:id/confirm-handoff", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(errorPage("sign in first", 400), 400);
+
+  const machineId = Number(c.req.param("id"));
+  const result = queue.confirmHandoff(machineId, identity);
+  if (!result.ok) {
+    logging.logEvent("laundry_confirm_handoff_denied", { machine: machineId, room: identity, reason: result.message });
+    return c.html(errorPage(result.message, result.status), result.status);
+  }
+  logging.logEvent("laundry_confirm_handoff", { machine: machineId, room: identity, spot: result.spot });
+  return c.redirect("/", 303);
 });
 
 // Crit 9 (plans/crit-9.md Stage 8): queues a dryer reservation alongside

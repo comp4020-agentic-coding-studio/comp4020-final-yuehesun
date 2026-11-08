@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { now as clockNow } from "./clock.ts";
 import { db } from "./db.ts";
 import * as logging from "./logging.ts";
@@ -437,6 +437,21 @@ export function start(reservationId: number, personName: string): ActionResult {
   if ("ok" in row) return row;
   if (row.status !== "claimed") return { ok: false, status: 409, message: "claim the machine before starting it" };
 
+  // plans/laundry-handoff-decouple-from-claim.md: this is where the real
+  // physical constraint actually belongs — "running" means the wash has
+  // physically started, so the drum has to actually be empty of the
+  // previous resident's laundry by this point. Claiming itself stays
+  // unconditional (plan.md's own "claiming means I've arrived," no
+  // dependency on anyone else's laundry); this check is what actually
+  // enforces the constraint, not a UI confirm dialog the resident could
+  // ignore. Reuses unacknowledgedLaundryOn's exact query —
+  // pickUpLaundry's own authoritative "is there really still laundry
+  // here" check — rather than re-deriving it, so there's exactly one
+  // query that decides this, not two that could drift apart.
+  if (unacknowledgedLaundryOn(row.machineId)) {
+    return { ok: false, status: 409, message: "move the previous resident's laundry out first" };
+  }
+
   db.update(reservations).set({ status: "running", startedAt: clockNow() }).where(eq(reservations.id, row.id)).run();
   return { ok: true };
 }
@@ -807,16 +822,34 @@ export function finish(reservationId: number, personName: string): ActionResult 
 const IN_TRANSIT = "IN_TRANSIT";
 
 export type PickupResult = { ok: true } | { ok: false; status: 403 | 404 | 409; message: string };
-export type PlaceResult = { ok: true; spot: string } | { ok: false; status: 404 | 409; message: string };
+export type PlaceResult = { ok: true; spot: string } | { ok: false; status: 403 | 404 | 409; message: string };
 
-// Who may trigger a handoff: whoever currently holds the front, waiting
-// reservation on this exact machine — i.e. the person this handoff is
-// *for*, per plan.md's own description ("if the next person needs the
-// machine before the previous owner has collected their clothes"). Not
-// any room, not staff, not whoever's nearby in the 3D scene.
+// Who may trigger a handoff: whoever currently holds the front position
+// on this exact machine — i.e. the person this handoff is *for*, per
+// plan.md's own description ("if the next person needs the machine
+// before the previous owner has collected their clothes"). Not any room,
+// not staff, not whoever's nearby in the 3D scene.
+//
+// plans/laundry-handoff-decouple-from-claim.md: widened from
+// `"waiting"` only to `"waiting" | "claimed"` — docs/adr/0013's own
+// addendum records this explicitly. Claiming now happens unconditionally
+// (never gated on this machine's laundry state), and the pickup prompt
+// is surfaced to this exact resident *after* they've claimed, not
+// before — so by the time they're meant to act on it, their own status
+// has already moved past "waiting." The underlying authorization
+// question is unchanged ("is this the room the handoff is for"); only
+// the statuses that still count as "is this room" are widened to match
+// what claiming does to it. Deliberately excludes "running": once
+// running, start()'s own new precondition (see start() above) has
+// already confirmed the machine is empty, so a running resident has no
+// remaining reason to ever need this to be true.
 function isFrontWaitingHolder(machineId: number, personName: string): boolean {
   const [front] = activeReservations(machineId);
-  return front != null && front.status === "waiting" && front.personName === personName;
+  return (
+    front != null &&
+    (front.status === "waiting" || front.status === "claimed") &&
+    front.personName === personName
+  );
 }
 
 // The done, still-in-the-machine, not-yet-handed-off reservation this
@@ -842,6 +875,53 @@ function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
       ),
     )
     .get();
+}
+
+export interface HandoffSuggestion {
+  machineId: number;
+  machineLabel: string;
+  previousRoom: string;
+}
+
+// plans/laundry-handoff-decouple-from-claim.md: surfaced as a home-page
+// card the instant a claim succeeds on a machine that still has the
+// previous resident's laundry sitting in it — same "dismissible prompt,
+// recomputed fresh on every render" shape as suggestedDryer above, not a
+// one-shot notice. undefined means "don't show the card": no such
+// reservation, it's not this resident's own claimed reservation, it's
+// already past claimed (running/done/cancelled — see start()'s own new
+// precondition, which is what guarantees "running" already means the
+// laundry was moved), it was already dismissed, or there's no unclaimed
+// laundry on this machine to ask about. Deliberately reuses
+// unacknowledgedLaundryOn's exact check (not doneUnacknowledgedOnMachine,
+// which also counts the IN_TRANSIT case) — if it's already in transit,
+// the same resident must be the one who started carrying it via the 3D
+// scene's own pickup flow, so there's nothing left to ask them about
+// pre-pickup.
+export function suggestedHandoff(claimReservationId: number, personName: string): HandoffSuggestion | undefined {
+  const claim = db.select().from(reservations).where(eq(reservations.id, claimReservationId)).get();
+  if (!claim || claim.personName !== personName) return undefined;
+  if (claim.status !== "claimed") return undefined;
+  if (claim.handoffPromptDismissed) return undefined;
+
+  const laundry = unacknowledgedLaundryOn(claim.machineId);
+  if (!laundry) return undefined;
+
+  const machine = db.select().from(machines).where(eq(machines.id, claim.machineId)).get();
+  if (!machine) return undefined;
+
+  return { machineId: machine.id, machineLabel: machine.label, previousRoom: laundry.personName };
+}
+
+// plans/laundry-handoff-decouple-from-claim.md: "No" on the handoff
+// prompt — same "permanent, not just hidden for this page load" shape as
+// dismissDryerPrompt. Scoped to the claiming resident's own reservation
+// id, same ownership check as every other per-reservation action.
+export function dismissHandoffPrompt(claimReservationId: number, personName: string): ActionResult {
+  const row = loadOwned(claimReservationId, personName);
+  if ("ok" in row) return row;
+  db.update(reservations).set({ handoffPromptDismissed: 1 }).where(eq(reservations.id, row.id)).run();
+  return { ok: true };
 }
 
 // Every pickup spot currently holding unacknowledged laundry — a spot is
@@ -944,6 +1024,63 @@ export function placeLaundry(machineId: number, personName: string): PlaceResult
   return { ok: true, spot };
 }
 
+// plans/laundry-handoff-decouple-from-claim.md: the home page's "Yes, I
+// moved it" card calls this, not placeLaundry directly — placeLaundry
+// requires the laundry to already be IN_TRANSIT, carried by this exact
+// room, which is only true if this resident already went through the 3D
+// scene's own pickup step first. The whole point of the home-page card
+// is that it must work as a single, independent confirm action even for
+// a resident who never touched the 3D scene's pickup flow at all (a
+// genuinely separate phone, per the user's own framing) — so this
+// function accepts either starting point: laundry still sitting
+// untouched in the machine (the common case for a phone-only resident),
+// or already IN_TRANSIT under this same room's name (the resident who
+// did use the 3D scene's pickup step, now confirming the second half on
+// their phone). Either way, the actual spot assignment and owner notice
+// are the one real write placeLaundry already performs — reused here,
+// not re-implemented, with an in-transit record created first if one
+// doesn't already exist.
+export function confirmHandoff(machineId: number, personName: string): PlaceResult {
+  const alreadyInTransit = db
+    .select({ id: reservations.id })
+    .from(reservations)
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        eq(reservations.pickupSpot, IN_TRANSIT),
+        eq(reservations.carriedBy, personName),
+      ),
+    )
+    .get();
+
+  if (!alreadyInTransit) {
+    // Not already in transit under this room's name — this is the
+    // phone-only path: the laundry should still be sitting untouched in
+    // the machine (unacknowledgedLaundryOn's own NULL-pickupSpot check),
+    // and this resident must actually be the one entitled to move it
+    // (isFrontWaitingHolder, now widened to cover "claimed" — see that
+    // function's own comment). Recorded as a real pickup (carriedBy set)
+    // before immediately placing it, so the resulting database state is
+    // indistinguishable from "picked up via the 3D scene, then placed via
+    // the phone" — one real history, not a special-cased shortcut.
+    if (!isFrontWaitingHolder(machineId, personName)) {
+      return { ok: false, status: 403, message: "only the next room in line for this machine can move its laundry" };
+    }
+    const laundry = unacknowledgedLaundryOn(machineId);
+    if (!laundry) return { ok: false, status: 404, message: "no unclaimed laundry on this machine" };
+    if (!firstFreeSpot()) return { ok: false, status: 409, message: "every drop-off spot is full" };
+
+    db.update(reservations)
+      .set({ pickupSpot: IN_TRANSIT, carriedBy: personName })
+      .where(eq(reservations.id, laundry.id))
+      .run();
+    logging.logEvent("laundry_picked_up", { reservation: laundry.id, room: laundry.personName, machine: machineId, movedBy: personName });
+  }
+
+  return placeLaundry(machineId, personName);
+}
+
 // The original owner confirming they've collected their laundry —
 // loadOwned-gated exactly like every other per-reservation action, since
 // this one really is the owner acting on their own reservation (no
@@ -991,15 +1128,46 @@ export interface DoneUnacknowledged {
 
 // Every reservation of this room's that's finished but not yet
 // acknowledged collected — at most a couple in practice (MAX_ACTIVE_PER_TYPE
-// caps how many machines one room can be using at once), used by the 3D
-// scene to decide whether "your own basket" should be showing again
-// (8.4a) and by the scan/handoff UI to know a machine still has someone's
-// laundry sitting in it.
+// caps how many machines one room can be using at once), used by the home
+// page's own "your laundry was moved" notice (pendingPickupCard) and by
+// the 3D scene to decide whether "your own basket" should be showing
+// again (8.4a).
+//
+// plans/laundry-dropoff-flow.md "Bug A": excludes pickupSpot = IN_TRANSIT
+// on purpose. Without this, the owner's own home page showed "Your
+// laundry was moved to Shelf IN_TRANSIT" the instant someone else picked
+// it up — before it was actually placed anywhere, and naming the
+// internal sentinel instead of a real spot. The owner has nothing to be
+// told until placeLaundry() writes a real spot and the "laundry_moved"
+// notice alongside it; until then, this function (and therefore
+// pendingPickupCard) should behave exactly as if nothing has happened
+// yet. This also makes 8.4a's own basket-visibility check more accurate:
+// while someone else is carrying this room's laundry in transit, it
+// isn't in this room's own hands either, so there's no reason for their
+// basket to show as carried during that window.
+//
+// `ne(pickupSpot, IN_TRANSIT)` alone is NOT the right exclusion here —
+// confirmed directly (a real SQLite check, not assumed): SQL's `<>` on a
+// NULL column evaluates to NULL, not TRUE, so a bare `ne()` would
+// silently drop every reservation whose laundry is still sitting
+// untouched in the machine (pickupSpot IS NULL), which is the single
+// most common case this function needs to keep returning. The explicit
+// `isNull(pickupSpot) OR ne(pickupSpot, IN_TRANSIT)` below is what
+// occupiedPickupSpots() above gets right via a different route (its own
+// `.filter()` runs in JS after the query, where `!= null` behaves
+// normally) — this is the SQL-side version of the same exclusion.
 export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] {
   return db
     .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
-    .where(and(eq(reservations.personName, personName), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .where(
+      and(
+        eq(reservations.personName, personName),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        or(isNull(reservations.pickupSpot), ne(reservations.pickupSpot, IN_TRANSIT)),
+      ),
+    )
     .all();
 }
 
@@ -1009,15 +1177,34 @@ export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] 
 // this query shape rather than calling this function, since that one
 // needs the full Reservation row, not just this display-shaped subset).
 // Deliberately still returns a row while pickupSpot is the IN_TRANSIT
-// sentinel (filtered only on pickedUpAt, not pickupSpot) — from every
-// other viewer's perspective the machine's own situation ("someone needs
-// to deal with this") hasn't resolved just because someone started
-// carrying it; only an actual placement does.
+// sentinel — from every other viewer's perspective the machine's own
+// situation ("someone needs to deal with this") hasn't resolved just
+// because someone started carrying it; only an actual placement does.
+//
+// plans/laundry-dropoff-flow.md "Bug B": once pickupSpot is a real spot
+// name (not IN_TRANSIT, not NULL), this machine is done with the
+// reservation entirely — the laundry already left for a numbered shelf,
+// and what's left (the owner's own acknowledgement) is the owner's
+// business, not this machine's. Filtering only on pickedUpAt (as this
+// used to) kept reporting "still needs attention" here even after a real
+// spot was assigned, since pickedUpAt isn't set until the owner
+// acknowledges, confusing "placed on a shelf" with "still on this
+// machine." The `ne(pickupSpot, IN_TRANSIT)` exclusion alone isn't
+// enough here (that would also exclude the in-transit case this
+// function deliberately keeps); the real spot has to be told apart from
+// both NULL and IN_TRANSIT explicitly.
 export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
   return db
     .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
-    .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        or(isNull(reservations.pickupSpot), eq(reservations.pickupSpot, IN_TRANSIT)),
+      ),
+    )
     .get();
 }
 

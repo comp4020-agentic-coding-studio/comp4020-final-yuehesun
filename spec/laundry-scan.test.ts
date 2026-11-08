@@ -155,6 +155,49 @@ it("redirects an already-identified scanner to the real home page even when the 
   await cleanupReservation(baseUrl, owner, reservationId);
 });
 
+// plans/laundry-scan-gated-claim.md Stage 6.1: the home page's Claim
+// button is now an htmx request — a resident clicking it with no scan
+// recorded should see an inline notice, not a full-page navigation to
+// scanRequiredPage(). htmx tells a server its requests apart from a
+// plain form POST via the "HX-Request: true" header (confirmed against
+// htmx's own docs before relying on it), so these two tests drive
+// POST /reservations/:id/claim directly with that header set, rather
+// than through queue-client.ts's claim() helper (which deliberately
+// omits it, matching every non-htmx caller: spec/*.test.ts, sim/driver.ts,
+// a plain curl — all of which must keep getting the original 409/303
+// shape unchanged, confirmed by every other test in this suite still
+// using claim() unmodified and passing).
+it("an htmx claim attempt with no scan gets an inline 200 fragment, not the full scanRequiredPage", async () => {
+  const room = await identityCookie(baseUrl, uniqueRoom());
+  const reservationId = await join(baseUrl, room, MACHINE_ID);
+
+  const res = await fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {
+    method: "POST",
+    headers: { cookie: room, "HX-Request": "true" },
+    redirect: "manual",
+  });
+  expect(res.status, "an htmx rejection must be 200 so htmx actually swaps the body into hx-target").toBe(200);
+  const html = await res.text();
+  expect(html).toContain("Scan the machine's code first");
+  expect(html, "must not be the full page (no nav, no <title>) — just the fragment").not.toContain("<nav");
+
+  await cleanupReservation(baseUrl, room, reservationId);
+});
+
+it("an htmx claim attempt with a valid scan gets HX-Redirect, not a 303", async () => {
+  const room = await identityCookie(baseUrl, uniqueRoom());
+  const reservationId = await join(baseUrl, room, MACHINE_ID);
+  await scanPage(room, MACHINE_ID);
+
+  const res = await fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {
+    method: "POST",
+    headers: { cookie: room, "HX-Request": "true" },
+    redirect: "manual",
+  });
+  expect(res.status, "a 3xx status is intercepted by the browser's XHR layer before htmx sees it, so success must be a 200 carrying HX-Redirect instead").toBe(200);
+  expect(res.headers.get("hx-redirect"), "htmx follows this header as a full client-side navigation").toBe("/");
+});
+
 it("404s for a nonexistent machine even when already identified", async () => {
   const room = await identityCookie(baseUrl, uniqueRoom());
   const res = await scanPage(room, 999_999);

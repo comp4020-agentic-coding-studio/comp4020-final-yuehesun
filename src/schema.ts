@@ -112,6 +112,18 @@ export const reservations = sqliteTable("reservations", {
   // carrying it," not "whoever is still the machine's front waiting
   // holder" (that may have changed by the time it's placed).
   carriedBy: text("carried_by"),
+  // plans/laundry-handoff-decouple-from-claim.md: set once the *claiming*
+  // resident dismisses ("No") the home page's "did you move the previous
+  // resident's laundry?" card for *this specific claim* — same 0/1 shape
+  // and same "stops it reappearing on every reload" purpose as
+  // dryerPromptDismissed above. Scoped to the claiming resident's own
+  // reservation (not the done reservation whose laundry is being asked
+  // about), since the card's whole premise is "you, the new claimant,
+  // haven't told us yet" — a fresh claim by someone else later (after a
+  // cancel) gets its own fresh reservation row and therefore its own
+  // fresh (unset) value here, which is the correct behaviour: a new
+  // claimant hasn't been asked yet either.
+  handoffPromptDismissed: int("handoff_prompt_dismissed").notNull().default(0),
 });
 
 // plans/laundry-scan-gated-claim.md: a real record of "this identity

@@ -342,6 +342,222 @@ correctly means "this reservation's laundry has left the machine."
   the agent should attempt to fake with a scripted substitute in the
   interim.
 
+## Real bugs found using the shipped two-step flow (2026-11-08, second pass)
+
+Investigated before writing anything below, not assumed — each item
+below traces to the exact function and line, not a guess at the cause.
+
+### Bug A: the owner's home-page notice fires too early, with the wrong spot name
+
+`doneUnacknowledgedFor(personName)` (`src/queue.ts`) is what
+`GET /laundry/machines-state` and the home page both read to decide
+whether to show the owner a "your laundry was moved" card
+(`pendingPickupCard`, `src/views.ts`). Its `WHERE` clause only checks
+`status = 'done' AND pickedUpAt IS NULL` — it does **not** exclude
+`pickupSpot = 'IN_TRANSIT'`. `pendingPickupCard` itself only checks
+`item.pickupSpot != null` before rendering. The two combined mean: the
+instant `pickUpLaundry()` runs (laundry merely picked up, not yet
+placed), the owner's own home page already renders "Your laundry was
+moved to Shelf IN_TRANSIT" — before anything was actually placed
+anywhere, and showing the internal sentinel string instead of a real
+spot name.
+
+This is the same class of bug `doneUnacknowledgedOnMachine()`
+(`src/queue.ts`) already got right on purpose — its own comment
+explicitly says it *should* keep returning a row during `IN_TRANSIT`,
+because the machine's situation ("someone needs to deal with this")
+hasn't resolved yet. `doneUnacknowledgedFor` needs the opposite
+exclusion for the opposite reason: the *owner* doesn't need telling
+anything until there's a real spot to tell them about, which is also
+exactly what the code comment on `placeLaundry()` already says ("deferred
+to this point, since this is the first moment there's something real to
+tell them about") — the notice-firing code just never enforced it.
+
+**Fix:** add `pickupSpot !== 'IN_TRANSIT'` (or, in Drizzle terms, exclude
+the sentinel the same way `occupiedPickupSpots()` already does) to
+`doneUnacknowledgedFor`'s own query. No change needed to
+`pendingPickupCard` itself once the underlying query stops returning an
+in-transit row — the existing `item.pickupSpot != null` check becomes
+correct once it's never fed the sentinel.
+
+**Separately, the in-scene confirmation copy overstates what the
+resident placing it needs to do.** `openDropoffExamine()`'s success
+message currently reads "You placed the laundry on Shelf A3 — open the
+app to let them know," worded as if telling the owner is a manual step
+left to the person who just placed it. It isn't — `placeLaundry()`
+already writes `notice: "laundry_moved"` to the owner's own reservation
+server-side, same request, no separate action needed. Once Bug A above
+is fixed, the owner's own home page will show that notice on its own,
+on its own next refetch, with no action from the carrier. The copy
+should say that plainly ("they'll see it on their own home page")
+rather than implying a manual notify step the system already performs.
+
+### Bug B: a machine shows "still needs pickup" even after the laundry is already on a real shelf spot
+
+`doneUnacknowledgedOnMachine(machineId)` (`src/queue.ts`) — read by the
+3D scene's own `canHandOff`/`unclaimedLaundry` indicator
+(`GET /laundry/machines-state`) to decide whether a machine still shows
+"someone's laundry needs moving" — filters only on `status = 'done' AND
+pickedUpAt IS NULL`. It never looks at `pickupSpot` at all. Since
+`pickedUpAt` is set only once the *original owner* acknowledges
+collection (a separate, later step the carrier has no part in), this
+function can't distinguish three real, different states: still in the
+machine (`pickupSpot = NULL`), in transit (`'IN_TRANSIT'`), and already
+on a real numbered shelf spot (`'A1'`..`'A6'`). A resident who already
+placed the laundry on Shelf A3, then walks back to the now-empty
+machine, still sees "this machine has laundry that needs moving" —
+because, per this query, it technically does, just not on the machine
+anymore.
+
+**This collides with `canHandOff`'s own authorization logic in a
+confusing way once fixed naively**: `canHandOff` is
+`front?.person === identity && front.status === 'waiting'` — true for
+whoever is now front of this machine's queue, regardless of what
+`doneUnacknowledgedOnMachine` returns. The *indicator* (should the
+machine show "laundry needs attention") and the *action* (can this
+specific viewer do something about it) are two different questions that
+happen to share one data source today. The real fix needs
+`doneUnacknowledgedOnMachine` to stop treating "already on a shelf spot"
+the same as "still needs someone to move it":
+
+**Fix:** `doneUnacknowledgedOnMachine` should only return a row when
+`pickupSpot IS NULL OR pickupSpot = 'IN_TRANSIT'` — i.e., still
+something *this machine's* front-of-queue resident could or did pick up.
+Once a real spot (`'A1'`..`'A6'`) is written, the machine itself is done
+with this reservation entirely; the only remaining open question is the
+owner's own acknowledgement, which `pendingPickupCard`/the home page
+already handles independently (once Bug A's fix lands) and has nothing
+to do with the machine's own display. This is a one-line change to an
+existing `WHERE` clause, not a new function — `occupiedPickupSpots()`
+already demonstrates the exact `!== IN_TRANSIT`-style exclusion pattern
+this needs, just applied to a different column value set.
+
+**Spec coverage needed for both A and B:** `spec/laundry-handoff.test.ts`
+gets two new assertions once this lands — after `pickUpLaundry` but
+before `placeLaundry`, the owner's own `doneUnacknowledgedFor` must NOT
+yet include this reservation (Bug A); after `placeLaundry`, the
+*machine's* own `doneUnacknowledgedOnMachine` must return nothing for
+this machine (Bug B), while the owner's own `doneUnacknowledgedFor`
+*does* now include it. Both are two-line additions to the existing
+pickup-then-place test sequence, not new test files.
+
+### Investigated, not a bug: the carried basket model doesn't visually travel to the shelf
+
+Confirmed by reading `buildBasket()`/`characterRoot.add(basketMesh)`
+(`src/laundry-view.ts`): the carried-basket mesh is a single prop
+permanently parented to the local character (`characterRoot`), toggled
+on/off via `setBasketVisible()`. It has never been moved to, or rendered
+near, the shelf/bookcase models. The shelf's own occupancy display
+(`dropoffSpotMeshes`, recoloured by `applySpotOccupancy`) is a separate,
+independent visual — a flat marker plane per spot, changing colour
+between `SPOT_FREE_COLOR`/`SPOT_OCCUPIED_COLOR` — not a basket model
+being placed anywhere. This matches the plan's own original scope note
+above ("this plan only changes *when* the basket is visible and *what
+data* decides that, not what it looks like") — the basket's travel from
+character to shelf was never meant to be a literal moved 3D object, only
+a visibility toggle plus a colour change on the destination. Not a bug;
+recorded here only because it was checked directly rather than assumed,
+per the user's own question.
+
+### A real, unhandled edge case: carrying someone else's laundry while also holding your own
+
+`GET /laundry/machines-state` (`src/app.ts`) computes `basketKind` as a
+single, mutually-exclusive value: `carrying != null ? "other" : "own"`.
+This never considers `activeMine`/`doneMine` (the viewer's own
+in-progress or done-but-uncollected laundry) once `carrying` is
+non-null. Since `MAX_ACTIVE_PER_TYPE = 2` lets one room hold two active
+reservations of the same machine type at once, a real resident can be
+genuinely carrying their own just-finished load home from one machine
+while also being the front-waiting-holder entitled to move a *different*
+room's unclaimed laundry off a second machine — the two situations are
+not mutually exclusive in the data model, only in what `basketKind`
+currently reports.
+
+Because `basketMesh` is one prop with one colour/kind at a time (see
+above), there is no way to show "carrying two different things" as two
+distinct objects without building a second mesh — out of scope for this
+bug-fix pass. **Recommended minimal fix, to confirm before building:**
+keep one basket mesh, but make `carrying != null` take priority in the
+reported `basketKind` only while actually mid-carry (which is already
+today's behaviour) and accept the real limitation — the viewer's own
+basket becomes visually indistinguishable from the one they're
+carrying for someone else, for the duration of that one carry. This is
+a genuine, acknowledged simplification, not a fix to pretend otherwise;
+documenting it here (and, if judged worth it later, adding a distinct
+second small prop for "your own basket, parked" during a carry) is a
+separate, larger follow-up this plan doesn't scope now. No code change
+recommended for this item in the immediate fix pass — surfaced for the
+user's own call on whether it's worth a follow-up stage.
+
+## Bugs A and B: fixed and verified (2026-11-08, third pass)
+
+Both one-line `WHERE`-clause fixes, built in an isolated worktree
+(`.claude/worktrees/dropoff-flow-fixes`) per the user's own instruction
+not to edit the checkout another session was actively using.
+
+- **Bug A** (`doneUnacknowledgedFor`, `src/queue.ts`): excludes
+  `pickupSpot = IN_TRANSIT`, so the owner's home page no longer shows
+  "Your laundry was moved" before it's actually been placed anywhere.
+  **A real mistake caught before verifying, not after**: the first
+  attempt wrote this as a bare `ne(pickupSpot, IN_TRANSIT)`. Checked
+  directly against a real SQLite query before trusting it (not assumed):
+  SQL's `<>` on a `NULL` column evaluates to `NULL`, not `TRUE`, so that
+  exclusion would have silently dropped every reservation whose laundry
+  is still untouched in the machine (`pickupSpot IS NULL`) — the single
+  most common case this function needs to keep returning. Fixed to
+  `or(isNull(pickupSpot), ne(pickupSpot, IN_TRANSIT))` before this was
+  ever tested against the running app, the same explicit-NULL-handling
+  shape `occupiedPickupSpots()` already uses (via a JS-side `!= null`
+  filter instead, since that one runs after the query).
+- **Bug B** (`doneUnacknowledgedOnMachine`, `src/queue.ts`): now also
+  requires `pickupSpot` to be `NULL` or `IN_TRANSIT` — once a real spot
+  (`'A1'`..`'A6'`) is assigned, the machine itself is done with this
+  reservation, so it stops reporting "still needs attention" for laundry
+  that's already sitting on a shelf.
+- The confirm-overlay copy at the end of `placeLaundry`'s client-side
+  success handler (`src/laundry-view.ts`) was reworded from "...open the
+  app to let them know" (implying a manual notify step) to "...the owner
+  will see it on their own home page" (accurate: `placeLaundry()` already
+  wrote the owner's notice server-side, same request).
+
+**Verified against the real running app, not just read**: a scratch
+server (port 8099, a throwaway `DATABASE_PATH`, never 8080/`.data/app.db`)
+drove the exact two-room sequence the user's own test manual above
+describes — join, scan, claim, start, finish on machine 1 (room A, the
+1-minute "test" wash type), then room B joining the same machine,
+picking up, and placing. Confirmed directly:
+- Room A's own home page showed no notice at all immediately after
+  `pickup` (the Bug A regression window) — grepped for the actual
+  rendered notice text, not just that the route returned 200.
+- Room A's home page showed the correct notice, with a real spot name
+  (`Shelf A1`), only after `place` succeeded.
+- Room B's own `/laundry/machines-state` view of machine 1, after
+  placing, no longer carried an `unclaimedLaundry` field at all (the Bug
+  B regression check) — previously this field persisted even after a
+  real spot was assigned.
+
+**A real false alarm during verification, caught and correctly
+attributed, not left unresolved.** `pnpm test` first reported 5 failures
+unrelated to Bugs A/B (contention, offer, and one other handoff test) —
+investigated rather than dismissed as "flaky." Re-running the exact same
+suite against a *freshly wiped* scratch database passed all 46 tests;
+re-running with `--fileParallelism=false` (this project's own configured
+default, confirmed in `vitest.config.ts` — every spec shares one running
+app's state, so files already run one at a time, not in parallel) also
+passed cleanly on the already-stale database. The actual cause: the
+scratch database used for the failing run had already been driven
+through the manual room9001/room9002 verification sequence above, in the
+same session, without being wiped first — a self-inflicted test-pollution
+incident, the same class of mistake `CLAUDE.md`/`process-notes.md`
+already document from an earlier session, not a defect in Bugs A/B's own
+fix. Confirmed, not assumed: the identical suite against a clean database
+file passed before this was called resolved.
+
+`pnpm check`: 15 files, 46 tests, green against a freshly wiped scratch
+server. `src/queue.ts`'s existing exported function signatures are
+unchanged (only their `WHERE` clauses gained conditions); no schema
+migration needed for this fix pass.
+
 ## Rough build order (for the stage/commit split when this is picked up)
 
 1. Migration + `carriedBy` column, `pickUpLaundry`/`placeLaundry`
