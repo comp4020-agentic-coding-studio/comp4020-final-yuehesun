@@ -1841,9 +1841,16 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
               return;
             }
             refetchMachineState(); // restores correct own-basket visibility immediately, rather than waiting for the next SSE tick
+            // plans/laundry-dropoff-flow.md "Bug A" follow-up: this used to
+            // read "...to let them know," implying the carrier still had
+            // to do something to notify the owner. They don't —
+            // placeLaundry() already wrote the owner's own notice
+            // server-side, in this same request, before this response
+            // ever came back. Worded to say so plainly, not to imply a
+            // manual step the system already performed.
             showExamineOverlay(
               "<h3>Placed on Shelf " + result.body.spot + "</h3>" +
-              '<p>You placed the laundry on Shelf ' + result.body.spot + ' — <a href="/">open the app</a> to let them know.</p>'
+              '<p>You placed the laundry on Shelf ' + result.body.spot + ' — the owner will see it on their own home page.</p>'
             );
           })
           .catch(function () {

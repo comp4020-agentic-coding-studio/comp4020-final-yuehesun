@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { now as clockNow } from "./clock.ts";
 import { db } from "./db.ts";
 import * as logging from "./logging.ts";
@@ -991,15 +991,46 @@ export interface DoneUnacknowledged {
 
 // Every reservation of this room's that's finished but not yet
 // acknowledged collected — at most a couple in practice (MAX_ACTIVE_PER_TYPE
-// caps how many machines one room can be using at once), used by the 3D
-// scene to decide whether "your own basket" should be showing again
-// (8.4a) and by the scan/handoff UI to know a machine still has someone's
-// laundry sitting in it.
+// caps how many machines one room can be using at once), used by the home
+// page's own "your laundry was moved" notice (pendingPickupCard) and by
+// the 3D scene to decide whether "your own basket" should be showing
+// again (8.4a).
+//
+// plans/laundry-dropoff-flow.md "Bug A": excludes pickupSpot = IN_TRANSIT
+// on purpose. Without this, the owner's own home page showed "Your
+// laundry was moved to Shelf IN_TRANSIT" the instant someone else picked
+// it up — before it was actually placed anywhere, and naming the
+// internal sentinel instead of a real spot. The owner has nothing to be
+// told until placeLaundry() writes a real spot and the "laundry_moved"
+// notice alongside it; until then, this function (and therefore
+// pendingPickupCard) should behave exactly as if nothing has happened
+// yet. This also makes 8.4a's own basket-visibility check more accurate:
+// while someone else is carrying this room's laundry in transit, it
+// isn't in this room's own hands either, so there's no reason for their
+// basket to show as carried during that window.
+//
+// `ne(pickupSpot, IN_TRANSIT)` alone is NOT the right exclusion here —
+// confirmed directly (a real SQLite check, not assumed): SQL's `<>` on a
+// NULL column evaluates to NULL, not TRUE, so a bare `ne()` would
+// silently drop every reservation whose laundry is still sitting
+// untouched in the machine (pickupSpot IS NULL), which is the single
+// most common case this function needs to keep returning. The explicit
+// `isNull(pickupSpot) OR ne(pickupSpot, IN_TRANSIT)` below is what
+// occupiedPickupSpots() above gets right via a different route (its own
+// `.filter()` runs in JS after the query, where `!= null` behaves
+// normally) — this is the SQL-side version of the same exclusion.
 export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] {
   return db
     .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
-    .where(and(eq(reservations.personName, personName), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .where(
+      and(
+        eq(reservations.personName, personName),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        or(isNull(reservations.pickupSpot), ne(reservations.pickupSpot, IN_TRANSIT)),
+      ),
+    )
     .all();
 }
 
@@ -1009,15 +1040,34 @@ export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] 
 // this query shape rather than calling this function, since that one
 // needs the full Reservation row, not just this display-shaped subset).
 // Deliberately still returns a row while pickupSpot is the IN_TRANSIT
-// sentinel (filtered only on pickedUpAt, not pickupSpot) — from every
-// other viewer's perspective the machine's own situation ("someone needs
-// to deal with this") hasn't resolved just because someone started
-// carrying it; only an actual placement does.
+// sentinel — from every other viewer's perspective the machine's own
+// situation ("someone needs to deal with this") hasn't resolved just
+// because someone started carrying it; only an actual placement does.
+//
+// plans/laundry-dropoff-flow.md "Bug B": once pickupSpot is a real spot
+// name (not IN_TRANSIT, not NULL), this machine is done with the
+// reservation entirely — the laundry already left for a numbered shelf,
+// and what's left (the owner's own acknowledgement) is the owner's
+// business, not this machine's. Filtering only on pickedUpAt (as this
+// used to) kept reporting "still needs attention" here even after a real
+// spot was assigned, since pickedUpAt isn't set until the owner
+// acknowledges, confusing "placed on a shelf" with "still on this
+// machine." The `ne(pickupSpot, IN_TRANSIT)` exclusion alone isn't
+// enough here (that would also exclude the in-transit case this
+// function deliberately keeps); the real spot has to be told apart from
+// both NULL and IN_TRANSIT explicitly.
 export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
   return db
     .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
-    .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        or(isNull(reservations.pickupSpot), eq(reservations.pickupSpot, IN_TRANSIT)),
+      ),
+    )
     .get();
 }
 
