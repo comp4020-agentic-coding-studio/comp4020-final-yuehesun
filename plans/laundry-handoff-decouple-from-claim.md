@@ -601,3 +601,52 @@ a freshly wiped scratch server. `src/queue.ts`'s pre-existing exported
 function signatures are unchanged except `start()`'s own new precondition
 and `isFrontWaitingHolder`'s widened status check, both of which this
 plan's own point 3/4 explicitly call for.
+
+## A real bug found after shipping, root-caused and fixed
+
+Reported directly by the user, from real use of the deployed build: (1)
+the 3D scene jumped from the claim/QR overlay straight to the pickup
+prompt before Claim had even been pressed, right after scanning; (2) a
+"Can't move this laundry — no unclaimed laundry on this machine" error
+appeared, worded in a way that made no sense given what had just been
+clicked.
+
+**Root cause, confirmed directly against the running app, not
+assumed.** `applyMachineState`'s own SSE-driven overlay-swap condition
+(point 2 above) checked only `openClaimOverlayMachineId === entry.id &&
+canHandoffOn[entry.id]` — it never checked whether this resident had
+actually claimed yet. `canHandoffOn` (fed by `src/app.ts`'s `canHandOff`
+field) is *deliberately* true for both `"waiting"` and `"claimed"`
+status, because that's the correct, intentionally widened set for
+`isFrontWaitingHolder`'s own authorization check (point 4) — a
+still-waiting front holder genuinely may call `pickUpLaundry`. But the
+*overlay swap*'s own question is different: "has this resident actually
+pressed Claim," not "would pickUpLaundry currently let them pick up."
+Those are two separate facts that happened to share one boolean.
+Confirmed with a real HTTP sequence against a scratch server: a resident
+who joins a machine holding unclaimed laundry and scans but does *not*
+yet claim already shows `state: "your-turn"`, `isMyTurn: true`,
+`canHandOff: true` simultaneously — exactly the combination the old
+condition would swap the overlay on, before Claim was ever pressed.
+
+This also explains the second symptom directly, not as a separate bug:
+a real `pickUpLaundry()` call made in this premature state actually
+*succeeds* the first time (confirmed: `{"ok":true}`, laundry moves to
+`IN_TRANSIT`) — so a resident confused by the overlay jumping early, who
+ends up pressing "Pick up" more than once (the UI itself gave no
+indication the first click had already worked), hits the real, correct
+404 ("no unclaimed laundry on this machine") on the *second* attempt,
+since nothing is left in the "untouched in the machine" state for
+`unacknowledgedLaundryOn` to find anymore — confirmed directly: the
+first pickup call returns 200, an immediate second call against the same
+machine returns exactly this 404.
+
+**Fix:** added an explicit `entry.state === "claimed"` check to the
+overlay-swap condition — it now only fires once the resident's own
+reservation has genuinely reached `"claimed"`, not merely whenever
+`canHandoffOn` happens to be true. Confirmed by reading the same real
+HTTP sequence: before claiming, `state` is `"your-turn"`, not
+`"claimed"`, so the swap correctly does not fire; the instant `claim()`
+succeeds, `state` becomes `"claimed"` with `canHandOff` still true, and
+the swap fires exactly then. `pnpm check` re-confirmed green (15 files,
+52 tests) after the fix, against a freshly wiped scratch server.

@@ -1482,19 +1482,37 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       if (mineMarker) mineMarker.visible = !!entry.isMyTurn;
 
       // plans/laundry-handoff-decouple-from-claim.md point 2: the 3D
-      // scene's own pickup prompt. If the claim/QR overlay is currently
-      // open for exactly this machine, and this machine's state just
-      // became "my own claimed reservation, with unclaimed laundry still
-      // present" (canHandoffOn, now true for "claimed" too per the
-      // server-side widening above), swap the overlay content in place —
-      // reusing the exact same confirm-then-pickUpLaundry flow
-      // openHandoffExamine already implements, just reached by a state
-      // change instead of a branch on initial interact. Cleared
-      // (openClaimOverlayMachineId = null) so this only fires once per
-      // claim, not on every subsequent SSE refetch while the prompt is
-      // already showing — a resident dismissing/ignoring it and walking
-      // away doesn't get it re-forced back open on the next tick.
-      if (openClaimOverlayMachineId === entry.id && canHandoffOn[entry.id]) {
+      // scene's own pickup prompt.
+      //
+      // Real bug found and fixed after shipping this: canHandoffOn alone
+      // is NOT enough here. canHandOff (set in src/app.ts) is
+      // deliberately true for BOTH "waiting" and "claimed" status — that
+      // widened set is correct for isFrontWaitingHolder's own
+      // authorization check (point 4), where a still-waiting front
+      // holder genuinely is allowed to call pickUpLaundry. But this
+      // overlay swap must only fire once this resident has actually
+      // pressed Claim, not the instant they're merely front of the queue
+      // and still looking at the QR code deciding whether to scan at
+      // all. Without the explicit entry.state === "claimed" check below,
+      // any SSE tick arriving while a resident had the claim/QR overlay
+      // open before claiming at all would swap it to the pickup prompt
+      // early, well before anything had actually happened on their own
+      // reservation — reported directly: "scanned the code but hadn't
+      // clicked Claim yet, and the page jumped to a pickup prompt
+      // anyway," confirmed by reading this exact condition, not guessed.
+      // canHandoffOn and "has this resident genuinely claimed yet" are
+      // two different facts that happen to share one boolean today, not
+      // one fact wearing two names.
+      //
+      // If the claim/QR overlay is open for exactly this machine, and it
+      // just became my own claimed reservation with unclaimed laundry
+      // still present, swap the overlay content in place — reusing the
+      // exact same confirm-then-pickUpLaundry flow openHandoffExamine
+      // already implements, just reached by a state change instead of a
+      // branch on initial interact. Cleared (openClaimOverlayMachineId =
+      // null) so this only fires once per claim, not on every subsequent
+      // SSE refetch while the prompt is already showing.
+      if (openClaimOverlayMachineId === entry.id && canHandoffOn[entry.id] && entry.state === "claimed") {
         openClaimOverlayMachineId = null;
         openHandoffExamine(entry.id);
       }
