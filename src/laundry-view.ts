@@ -774,6 +774,21 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // the camera becomes a child rig that follows it. ---
   var characterRoot = new THREE.Group();
   characterRoot.position.set(0, 0, southZ);
+  // Default facing: Math.PI, not the implicit 0 a fresh Group starts
+  // with. Confirmed directly (reading characterRoot.rotation.y itself,
+  // not the camera's own yaw variable, which an earlier check mistook
+  // for this): rotation.y=0 points the model's local +Z (the side the
+  // carried basket sits on, BASKET_Z below) toward the room's own +Z,
+  // which is where the camera/spawn point sits — so leaving this at its
+  // default 0 faced the character at the camera on spawn. The moment the
+  // player takes a single step, Math.atan2(dx, dz) in frame() below
+  // recomputes rotation.y from real movement and this initial value is
+  // overwritten for good — walking toward the machines (-Z, since
+  // southZ/northZ put the machines on the -Z side) correctly yields
+  // rotation.y = Math.PI, facing away from the camera. Math.PI here just
+  // makes the untouched spawn frame match what the very first step would
+  // already have produced, rather than starting backwards from it.
+  characterRoot.rotation.y = Math.PI;
   scene.add(characterRoot);
 
   // "This is you" marker — a small floating downward-pointing marker
