@@ -444,3 +444,42 @@ rather than argued away.
 
 **Backed by:** commit `8e33e09`; `plans/3d-walkthrough.md`'s Stage 9.3
 root-cause writeup.
+
+## Rejecting a camera fix that looked complete, and asking for a full re-check rather than another tuning pass
+
+**What happened:** after reporting the 3D room's zoom-in view snapping
+toward a near-top-down angle, the agent's first fix scaled the camera's
+vertical pitch offset by the zoom distance and reported the bug fixed,
+with real before/after numbers to back it up. I tried it and the exact
+same symptom was still there — zooming in still forced a top-down angle,
+and dragging to look around barely moved the camera at all once zoomed
+in close. I told the agent to stop tuning the same formula again and
+properly check the whole camera logic for a deeper conflict between how
+it was built and what zooming in/out was asking it to do.
+
+**The obvious alternative:** accept that the fix "mostly worked" and ask
+for a second round of number-tweaking on the same formula — the agent
+had already shown a real before/after calculation proving the specific
+thing it changed (the pitch-driven term) now scaled correctly with zoom
+distance.
+
+**What I decided instead:** pushed back that the reported symptom was
+unchanged in my own use, and asked for the camera's design to be
+re-examined as a whole, not patched again in the same place.
+
+**Why it helped:** the deeper check found that the first fix had only
+corrected half the real problem. A separate, fixed vertical offset
+(`CAM_HEIGHT`, independent of zoom distance entirely) was still being
+added on top of the part that got fixed, and that fixed offset alone was
+enough to force a steep angle once the camera sat close — present even
+with no deliberate pitch input at all, and using up most of pitch's own
+range the moment it was. The actual fix replaced the whole camera
+position formula with a proper orbital construction (the camera on a
+sphere around the look target, the same shape a standard orbit camera
+uses), rather than another scaled constant bolted onto the existing one.
+Treating "the number change you can see is correct" as proof the bug was
+fixed, instead of re-testing the reported symptom itself, is exactly what
+let the first, incomplete fix go out as "done."
+
+**Backed by:** commit `935bad5`; `plan.md`'s Current state entry on the
+same (documents both the incomplete first attempt and the real fix).
