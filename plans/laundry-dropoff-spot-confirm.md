@@ -18,8 +18,9 @@
 
 ## Status
 
-Stage 1 built, verified and hand-checked. Stage 2 built and verified by
-spec (waiting on the user's hand-check). Stage 3 not started. Design confirmed with the user in conversation
+All three stages built and verified (specs, plus a Playwright run of the
+3D drop-off click and the simulated-phone card). Waiting on the user's
+hand-check of Stages 2 and 3. Design confirmed with the user in conversation
 (2026-11-09). Each stage ends with a hand-check by the user before the
 next begins (CLAUDE.md Workflow).
 

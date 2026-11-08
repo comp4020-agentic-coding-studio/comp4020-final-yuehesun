@@ -574,3 +574,41 @@ that didn't survive being checked against the actual code.
 rejection, left unedited, status updated to record the overrule);
 `plans/laundry-scan-gated-claim.md` (the full design, not yet built —
 pending: a future stage).
+
+## Overruling the "server picks the shelf spot" design after using it
+
+**What happened:** the drop-off flow I had been told was finished kept
+going wrong in real use. A machine kept asking me to pick up laundry
+that was already gone, and after I carried laundry to the drop-off table
+nothing at all showed up on my phone. When I asked what was happening,
+the agent's first read was that "the machine still has laundry" depended
+on the previous owner pressing a "collected" button, which nobody does
+when they are testing alone. It proposed adding a time limit so old
+laundry expires by itself. On the phone, it said the written design had
+never put a shelf number there at all.
+
+**The obvious alternative:** accept that explanation, add the time limit,
+and keep the original design, where the server picks the shelf spot and
+the resident never touches a number. That would also have meant one
+rule fewer to argue about.
+
+**What I decided instead:** I said the rule itself was wrong. Once
+anybody has picked the laundry up, the machine is empty, and I don't
+care whether its owner ever collects it from the shelf. And the design
+was wrong too: the person carrying the laundry is the only one who knows
+which shelf it went on, so they should confirm the number, with the
+server only suggesting one and pre-filling it from the 3D room click.
+
+**Why it helped:** it fixed the cause instead of hiding it. The agent
+then found that one pick-up had only cleared one of several leftover
+records on the machine, so the next one kept appearing, and wrote a test
+that fails on the old code. The shelf spot now also has to be one of the
+six real names and free, or nothing is saved. What I can't say yet is
+whether it feels right in daily use; I have only checked it myself.
+
+**Backed by:** `spec/laundry-stale-drum.test.ts` (fails on the old
+code), the new cases in `spec/laundry-handoff.test.ts`, and
+`docs/adr/0017-resident-confirms-shelf-spot.md`. Commits `be605e9`
+(machine counts as empty after one pick-up) and `d4a6d37` (resident
+confirms the spot); the 3D wording is in this stage's commit, hash
+pending: the next commit.

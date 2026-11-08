@@ -1952,60 +1952,55 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     if (confirmBtn) confirmBtn.addEventListener("click", function () { doPickup(machineId); });
   }
 
-  // plans/laundry-handoff-decouple-from-claim.md point 6: display-only,
-  // computed purely client-side from state already tracked here
-  // (lastKnownOccupiedSpots, the local PICKUP_SPOTS copy) — no database
-  // write, no new state. The real spot is still chosen atomically,
-  // server-side, only when the phone-side confirm action actually runs
-  // (point 6b). Returns undefined if every spot already shows occupied
-  // (the suggestion is just a best-effort hint, not a guarantee — the
-  // real placeLaundry()/confirmHandoff() call is still the authority on
-  // whether a spot is actually free).
-  function suggestedSpot() {
-    var occupied = {};
-    (lastKnownOccupiedSpots || []).forEach(function (s) { occupied[s] = true; });
-    for (var i = 0; i < PICKUP_SPOTS.length; i++) {
-      if (!occupied[PICKUP_SPOTS[i]]) return PICKUP_SPOTS[i];
-    }
-    return undefined;
-  }
-
-  // plans/laundry-handoff-decouple-from-claim.md point 6b: the drop-off
-  // table no longer places directly from the 3D scene. It shows a
-  // suggested (not guaranteed) spot and a "confirm on your phone" button
-  // — same iframe-insertion mechanism openMachineExamine's own "No
-  // phone? Simulate a phone scan" button already uses, reworded since
-  // nothing here is a QR scan (the resident is already identified; this
-  // is purely about confirming a handoff). The iframe lands on the real
-  // home page, where the resident sees the real "did you move it?" card
-  // (src/views.ts's handoffPromptCard) — its own "Yes" button is the
-  // actual confirm action (calls queue.confirmHandoff via
-  // POST /machines/:id/confirm-handoff), not a second input here.
-  // Works whether or not this resident ever used the 3D scene's own
-  // "Pick up" step (carryingFromMachine may be null) — confirmHandoff
-  // handles both starting points itself.
+  // plans/laundry-dropoff-spot-confirm.md Stage 2/3 (docs/adr/0017): the
+  // drop-off table asks the server for a spot proposal for the laundry
+  // this resident is carrying, and shows exactly that number. The server
+  // stores it, so the home page card (the resident's phone, or the
+  // simulated phone below) comes up with the same number pre-filled; the
+  // resident presses Confirm there, and only that writes the spot and
+  // notifies the owner. Nothing is placed from the 3D scene itself. This
+  // replaces the old browser-side guess ("Shelf X looks free"), which
+  // could disagree with what the server later assigned.
   function openDropoffExamine() {
-    var spot = suggestedSpot();
-    var spotText = spot ? "Looks like Shelf " + spot + " is free." : "The shelf looks full right now — check with the server when you confirm.";
-    showExamineOverlay(
-      "<h3>Drop-off table</h3>" +
-      "<p>" + spotText + "</p>" +
-      '<p class="laundry-hint">Confirm on your phone that you moved laundry here — the server picks the real spot when you do.</p>' +
-      '<p><button type="button" class="btn-quiet" id="laundry-simulate-confirm">No phone? Simulate confirming on your phone</button></p>'
-    );
-    var simBtn = document.getElementById("laundry-simulate-confirm");
-    if (simBtn) {
-      simBtn.addEventListener("click", function () {
-        simBtn.remove();
-        var frame = document.createElement("div");
-        frame.className = "phone-frame";
-        var iframe = document.createElement("iframe");
-        iframe.src = "/";
-        iframe.title = "Simulated phone — the real home page";
-        frame.appendChild(iframe);
-        if (overlay) overlay.insertBefore(frame, overlayClose || null);
-      });
+    if (carryingFromMachine == null) {
+      showExamineOverlay(
+        "<h3>Drop-off table</h3>" +
+        "<p>You're not carrying any laundry. Pick up the previous resident's laundry from a machine first.</p>"
+      );
+      return;
     }
+    fetch("/machines/" + carryingFromMachine + "/propose-spot", { method: "POST" })
+      .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+      .then(function (result) {
+        if (!result.ok) {
+          showExamineOverlay("<h3>Drop-off table</h3><p>" + (result.body.error || "Something went wrong.") + "</p>");
+          return;
+        }
+        showExamineOverlay(
+          "<h3>Drop-off table</h3>" +
+          "<p>Laundry placed in slot " + result.body.spot + ".</p>" +
+          '<p><button type="button" class="btn-primary" id="laundry-submit-placement">Tap here to submit the placement</button></p>'
+        );
+        var submitBtn = document.getElementById("laundry-submit-placement");
+        if (submitBtn) {
+          // Same mechanism openMachineExamine's "No phone?" button uses: the
+          // real home page in a phone-shaped frame, where the pre-filled
+          // card is waiting. On a real phone the card is already there.
+          submitBtn.addEventListener("click", function () {
+            submitBtn.remove();
+            var frame = document.createElement("div");
+            frame.className = "phone-frame";
+            var iframe = document.createElement("iframe");
+            iframe.src = "/";
+            iframe.title = "Simulated phone — the real home page";
+            frame.appendChild(iframe);
+            if (overlay) overlay.insertBefore(frame, overlayClose || null);
+          });
+        }
+      })
+      .catch(function () {
+        showExamineOverlay("<h3>Drop-off table</h3><p>Something went wrong — try again.</p>");
+      });
   }
 
   // plans/laundry-handoff-decouple-from-claim.md: claim is always

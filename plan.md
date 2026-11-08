@@ -1133,7 +1133,7 @@ there; "gap" means nobody's claimed it yet.
 - Changing washing/drying type after reserving (#16)
 - Water temperature choice (#17)
 - Unclaimed laundry handed off to a numbered pickup spot (#18)
-  - Follow-up in progress (planned 2026-11-09): machine counts as empty once
+  - Follow-up built 2026-11-09, awaiting hand-check: machine counts as empty once
     anyone picks up, and the resident confirms the shelf spot on the phone —
     see [`plans/laundry-dropoff-spot-confirm.md`](plans/laundry-dropoff-spot-confirm.md).
 
