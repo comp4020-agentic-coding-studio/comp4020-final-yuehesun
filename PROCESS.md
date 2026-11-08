@@ -1,13 +1,17 @@
 # What I built
 
 **Laundry Queue** is a shared queue for a student residence's laundry
-machines — see [`README.md`](README.md) for the "good" argument and
-[`plan.md`](plan.md#user-story) for the user story it's built from.
-Crit 8 shipped a working, persistent app with one machine type; crit 9
-added real-time sync; crit 10 added logging, then an extension making
-the fairness rules checkable at real scale with seeded scenarios, not
-just argued in words. A later addition, prompted by course feedback,
-added a 3D walkthrough with real, scannable per-machine QR codes.
+machines, built around calm technology: the app watches the queue so you
+don't have to, and only calls you back when it matters. See
+[`README.md`](README.md) for the "good" argument and
+[`plan.md`](plan.md#user-story) for the user story. It also has a 3D
+walkthrough of the laundry room with real, scannable QR codes.
+
+I kept the stack small to fit one 256MB machine: Hono, SQLite and htmx. A
+framework like Next.js would have been heavier and harder to use for
+real-time. The cost is a bigger Docker build for the SQLite driver
+([`ff403af`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/ff403af),
+[`docs/adr/0003`](docs/adr/0003-tech-stack.md)).
 
 # Process overview
 
@@ -49,14 +53,11 @@ I came up with using seeded data to simulate real usage at scale: 100
 residents over a whole day. That's what `/simulation` is — an animation
 for watching the results of three different queueing policies at real scale
 ([`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59)).
-Running the simulation's full batch hung my machine, twice. The agent first
-blamed its own handling of background tasks. I didn't simply take its word
-for it: I opened another terminal and ran the simulation script on its own,
-with no agent involved. The same crash happened. That ruled out the agent's
-background process and turned my attention to the script itself. The cause
-turned out to be that the script, while running 150 seeds, never yielded
-control, so it kept hold of the machine's resources. After debugging through
-manual testing, I finally got the simulation working
+Running the full batch hung my machine twice. The agent blamed its own
+background tasks, so I ran the script in another terminal with no agent
+involved, and it crashed the same way. The real cause was the script never
+yielding control across its 150 seeds. Once that was fixed, the simulation
+worked
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
 But at this stage the simulation still stayed at the level of data, and I'd
 always felt the project never connected to a real use case.
@@ -128,6 +129,16 @@ number does for identity, and every spec already calls `join()` before
 forking anything
 ([`docs/adr/0016`](docs/adr/0016-scan-gated-claim-accepted.md)). The feature
 was finally built.
+
+When something went wrong, I tried to put the fix in the harness instead of
+just asking the agent to be more careful. The simulation's design flaw became
+a rule to write the design down before coding
+([`c2abbcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/c2abbcd)).
+The agent's test servers taking over my dev port became another rule
+([`71f3426`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/71f3426)).
+Specs writing into my real dev database became a check that refuses to run
+against it
+([`8d05e54`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8d05e54)).
 
 The process above shows that automated checks (`pnpm check`) confirm the
 app builds and invariants hold. They can't judge
