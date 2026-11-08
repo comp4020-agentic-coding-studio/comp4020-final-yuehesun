@@ -794,6 +794,40 @@ and the offer moves to the next person instead.
   `acknowledge-pickup` call). `pnpm check` green (40 tests) against a
   scratch database; `src/queue.ts`'s only change is the additive
   `personName` field, read nowhere it wasn't already selected.
+- **The drop-off flow rework (`plans/laundry-dropoff-flow.md`) built and
+  verified — the real two-step pick-up/place split, per the already-
+  approved design.** `handoffLaundry()` is replaced with `pickUpLaundry()`
+  and `placeLaundry()`: pickup checks `isFrontWaitingHolder` and that a
+  free spot exists (but doesn't reserve one), setting `pickupSpot` to a
+  new `IN_TRANSIT` sentinel and a new `carriedBy` column (migration
+  `drizzle/0007_mixed_pepper_potts.sql`, a pure addition); place looks up
+  the in-transit reservation carried by exactly the acting room (not
+  "whoever's still front of the queue" — that may have changed by the
+  time it's placed), only now picks the real spot and sends the owner's
+  `laundry_moved` notice. `IN_TRANSIT` is excluded from
+  `occupiedPickupSpots()`/`firstFreeSpot()` everywhere, and
+  `doneUnacknowledgedOnMachine()` deliberately keeps returning the row
+  while in transit — the handoff indicator shouldn't clear until
+  something is actually placed. `GET /laundry/machines-state` now reports
+  `carryingFromMachine`/`basketKind` as real server state instead of a
+  client-only variable — the actual fix for the old flickering-basket
+  bug, since the server and the 3D scene can no longer disagree about
+  whether a carry is still in progress. The 3D scene gained two real
+  confirm overlays (pick-up: "Move room123's laundry?"; place: "Confirm
+  placed," then "You placed it on Shelf A3 — open the app to let them
+  know") per the user's own request, replacing the old immediate-on-
+  interact action. `spec/laundry-handoff.test.ts` rewritten (2 tests
+  grew to 4): the original authorization/pool-exhaustion/reuse coverage
+  carried across the split unchanged in substance, plus two new cases the
+  split itself introduces — an unauthorized "place" by someone other than
+  the carrier (404, not 403 — the question is "are you carrying it," not
+  "are you front of the queue"), and the pool genuinely filling between a
+  successful pickup and that same carrier's own place call (409, with the
+  carry preserved for a retry once a spot frees). `docs/adr/0013` gained
+  an addendum recording the split without reopening its authorization
+  boundary. `pnpm check` green (15 files, 42 tests) against a scratch
+  server; `drizzle-kit generate` used for the migration, never
+  `drizzle-kit push`, per `CLAUDE.md`.
 
 ## Final project deadline — read this before planning further work
 
@@ -814,15 +848,32 @@ Thursdays 09:00 Canberra time regardless. If a session hits the same
 bump landed, or wait for the Thursday reset, rather than assuming
 something is broken.
 
+This priority list is a snapshot from when the deadline was first fetched
+(2026-11-06/07) and has gone stale since: item (3) below, Stage 9.2's
+floor-plan redo, was only "if time remains" when this was written and is
+now done (see this file's own "Stage 9.2 implemented and verified
+locally" entry above) — left here struck through so a reader doesn't
+wonder why it vanished, rather than silently deleting a decision record.
+Item (1), the drop-off flow rework, is likewise now done — see this
+file's own "The drop-off flow rework ... built and verified" entry above
+— left struck through below for the same reason.
+
 Given the close deadline, the highest-value remaining work, roughly in
-priority order, is: (1) Stage 4's real two-device phone-scan rehearsal,
-since the deployment now exists to make it possible and it's the one
-thing in `plan.md`'s feature #19 never actually verified end-to-end; (2)
-`PROCESS.md`/`reflections/` updates covering the 3D walkthrough work (not
-done by the agent — these are the user's own, per `CLAUDE.md`); (3) Stage
-9.2's floor-plan redo, only if time remains after the above — it's a real
-improvement, not a blocker, since the currently-deployed Stage 8.2 layout
-is fully functional.
+priority order, is now: (1) Stage 4's real two-device phone-scan
+rehearsal, since the deployment now exists to make it possible and it's
+the one thing in `plan.md`'s feature #19 never actually verified
+end-to-end — the user's own, needs a physical phone; (2)
+`PROCESS.md`/`reflections/` updates covering the 3D walkthrough work and
+the drop-off flow rework — also the user's own, per `CLAUDE.md`, not the
+agent's job.
+
+~~(1) the drop-off flow rework — full design already written and
+user-approved in
+[`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md)~~ —
+**done**, see above.
+
+~~(3) Stage 9.2's floor-plan redo, only if time remains after the
+above~~ — **done**, see above.
 
 ## The feature list
 
@@ -890,8 +941,8 @@ there; "gap" means nobody's claimed it yet.
     a new `WASHING_TYPES` entry — and doesn't touch queue position or
     timing, so it's a lower-risk addition than #16.
 18. **Unclaimed laundry handed off to a numbered pickup spot** — **Built,
-    3D walkthrough Stage 8.4; a rework is planned (not yet coded) in
-    [`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md).**
+    3D walkthrough Stage 8.4; reworked into a real two-step pick-up/place
+    flow per [`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md).**
     Stage 8.4's original version: if the next person needs the machine
     before the previous owner has collected their clothes, they move the
     clothes to a numbered shelf spot (server-assigned from a fixed list,
@@ -904,16 +955,20 @@ there; "gap" means nobody's claimed it yet.
     `spec/laundry-handoff.test.ts` covers the full cycle including every
     fixed spot filling and freeing again. **Found, investigating the
     build with real 3D-room use (2026-11-08): the carry-to-shelf sequence
-    in the 3D scene is cosmetic** — `handoffLaundry()` is one atomic
-    server write (spot assigned, owner notified, all at pickup time), so
-    nothing server-side distinguishes "picked up" from "placed," and the
-    carried-basket's own visibility raced against the server's own
-    already-updated state, which is the real cause of a reported
-    flickering-basket bug (two sources of truth for the same fact, not
-    timing jitter). `plans/laundry-dropoff-flow.md` designs a real
-    in-transit state (a new `carriedBy` column, a sentinel on the existing
-    `pickupSpot` column) splitting today's one action into pick-up/place,
-    without reopening `docs/adr/0013`'s own authorization boundary.
+    in the 3D scene was cosmetic** — the old `handoffLaundry()` was one
+    atomic server write (spot assigned, owner notified, all at pickup
+    time), so nothing server-side distinguished "picked up" from
+    "placed," and the carried-basket's own visibility raced against the
+    server's own already-updated state, which was the real cause of a
+    reported flickering-basket bug (two sources of truth for the same
+    fact, not timing jitter). **Reworked and shipped**: `pickUpLaundry()`/
+    `placeLaundry()` replace the one-shot action, a new `IN_TRANSIT`
+    sentinel on `pickupSpot` plus a new `carriedBy` column give "being
+    carried" a real server state, and `GET /laundry/machines-state` now
+    reports `carryingFromMachine`/`basketKind` as server truth instead of
+    a client-only variable — see this file's own Current state entry for
+    the full build record. `docs/adr/0013`'s authorization boundary is
+    unchanged, with an addendum recording the split.
 19. **3D walkthrough, scan a real machine's code** — prompted by course
     feedback that the bot-driven simulation didn't convincingly pitch this
     as something a real residence would adopt. **Stages 1-3 and Stage 6's

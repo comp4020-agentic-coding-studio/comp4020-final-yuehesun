@@ -743,9 +743,23 @@ export function finish(reservationId: number, personName: string): ActionResult 
 // it" rule — the whole point of this feature is letting someone act on a
 // *different* room's reservation, which is why it's a new, separate
 // function rather than a change to loadOwned itself (which stays exactly
-// as strict as it is today for every other action). ---------------------
+// as strict as it is today for every other action).
+//
+// plans/laundry-dropoff-flow.md: split into two real steps, pick up then
+// place, after real 3D-room use showed the original one-shot
+// handoffLaundry() had no server-side state for "being carried" — the
+// shelf showed a spot occupied, and the owner was notified, the instant
+// the laundry was picked up, not when it was actually placed. IN_TRANSIT
+// is a sentinel on the existing pickupSpot column (never a real spot
+// name) marking that in-between state; carriedBy records who's carrying
+// it, since "who may place it" is "whoever is currently carrying it," not
+// "whoever is still the machine's front waiting holder" (that may have
+// changed by the time it's placed). ---------------------------------------
 
-export type HandoffResult = { ok: true; spot: string } | { ok: false; status: 403 | 404 | 409; message: string };
+const IN_TRANSIT = "IN_TRANSIT";
+
+export type PickupResult = { ok: true } | { ok: false; status: 403 | 404 | 409; message: string };
+export type PlaceResult = { ok: true; spot: string } | { ok: false; status: 404 | 409; message: string };
 
 // Who may trigger a handoff: whoever currently holds the front, waiting
 // reservation on this exact machine — i.e. the person this handoff is
@@ -788,6 +802,9 @@ function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
 // one shared shelf serves the whole room. Exported for the 3D scene's own
 // drop-off shelf display (Stage 8.4's "the shelf's own numbered-spot-
 // occupied visual state," distinct from the pending-pickup notice).
+// Excludes IN_TRANSIT: nothing is actually sitting in a numbered cubby
+// while laundry is still being carried, so it must never count as "this
+// spot is occupied" or be returned from firstFreeSpot() below.
 export function occupiedPickupSpots(): Set<string> {
   return new Set(
     db
@@ -796,7 +813,7 @@ export function occupiedPickupSpots(): Set<string> {
       .where(and(isNull(reservations.pickedUpAt)))
       .all()
       .map((r) => r.spot)
-      .filter((s): s is string => s != null),
+      .filter((s): s is string => s != null && s !== IN_TRANSIT),
   );
 }
 
@@ -808,14 +825,16 @@ function firstFreeSpot(): string | undefined {
   return PICKUP_SPOTS.find((s) => !occupied.has(s));
 }
 
-// The pickup-and-place action: picks the first free spot automatically
-// and returns which one — the resident doing the moving never chooses a
-// spot (a user-chosen dropdown would reopen exactly the "two people pick
-// the same free slot at once" race nextJoinedAt's own comment already
-// identifies as a real failure mode for a shared-pool UI like this one,
-// for no real benefit, since physically identical numbered spots give
-// nobody a reason to prefer one over another).
-export function handoffLaundry(machineId: number, personName: string): HandoffResult {
+// Step 1: pick up. isFrontWaitingHolder stays exactly as it was for the
+// one-shot handoffLaundry — this is the same authorization question
+// ("are you the person this handoff is for"), just checked one step
+// earlier. Checks a free spot *exists* but doesn't reserve one yet —
+// the real spot isn't chosen until place() runs, so a carry abandoned
+// partway through (tab closed, walked away in the 3D scene) never ties
+// up a spot nobody is actually using. No notice is sent to the owner
+// yet either: "someone picked it up" isn't information they need, "it's
+// on Shelf A3" is — see placeLaundry below for where that notice moves.
+export function pickUpLaundry(machineId: number, personName: string): PickupResult {
   if (!isFrontWaitingHolder(machineId, personName)) {
     return { ok: false, status: 403, message: "only the next room in line for this machine can move its laundry" };
   }
@@ -823,14 +842,51 @@ export function handoffLaundry(machineId: number, personName: string): HandoffRe
   const laundry = unacknowledgedLaundryOn(machineId);
   if (!laundry) return { ok: false, status: 404, message: "no unclaimed laundry on this machine" };
 
+  if (!firstFreeSpot()) return { ok: false, status: 409, message: "every drop-off spot is full" };
+
+  db.update(reservations)
+    .set({ pickupSpot: IN_TRANSIT, carriedBy: personName })
+    .where(eq(reservations.id, laundry.id))
+    .run();
+  logging.logEvent("laundry_picked_up", { reservation: laundry.id, room: laundry.personName, machine: machineId, movedBy: personName });
+  return { ok: true };
+}
+
+// Step 2: place. Looks up the in-transit reservation on this machine
+// carried by exactly this room — not just "any in-transit reservation on
+// this machine" — since this is the real authorization check for this
+// step: by the time something is placed, the carrier may no longer be
+// the machine's front waiting holder (their own reservation may have
+// progressed in the meantime), so "are you currently carrying it" is the
+// question, not "are you still front of the queue." The spot is picked
+// here, not at pickup, and the pool could have filled in between —
+// handled as the same 409 the pool-full case always was, just one step
+// later. Only now does the original owner get the "laundry_moved" notice
+// — deferred to this point, since this is the first moment there's
+// something real (a shelf spot) to tell them about.
+export function placeLaundry(machineId: number, personName: string): PlaceResult {
+  const laundry = db
+    .select()
+    .from(reservations)
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        eq(reservations.pickupSpot, IN_TRANSIT),
+        eq(reservations.carriedBy, personName),
+      ),
+    )
+    .get();
+  if (!laundry) return { ok: false, status: 404, message: "nothing of yours is currently being carried from this machine" };
+
   const spot = firstFreeSpot();
   if (!spot) return { ok: false, status: 409, message: "every drop-off spot is full" };
 
   db.update(reservations)
-    .set({ pickupSpot: spot, notice: "laundry_moved" })
+    .set({ pickupSpot: spot, carriedBy: null, notice: "laundry_moved" })
     .where(eq(reservations.id, laundry.id))
     .run();
-  logging.logEvent("laundry_handed_off", {
+  logging.logEvent("laundry_placed", {
     reservation: laundry.id,
     room: laundry.personName,
     machine: machineId,
@@ -901,13 +957,34 @@ export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] 
 
 // The done-but-unacknowledged reservation sitting on this machine, if
 // any — used by the handoff UI to show "room123's laundry is still here"
-// and by handoffLaundry's own unacknowledgedLaundryOn (which duplicates
+// and by pickUpLaundry's own unacknowledgedLaundryOn (which duplicates
 // this query shape rather than calling this function, since that one
 // needs the full Reservation row, not just this display-shaped subset).
+// Deliberately still returns a row while pickupSpot is the IN_TRANSIT
+// sentinel (filtered only on pickedUpAt, not pickupSpot) — from every
+// other viewer's perspective the machine's own situation ("someone needs
+// to deal with this") hasn't resolved just because someone started
+// carrying it; only an actual placement does.
 export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
   return db
     .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
     .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
     .get();
+}
+
+// Which machine, if any, this room is currently carrying someone else's
+// laundry away from — needed so the client can recover "what am I
+// carrying, and where does it go back to if I place it" purely from
+// server state, rather than only from a local JS variable set at pickup
+// time (which a page reload would lose). At most one machine at a time in
+// practice (a resident can only interact with one machine at once in the
+// 3D scene), but this reads the real rows rather than assuming it.
+export function carryingFor(personName: string): { machineId: number } | undefined {
+  const row = db
+    .select({ machineId: reservations.machineId })
+    .from(reservations)
+    .where(and(eq(reservations.carriedBy, personName), eq(reservations.pickupSpot, IN_TRANSIT)))
+    .get();
+  return row;
 }

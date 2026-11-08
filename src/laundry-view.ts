@@ -1399,6 +1399,13 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   function realColorFor(machineId) {
     return lastKnownUnclaimed[machineId] ? UNCLAIMED_LAUNDRY_COLOR : STATE_COLOR[lastKnownState[machineId]];
   }
+  // plans/laundry-dropoff-flow.md: which room's unclaimed laundry is
+  // sitting on each machine, read by the pickup confirm overlay's copy
+  // ("Move room123's laundry?") — a separate small map alongside the
+  // other lastKnown* caches above, not a new "full entry" cache, matching
+  // this file's existing pattern of tracking only the specific fields a
+  // later read actually needs.
+  var lastKnownUnclaimedRoom = {};
 
   var FLASH_COLOR = 0xffd54a;
   var FLASH_MS = 700;
@@ -1439,6 +1446,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       // independent visibility flag, folded here into one light's colour
       // choice instead of two indicator systems.
       lastKnownUnclaimed[entry.id] = !!entry.unclaimedLaundry;
+      lastKnownUnclaimedRoom[entry.id] = entry.unclaimedLaundry ? entry.unclaimedLaundry.room : null;
       var color = entry.unclaimedLaundry ? UNCLAIMED_LAUNDRY_COLOR : STATE_COLOR[entry.state];
       var flashActive = (flashingUntil[entry.id] || 0) > Date.now();
       if (color != null && !flashActive) {
@@ -1457,8 +1465,20 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     stateEverPainted = true;
   }
 
-  function applyBasketState(myBasketVisible) {
-    setBasketVisible(!!myBasketVisible);
+  // plans/laundry-dropoff-flow.md: basket visibility and kind are now
+  // driven entirely from this one server payload, not set ad hoc inside
+  // the pickup/place click handlers — removes the old two-sources-of-
+  // truth bug class (a local "still carrying it" flag racing the
+  // server's own already-updated state), not just this one instance of
+  // it. carryingFromMachine (also server state, not a client-only
+  // variable) is what the drop-off examine's "place" action needs to know
+  // which machine's laundry is being carried — surviving a page reload
+  // mid-carry, unlike the old pendingHandoffSpot client variable.
+  var carryingFromMachine = null;
+  function applyBasketState(data) {
+    setBasketVisible(!!data.myBasketVisible);
+    setBasketKind(data.basketKind === "other" ? "other" : "own");
+    carryingFromMachine = data.carryingFromMachine == null ? null : data.carryingFromMachine;
   }
 
   function refetchMachineState() {
@@ -1467,7 +1487,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       .then(function (data) {
         if (!data) return;
         applyMachineState(data.machines || []);
-        applyBasketState(data.myBasketVisible);
+        applyBasketState(data);
         applySpotOccupancy(data.occupiedSpots);
       })
       .catch(function () { /* a transient fetch failure just leaves the last-known state showing */ });
@@ -1686,7 +1706,6 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var overlay = document.getElementById("laundry-examine-overlay");
   var overlayBody = document.getElementById("laundry-examine-body");
   var overlayClose = document.getElementById("laundry-examine-close");
-  var pendingHandoffSpot = null; // set once a handoff succeeds, shown when the player reaches the drop-off area
 
   function showExamineOverlay(contentHtml) {
     if (!overlay || !overlayBody) return;
@@ -1710,19 +1729,29 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     );
   }
 
-  function openHandoffExamine(machineId) {
-    fetch("/machines/" + machineId + "/handoff", { method: "POST" })
+  // plans/laundry-dropoff-flow.md: pickup is now a real confirm step, not
+  // an immediate action on interact — per the user's own request, and
+  // because the server now creates real IN_TRANSIT state on "pick up," so
+  // an accidental double-interact shouldn't fire it without a chance to
+  // back out. unclaimedRoomFor(machineId) reads the room name already
+  // shown on this machine's status card in the 2D board — the confirm
+  // copy names whose laundry this is, matching the user's own requested
+  // wording ("Move room123's finished laundry to the shelf?").
+  function unclaimedRoomFor(machineId) {
+    return lastKnownUnclaimedRoom[machineId] || "this room";
+  }
+
+  function doPickup(machineId) {
+    fetch("/machines/" + machineId + "/pickup", { method: "POST" })
       .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
       .then(function (result) {
         if (!result.ok) {
           showExamineOverlay("<h3>Can't move this laundry</h3><p>" + (result.body.error || "Something went wrong.") + "</p>");
           return;
         }
-        pendingHandoffSpot = result.body.spot;
-        setBasketKind("other");
-        setBasketVisible(true);
+        refetchMachineState(); // picks up the server's own carryingFromMachine/basketKind right away, not on the next SSE tick
         showExamineOverlay(
-          "<h3>Picked up</h3><p>Carry this to the drop-off table — Shelf " + result.body.spot + " is waiting for it.</p>"
+          "<h3>Picked up</h3><p>Carry this to the drop-off table to place it on a shelf.</p>"
         );
       })
       .catch(function () {
@@ -1730,24 +1759,47 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       });
   }
 
+  function openHandoffExamine(machineId) {
+    var room = unclaimedRoomFor(machineId);
+    showExamineOverlay(
+      "<h3>Move " + room + "'s laundry?</h3>" +
+      "<p>Move " + room + "'s finished laundry to the drop-off shelf so this machine is free?</p>" +
+      '<p><button type="button" class="btn-primary" id="laundry-confirm-pickup">Pick up</button></p>'
+    );
+    var confirmBtn = document.getElementById("laundry-confirm-pickup");
+    if (confirmBtn) confirmBtn.addEventListener("click", function () { doPickup(machineId); });
+  }
+
   function openDropoffExamine() {
-    if (pendingHandoffSpot == null) {
+    if (carryingFromMachine == null) {
       showExamineOverlay("<h3>Drop-off table</h3><p>Nothing to place here right now.</p>");
       return;
     }
-    var spot = pendingHandoffSpot;
+    var machineId = carryingFromMachine;
     showExamineOverlay(
-      "<h3>Place it on Shelf " + spot + "</h3>" +
-      '<p class="laundry-hint">The room has been told which shelf this is on.</p>' +
+      "<h3>Place it here?</h3>" +
+      '<p class="laundry-hint">The server will pick the next free numbered shelf spot.</p>' +
       '<p><button type="button" class="btn-primary" id="laundry-confirm-placed">Confirm placed</button></p>'
     );
     var confirmBtn = document.getElementById("laundry-confirm-placed");
     if (confirmBtn) {
       confirmBtn.addEventListener("click", function () {
-        pendingHandoffSpot = null;
-        setBasketKind("own");
-        refetchMachineState(); // restores correct own-basket visibility immediately, rather than waiting for the next SSE tick
-        hideExamineOverlay();
+        fetch("/machines/" + machineId + "/place", { method: "POST" })
+          .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showExamineOverlay("<h3>Can't place it here</h3><p>" + (result.body.error || "Something went wrong.") + "</p>");
+              return;
+            }
+            refetchMachineState(); // restores correct own-basket visibility immediately, rather than waiting for the next SSE tick
+            showExamineOverlay(
+              "<h3>Placed on Shelf " + result.body.spot + "</h3>" +
+              '<p>You placed the laundry on Shelf ' + result.body.spot + ' — <a href="/">open the app</a> to let them know.</p>'
+            );
+          })
+          .catch(function () {
+            showExamineOverlay("<h3>Can't place it here</h3><p>Something went wrong — try again.</p>");
+          });
       });
     }
   }

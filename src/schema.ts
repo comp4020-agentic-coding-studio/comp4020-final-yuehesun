@@ -102,6 +102,16 @@ export const reservations = sqliteTable("reservations", {
   // their laundry from pickupSpot — this is what frees the spot for
   // reuse. Null while still sitting in the spot.
   pickedUpAt: int("picked_up_at"),
+  // plans/laundry-dropoff-flow.md: the room currently carrying this
+  // reservation's laundry from the machine to the shelf, set by
+  // pickUpLaundry() and cleared by placeLaundry(). While this is set,
+  // pickupSpot holds the 'IN_TRANSIT' sentinel (never a real spot name)
+  // rather than a real spot — a spot is only actually assigned once
+  // placeLaundry() runs, which is also when the original owner is
+  // notified. Needed because "who may place it" is "whoever is currently
+  // carrying it," not "whoever is still the machine's front waiting
+  // holder" (that may have changed by the time it's placed).
+  carriedBy: text("carried_by"),
 });
 
 export type Machine = typeof machines.$inferSelect;

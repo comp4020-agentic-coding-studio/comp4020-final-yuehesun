@@ -160,7 +160,9 @@ app.get("/laundry/machines-state", (c) => {
       nextRoom: front ? (front.person === identity ? "you" : front.person) : undefined,
       isMyTurn: front?.person === identity && front.status === "waiting",
       isMine: mine,
-      unclaimedLaundry: unclaimed ? { room: unclaimed.reservationId, canHandOff: front?.person === identity && front.status === "waiting" } : undefined,
+      unclaimedLaundry: unclaimed
+        ? { room: unclaimed.personName, canHandOff: front?.person === identity && front.status === "waiting" }
+        : undefined,
     };
   });
   // 8.4a: a basket is "carried" whenever the viewer has a reservation not
@@ -176,7 +178,21 @@ app.get("/laundry/machines-state", (c) => {
   // which of the fixed spots currently hold someone's unacknowledged
   // laundry, independent of whose laundry it is or who's viewing.
   const occupiedSpots = Array.from(queue.occupiedPickupSpots());
-  return c.json({ machines: result, myBasketVisible: activeMine || doneMine.length > 0, occupiedSpots });
+  // plans/laundry-dropoff-flow.md: whether — and from which machine — the
+  // viewer is currently carrying someone else's laundry, read from the
+  // real IN_TRANSIT/carriedBy server state rather than left to a
+  // client-only variable. This is the actual fix for the old
+  // "basket flickers" bug: the server now agrees with the 3D scene's
+  // carry state for the whole duration of the carry, instead of
+  // reporting "done" the instant pickup happened.
+  const carrying = queue.carryingFor(identity);
+  return c.json({
+    machines: result,
+    myBasketVisible: activeMine || doneMine.length > 0 || carrying != null,
+    basketKind: carrying != null ? "other" : "own",
+    carryingFromMachine: carrying?.machineId,
+    occupiedSpots,
+  });
 });
 
 // plans/3d-walkthrough.md Stage 3: a real, server-rendered QR code per
@@ -440,18 +456,28 @@ actionRoute("/offers/:id/decline", "offer_declined", queue.declineOffer);
 // unchanged.
 actionRoute("/reservations/:id/acknowledge-pickup", "laundry_pickup_acknowledged", queue.acknowledgePickup);
 
-// Stage 8.4: the pickup-and-place action. Not actionRoute's shape — a
-// successful handoff needs to report back *which* spot the server picked
-// (JSON, read by the 3D scene's own JS), not just redirect to "/" — and
-// logging already happens inside queue.handoffLaundry itself (it needs
-// the chosen spot in the log line, which actionRoute's generic wrapper
-// doesn't have visibility into).
-app.post("/machines/:id/handoff", (c) => {
+// plans/laundry-dropoff-flow.md: the handoff split into two real steps.
+// Neither fits actionRoute's shape — pickup/place both need a JSON reply
+// (read by the 3D scene's own JS) rather than a redirect to "/", and
+// place's reply needs the chosen spot, which actionRoute's generic
+// wrapper has no visibility into. Logging happens inside queue.ts itself
+// for the same reason the old single /handoff route's logging did.
+app.post("/machines/:id/pickup", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.json({ error: "sign in first" }, 400);
 
   const machineId = Number(c.req.param("id"));
-  const result = queue.handoffLaundry(machineId, identity);
+  const result = queue.pickUpLaundry(machineId, identity);
+  if (!result.ok) return c.json({ error: result.message }, result.status);
+  return c.json({ ok: true });
+});
+
+app.post("/machines/:id/place", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.json({ error: "sign in first" }, 400);
+
+  const machineId = Number(c.req.param("id"));
+  const result = queue.placeLaundry(machineId, identity);
   if (!result.ok) return c.json({ error: result.message }, result.status);
   return c.json({ spot: result.spot });
 });

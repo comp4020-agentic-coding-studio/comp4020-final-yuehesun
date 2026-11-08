@@ -51,6 +51,20 @@ prefer one physically identical spot over another.
   ADR documents an addition next to it, not a weakening of it.
 - `src/queue.ts`'s existing exported functions (`join`, `claim`, `cancel`,
   `start`, `finish`, etc.) are untouched; the handoff logic lives in new
-  functions alongside them (`handoffLaundry`, `acknowledgePickup`,
-  `isFrontWaitingHolder`, `firstFreeSpot`), per Stage 8's own constraint
-  that pre-existing behaviour stay provably unchanged.
+  functions alongside them (`isFrontWaitingHolder`, `firstFreeSpot`), per
+  Stage 8's own constraint that pre-existing behaviour stay provably
+  unchanged.
+
+## Addendum: split into pick up / place (`plans/laundry-dropoff-flow.md`)
+
+The original single `handoffLaundry()` is split into `pickUpLaundry()`
+and `placeLaundry()` — this does not reopen the decision above, only
+changes *when*, across how many requests, it takes effect. The front-
+waiting-holder check above still gates pick up exactly as it gated the
+old one-shot handoff. Place adds one more real authorization question
+this ADR didn't need before, since there was no in-between state to ask
+it about: who may place something that's already been picked up. The
+answer is whoever is currently recorded (`reservations.carriedBy`) as
+carrying it — not "whoever is still the machine's front waiting holder,"
+since that may have changed by the time it's placed. The original
+owner's acknowledgement step is unaffected either way.
