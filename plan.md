@@ -835,8 +835,10 @@ there; "gap" means nobody's claimed it yet.
     assigned. Orthogonal to washing type/duration — a separate field, not
     a new `WASHING_TYPES` entry — and doesn't touch queue position or
     timing, so it's a lower-risk addition than #16.
-18. **Unclaimed laundry handed off to a numbered pickup spot** — **Done,
-    3D walkthrough Stage 8.4**: if the next person needs the machine
+18. **Unclaimed laundry handed off to a numbered pickup spot** — **Built,
+    3D walkthrough Stage 8.4; a rework is planned (not yet coded) in
+    [`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md).**
+    Stage 8.4's original version: if the next person needs the machine
     before the previous owner has collected their clothes, they move the
     clothes to a numbered shelf spot (server-assigned from a fixed list,
     never freely typed) and the original owner is notified which spot via
@@ -846,7 +848,18 @@ there; "gap" means nobody's claimed it yet.
     documented in `docs/adr/0013-laundry-handoff-authorization.md`;
     `pickupSpot`/`pickedUpAt` columns track the new state, and
     `spec/laundry-handoff.test.ts` covers the full cycle including every
-    fixed spot filling and freeing again.
+    fixed spot filling and freeing again. **Found, investigating the
+    build with real 3D-room use (2026-11-08): the carry-to-shelf sequence
+    in the 3D scene is cosmetic** — `handoffLaundry()` is one atomic
+    server write (spot assigned, owner notified, all at pickup time), so
+    nothing server-side distinguishes "picked up" from "placed," and the
+    carried-basket's own visibility raced against the server's own
+    already-updated state, which is the real cause of a reported
+    flickering-basket bug (two sources of truth for the same fact, not
+    timing jitter). `plans/laundry-dropoff-flow.md` designs a real
+    in-transit state (a new `carriedBy` column, a sentinel on the existing
+    `pickupSpot` column) splitting today's one action into pick-up/place,
+    without reopening `docs/adr/0013`'s own authorization boundary.
 19. **3D walkthrough, scan a real machine's code** — prompted by course
     feedback that the bot-driven simulation didn't convincingly pitch this
     as something a real residence would adopt. **Stages 1-3 and Stage 6's
