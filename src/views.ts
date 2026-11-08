@@ -1032,15 +1032,30 @@ function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Ht
 // by machine since MAX_ACTIVE_PER_TYPE = 2 can put two of these on
 // screen at once, each independently dismissible/actionable.
 function handoffPromptCard(claimReservationId: number, suggestion: HandoffSuggestion): Html {
+  // plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
+  // resident confirms WHERE the laundry went. A <select> of the free
+  // spots (never free text), pre-filled with the server's proposal — the
+  // one the 3D drop-off click showed — and the server still re-checks the
+  // submitted value. With no free spot there is nothing to submit.
+  const spots = suggestion.freeSpots;
   return html`<div class="decision-card">
-    <span>Did you move <strong>${suggestion.previousRoom}</strong>'s laundry on <strong>${suggestion.machineLabel}</strong> to the drop-off area?</span>
+    <span>Where did you put <strong>${suggestion.previousRoom}</strong>'s laundry from <strong>${suggestion.machineLabel}</strong>?</span>
     <div>
       <form method="post" action="/machines/${suggestion.machineId}/confirm-handoff" style="display:inline">
-        <button class="btn-primary" type="submit">Yes</button>
+        ${spots.length === 0
+          ? html`<span class="laundry-hint">Every drop-off spot is full.</span>`
+          : html`<label>Spot
+              <select name="spot">${spots.map(
+                (spot) => html`<option value="${spot}"${spot === suggestion.suggestedSpot ? raw(" selected") : raw("")}>${spot}</option>`,
+              )}</select>
+            </label>
+            <button class="btn-primary" type="submit">Confirm</button>`}
       </form>
-      <form method="post" action="/reservations/${claimReservationId}/dismiss-handoff-prompt" style="display:inline">
+      ${suggestion.carrying
+        ? raw("")
+        : html`<form method="post" action="/reservations/${claimReservationId}/dismiss-handoff-prompt" style="display:inline">
         <button class="btn-quiet" type="submit">No</button>
-      </form>
+      </form>`}
     </div>
   </div>`;
 }

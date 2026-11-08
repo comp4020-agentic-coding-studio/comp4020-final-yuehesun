@@ -616,6 +616,19 @@ app.post("/machines/:id/pickup", (c) => {
   return c.json({ ok: true });
 });
 
+// plans/laundry-dropoff-spot-confirm.md Stage 2: the 3D drop-off click.
+// JSON reply read by the 3D scene's JS. Only stores a proposal — nothing
+// is placed until the resident confirms on their home page.
+app.post("/machines/:id/propose-spot", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.json({ error: "sign in first" }, 400);
+
+  const machineId = Number(c.req.param("id"));
+  const result = queue.proposeSpot(machineId, identity);
+  if (!result.ok) return c.json({ error: result.message }, result.status);
+  return c.json({ spot: result.spot });
+});
+
 app.post("/machines/:id/place", (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.json({ error: "sign in first" }, 400);
@@ -637,12 +650,18 @@ app.post("/machines/:id/place", (c) => {
 // to report), so the card disappears on the next render with no separate
 // dismissal needed — "Yes" and "No" both end the card's life, just via
 // different underlying facts.
-app.post("/machines/:id/confirm-handoff", (c) => {
+app.post("/machines/:id/confirm-handoff", async (c) => {
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(errorPage("sign in first", 400), 400);
 
   const machineId = Number(c.req.param("id"));
-  const result = queue.confirmHandoff(machineId, identity);
+  // plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
+  // card's `spot` field is what the resident confirmed. Absent (an older
+  // form, a script) means "use the proposal / first free", not an error;
+  // present means queue.ts validates it against the fixed list.
+  const body = await c.req.parseBody();
+  const spot = typeof body.spot === "string" ? body.spot : undefined;
+  const result = queue.confirmHandoff(machineId, identity, spot);
   if (!result.ok) {
     logging.logEvent("laundry_confirm_handoff_denied", { machine: machineId, room: identity, reason: result.message });
     return c.html(errorPage(result.message, result.status), result.status);

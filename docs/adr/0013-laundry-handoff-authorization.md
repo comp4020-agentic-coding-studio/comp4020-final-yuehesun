@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. Partly superseded by [`0017`](0017-resident-confirms-shelf-spot.md): the
+line "the server picks the spot" no longer holds — the resident confirms
+it. The authorization boundary below is unchanged.
 
 ## Context
 

@@ -492,7 +492,7 @@ it("shows the home-page handoff card once claimed, hides it on \"No\" permanentl
 
   const homeWithCard = await myStatusHtml(next1);
   expect(homeWithCard, "the card should appear once claimed with unclaimed laundry present").toContain(
-    "to the drop-off area?",
+    "Where did you put",
   );
 
   const dismissRes = await fetch(new URL(`/reservations/${next1Reservation}/dismiss-handoff-prompt`, baseUrl), {
@@ -503,10 +503,10 @@ it("shows the home-page handoff card once claimed, hides it on \"No\" permanentl
   expect(dismissRes.status, "dismissing should succeed").toBeLessThan(400);
 
   const homeAfterDismiss = await myStatusHtml(next1);
-  expect(homeAfterDismiss, "the card should be gone immediately after \"No\"").not.toContain("to the drop-off area?");
+  expect(homeAfterDismiss, "the card should be gone immediately after \"No\"").not.toContain("Where did you put");
   const homeAfterReload = await myStatusHtml(next1);
   expect(homeAfterReload, "the card should stay gone on a later render, not just this one").not.toContain(
-    "to the drop-off area?",
+    "Where did you put",
   );
 
   // Now the laundry still needs moving before next1 can start — pick it
@@ -547,7 +547,7 @@ it("shows the home-page handoff card once claimed, hides it on \"No\" permanentl
   await claim(baseUrl, next1, next1SecondReservation);
 
   const homeSecondClaim = await myStatusHtml(next1);
-  expect(homeSecondClaim, "a fresh claim should show a fresh, undismissed card").toContain("to the drop-off area?");
+  expect(homeSecondClaim, "a fresh claim should show a fresh, undismissed card").toContain("Where did you put");
 
   // This time, resolve it by actually starting the wash with no action on
   // the card at all — the card should disappear on its own.
@@ -562,7 +562,7 @@ it("shows the home-page handoff card once claimed, hides it on \"No\" permanentl
 
   const homeAfterStart = await myStatusHtml(next1);
   expect(homeAfterStart, "the card should be gone once running, with no action ever taken on it").not.toContain(
-    "to the drop-off area?",
+    "Where did you put",
   );
 
   await acknowledgePickup(owner2, owner2Reservation);
@@ -576,4 +576,119 @@ it("shows the home-page handoff card once claimed, hides it on \"No\" permanentl
   });
   expect(finishRes.status, "ending the wash should succeed").toBeLessThan(400);
   await acknowledgePickup(next1, next1SecondReservation);
+});
+
+// --- plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
+// resident confirms the shelf spot. The server proposes (the 3D drop-off
+// click), the home page card pre-fills it, and only the confirm writes. ---
+
+// A finished stranger's laundry on MACHINE_ID, and a next-in-line room that
+// has scanned and claimed (so it may pick the laundry up). Returns both
+// rooms' cookies and ids.
+async function laundryAndClaimedNext(): Promise<{ owner: string; ownerReservation: number; next: string; nextReservation: number }> {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const next = await identityCookie(baseUrl, uniqueRoom());
+  const ownerReservation = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, ownerReservation);
+  const nextReservation = await join(baseUrl, next, MACHINE_ID);
+  await scan(baseUrl, next, MACHINE_ID);
+  await claim(baseUrl, next, nextReservation);
+  return { owner, ownerReservation, next, nextReservation };
+}
+
+async function proposeSpot(cookie: string, machineId: number = MACHINE_ID): Promise<Response> {
+  return fetch(new URL(`/machines/${machineId}/propose-spot`, baseUrl), { method: "POST", headers: { cookie } });
+}
+
+async function confirmHandoff(cookie: string, spot?: string, machineId: number = MACHINE_ID): Promise<Response> {
+  return fetch(new URL(`/machines/${machineId}/confirm-handoff`, baseUrl), {
+    method: "POST",
+    headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+    body: spot === undefined ? "" : `spot=${encodeURIComponent(spot)}`,
+    redirect: "manual",
+  });
+}
+
+it("shows the carrier a pre-filled spot card while the laundry is in transit, and only the confirm writes the spot", async () => {
+  const { owner, ownerReservation, next, nextReservation } = await laundryAndClaimedNext();
+
+  expect((await pickUp(next, MACHINE_ID)).status).toBe(200);
+
+  // The regression for "nothing appeared on the phone": the card used to
+  // exist only for untouched laundry, so it vanished once the resident
+  // had picked up in the 3D room.
+  const withoutProposal = await myStatusHtml(next);
+  expect(withoutProposal, "the card must be present while the laundry is in transit").toContain('name="spot"');
+  expect(withoutProposal, "a carrier is mid-task: no 'No' button").not.toContain("dismiss-handoff-prompt");
+
+  const proposeRes = await proposeSpot(next);
+  expect(proposeRes.status).toBe(200);
+  const { spot } = (await proposeRes.json()) as { spot: string };
+  expect(spot).toMatch(/^A[1-6]$/);
+
+  const card = await myStatusHtml(next);
+  expect(card, "the card pre-fills the server's proposal, the same number the 3D text shows").toContain(`value="${spot}" selected`);
+
+  // Proposing reserves nothing and notifies nobody.
+  expect(await myStatusHtml(owner), "the owner hears nothing until the spot is confirmed").not.toMatch(/Shelf|Drop-off/i);
+
+  const confirmRes = await confirmHandoff(next, spot);
+  expect(confirmRes.status).toBe(303);
+  expect(await myStatusHtml(owner), "after confirming, the owner is told the real spot").toContain(spot);
+
+  await acknowledgePickup(owner, ownerReservation);
+  await cleanupReservation(baseUrl, next, nextReservation);
+});
+
+it("lets the resident confirm a different free spot than the proposal", async () => {
+  const { owner, ownerReservation, next, nextReservation } = await laundryAndClaimedNext();
+  expect((await pickUp(next, MACHINE_ID)).status).toBe(200);
+  const { spot: proposed } = (await (await proposeSpot(next)).json()) as { spot: string };
+  const other = (["A1", "A2", "A3", "A4", "A5", "A6"] as const).filter((s) => s !== proposed).pop() as string;
+
+  expect((await confirmHandoff(next, other)).status).toBe(303);
+  expect(await myStatusHtml(owner), "the owner is told the spot the carrier confirmed, not the proposal").toContain(other);
+
+  await acknowledgePickup(owner, ownerReservation);
+  await cleanupReservation(baseUrl, next, nextReservation);
+});
+
+it("rejects an unlisted or occupied spot and writes nothing", async () => {
+  // Occupy a spot first.
+  const first = await laundryAndClaimedNext();
+  const firstPlace = await pickUpAndPlace(first.next, MACHINE_ID);
+  expect(firstPlace.status).toBe(200);
+  const taken = firstPlace.spot as string;
+  await cleanupReservation(baseUrl, first.next, first.nextReservation);
+
+  const second = await laundryAndClaimedNext();
+  for (const bad of ["A9", "", "a1; drop table", "ROOM304"]) {
+    const res = await confirmHandoff(second.next, bad);
+    expect(res.status, `"${bad}" is not one of the numbered spots`).toBe(400);
+  }
+  const occupied = await confirmHandoff(second.next, taken);
+  expect(occupied.status, "an occupied spot is refused").toBe(409);
+
+  // Nothing was written: the laundry is still untouched in the machine, so
+  // it can still be picked up and placed normally.
+  const state = (await machinesState(second.next)).machines.find((m) => m.id === MACHINE_ID);
+  expect(state?.unclaimedLaundry, "a rejected confirm must not move the laundry").toBeTruthy();
+  expect(await myStatusHtml(second.owner), "and the owner has been told nothing").not.toContain("moved to");
+
+  const ok = await pickUpAndPlace(second.next, MACHINE_ID);
+  expect(ok.status).toBe(200);
+
+  await acknowledgePickup(second.owner, second.ownerReservation);
+  await acknowledgePickup(first.owner, first.ownerReservation);
+  await cleanupReservation(baseUrl, second.next, second.nextReservation);
+});
+
+it("refuses to propose a spot when nothing of yours is being carried", async () => {
+  const { owner, ownerReservation, next, nextReservation } = await laundryAndClaimedNext();
+  expect((await proposeSpot(next)).status, "untouched laundry is not 'being carried'").toBe(404);
+  expect((await proposeSpot(owner)).status, "and a stranger can't propose for someone else's carry").toBe(404);
+
+  await pickUpAndPlace(next, MACHINE_ID);
+  await acknowledgePickup(owner, ownerReservation);
+  await cleanupReservation(baseUrl, next, nextReservation);
 });

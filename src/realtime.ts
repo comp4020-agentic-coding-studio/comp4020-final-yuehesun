@@ -62,7 +62,7 @@ function digestOf(machineId: number, now: number): string {
 // broadcasting on completely unrelated changes to those rows.
 function doneUnacknowledgedDigest(): string {
   const rows = db
-    .select({ id: reservations.id, pickupSpot: reservations.pickupSpot })
+    .select({ id: reservations.id, pickupSpot: reservations.pickupSpot, intendedSpot: reservations.intendedSpot })
     .from(reservations)
     .where(and(eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
     .all();

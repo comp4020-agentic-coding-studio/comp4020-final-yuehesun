@@ -18,8 +18,8 @@
 
 ## Status
 
-Stage 1 built and verified (waiting on the user's hand-check). Stages 2
-and 3 not started. Design confirmed with the user in conversation
+Stage 1 built, verified and hand-checked. Stage 2 built and verified by
+spec (waiting on the user's hand-check). Stage 3 not started. Design confirmed with the user in conversation
 (2026-11-09). Each stage ends with a hand-check by the user before the
 next begins (CLAUDE.md Workflow).
 

@@ -124,6 +124,15 @@ export const reservations = sqliteTable("reservations", {
   // fresh (unset) value here, which is the correct behaviour: a new
   // claimant hasn't been asked yet either.
   handoffPromptDismissed: int("handoff_prompt_dismissed").notNull().default(0),
+  // plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
+  // shelf spot the carrier's 3D drop-off click proposed, held so the
+  // carrier's home page can pre-fill its "where did you put it" field —
+  // the 3D room and the phone can be two devices, so the hand-over has
+  // to go through the server. Set on the *laundry's* reservation (like
+  // carriedBy), cleared when the spot is actually placed. It reserves
+  // nothing: only the confirm step writes pickupSpot, and it re-checks
+  // that the spot is still free.
+  intendedSpot: text("intended_spot"),
 });
 
 // plans/laundry-scan-gated-claim.md: a real record of "this identity

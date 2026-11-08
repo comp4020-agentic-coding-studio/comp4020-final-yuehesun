@@ -822,7 +822,7 @@ export function finish(reservationId: number, personName: string): ActionResult 
 const IN_TRANSIT = "IN_TRANSIT";
 
 export type PickupResult = { ok: true } | { ok: false; status: 403 | 404 | 409; message: string };
-export type PlaceResult = { ok: true; spot: string } | { ok: false; status: 403 | 404 | 409; message: string };
+export type PlaceResult = { ok: true; spot: string } | { ok: false; status: 400 | 403 | 404 | 409; message: string };
 
 // Who may trigger a handoff: whoever currently holds the front position
 // on this exact machine — i.e. the person this handoff is *for*, per
@@ -907,36 +907,76 @@ export interface HandoffSuggestion {
   machineId: number;
   machineLabel: string;
   previousRoom: string;
+  // plans/laundry-dropoff-spot-confirm.md Stage 2: what the card pre-fills
+  // and offers. suggestedSpot is the 3D drop-off click's proposal if it is
+  // still free, otherwise the first free spot; freeSpots is every spot the
+  // resident may pick instead. Both come from the server so the 3D text
+  // and the phone card can never show different numbers.
+  suggestedSpot: string | undefined;
+  freeSpots: string[];
+  // True when this resident already picked the laundry up (IN_TRANSIT):
+  // the card then has no "No" — they are mid-task, not being asked.
+  carrying: boolean;
+}
+
+function freeSpotsNow(): string[] {
+  const occupied = occupiedPickupSpots();
+  return PICKUP_SPOTS.filter((s) => !occupied.has(s));
+}
+
+// The laundry this person is carrying away from this machine right now.
+function inTransitCarriedBy(machineId: number, personName: string): Reservation | undefined {
+  return db
+    .select()
+    .from(reservations)
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        eq(reservations.pickupSpot, IN_TRANSIT),
+        eq(reservations.carriedBy, personName),
+      ),
+    )
+    .get();
 }
 
 // plans/laundry-handoff-decouple-from-claim.md: surfaced as a home-page
 // card the instant a claim succeeds on a machine that still has the
 // previous resident's laundry sitting in it — same "dismissible prompt,
 // recomputed fresh on every render" shape as suggestedDryer above, not a
-// one-shot notice. undefined means "don't show the card": no such
-// reservation, it's not this resident's own claimed reservation, it's
-// already past claimed (running/done/cancelled — see start()'s own new
-// precondition, which is what guarantees "running" already means the
-// laundry was moved), it was already dismissed, or there's no unclaimed
-// laundry on this machine to ask about. Deliberately reuses
-// unacknowledgedLaundryOn's exact check (not doneUnacknowledgedOnMachine,
-// which also counts the IN_TRANSIT case) — if it's already in transit,
-// the same resident must be the one who started carrying it via the 3D
-// scene's own pickup flow, so there's nothing left to ask them about
-// pre-pickup.
+// one-shot notice. undefined means "don't show the card".
+//
+// plans/laundry-dropoff-spot-confirm.md Stage 2: the card is now also
+// shown while this resident is *carrying* the laundry (IN_TRANSIT, picked
+// up in the 3D room) — before, it vanished at exactly the moment they
+// walked to the drop-off table, because only untouched laundry counted.
+// "No" (handoffPromptDismissed) only silences the untouched-laundry
+// question; a resident who has already picked the laundry up is mid-task
+// and keeps the card until they place it.
 export function suggestedHandoff(claimReservationId: number, personName: string): HandoffSuggestion | undefined {
   const claim = db.select().from(reservations).where(eq(reservations.id, claimReservationId)).get();
   if (!claim || claim.personName !== personName) return undefined;
-  if (claim.status !== "claimed") return undefined;
-  if (claim.handoffPromptDismissed) return undefined;
 
-  const laundry = unacknowledgedLaundryOn(claim.machineId);
-  if (!laundry) return undefined;
+  const carried = claim.status === "claimed" || claim.status === "waiting" ? inTransitCarriedBy(claim.machineId, personName) : undefined;
+
+  let previousRoom: string;
+  if (carried) {
+    previousRoom = carried.personName;
+  } else {
+    if (claim.status !== "claimed") return undefined;
+    if (claim.handoffPromptDismissed) return undefined;
+    const laundry = unacknowledgedLaundryOn(claim.machineId);
+    if (!laundry) return undefined;
+    previousRoom = laundry.personName;
+  }
 
   const machine = db.select().from(machines).where(eq(machines.id, claim.machineId)).get();
   if (!machine) return undefined;
 
-  return { machineId: machine.id, machineLabel: machine.label, previousRoom: laundry.personName };
+  const freeSpots = freeSpotsNow();
+  const intended = carried?.intendedSpot;
+  const suggestedSpot = intended && freeSpots.includes(intended) ? intended : freeSpots[0];
+  return { machineId: machine.id, machineLabel: machine.label, previousRoom, suggestedSpot, freeSpots, carrying: carried != null };
 }
 
 // plans/laundry-handoff-decouple-from-claim.md: "No" on the handoff
@@ -1019,7 +1059,7 @@ export function pickUpLaundry(machineId: number, personName: string): PickupResu
 // later. Only now does the original owner get the "laundry_moved" notice
 // — deferred to this point, since this is the first moment there's
 // something real (a shelf spot) to tell them about.
-export function placeLaundry(machineId: number, personName: string): PlaceResult {
+export function placeLaundry(machineId: number, personName: string, requestedSpot?: string): PlaceResult {
   const laundry = db
     .select()
     .from(reservations)
@@ -1034,11 +1074,23 @@ export function placeLaundry(machineId: number, personName: string): PlaceResult
     .get();
   if (!laundry) return { ok: false, status: 404, message: "nothing of yours is currently being carried from this machine" };
 
-  const spot = firstFreeSpot();
+  // plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
+  // resident confirms the spot, because only they know where the laundry
+  // physically went. A given spot must be one of PICKUP_SPOTS and free
+  // right now; without one, the 3D click's proposal, then the first free.
+  let spot: string | undefined;
+  if (requestedSpot !== undefined) {
+    const bad = checkRequestedSpot(requestedSpot);
+    if (bad) return bad;
+    spot = requestedSpot;
+  } else {
+    const intended = laundry.intendedSpot;
+    spot = intended && !occupiedPickupSpots().has(intended) ? intended : firstFreeSpot();
+  }
   if (!spot) return { ok: false, status: 409, message: "every drop-off spot is full" };
 
   db.update(reservations)
-    .set({ pickupSpot: spot, carriedBy: null, notice: "laundry_moved" })
+    .set({ pickupSpot: spot, carriedBy: null, intendedSpot: null, notice: "laundry_moved" })
     .where(eq(reservations.id, laundry.id))
     .run();
   logging.logEvent("laundry_placed", {
@@ -1048,6 +1100,37 @@ export function placeLaundry(machineId: number, personName: string): PlaceResult
     spot,
     movedBy: personName,
   });
+  return { ok: true, spot };
+}
+
+// A spot the resident submits is checked like a room number is (ADR
+// 0004): it must be one of the fixed names and not already occupied, or
+// nothing is written. Returns the rejection, or undefined when fine.
+function checkRequestedSpot(spot: string): PlaceResult | undefined {
+  if (!(PICKUP_SPOTS as readonly string[]).includes(spot)) {
+    return { ok: false, status: 400, message: "choose one of the numbered drop-off spots" };
+  }
+  if (occupiedPickupSpots().has(spot)) {
+    return { ok: false, status: 409, message: `spot ${spot} is already taken — choose another` };
+  }
+  return undefined;
+}
+
+// plans/laundry-dropoff-spot-confirm.md Stage 2: the 3D drop-off click.
+// Proposes a spot for the laundry this resident is carrying and stores it
+// so their home page can pre-fill the field. The server picks the
+// proposal (not the browser's last-known occupancy), so the 3D text and
+// the phone card agree. Reserves nothing: another carrier may be
+// proposed the same spot, and whoever confirms second is told it's taken.
+export function proposeSpot(machineId: number, personName: string): PlaceResult {
+  const laundry = inTransitCarriedBy(machineId, personName);
+  if (!laundry) return { ok: false, status: 404, message: "nothing of yours is currently being carried from this machine" };
+
+  const free = freeSpotsNow();
+  const spot = laundry.intendedSpot && free.includes(laundry.intendedSpot) ? laundry.intendedSpot : free[0];
+  if (!spot) return { ok: false, status: 409, message: "every drop-off spot is full" };
+
+  db.update(reservations).set({ intendedSpot: spot }).where(eq(reservations.id, laundry.id)).run();
   return { ok: true, spot };
 }
 
@@ -1067,7 +1150,14 @@ export function placeLaundry(machineId: number, personName: string): PlaceResult
 // are the one real write placeLaundry already performs — reused here,
 // not re-implemented, with an in-transit record created first if one
 // doesn't already exist.
-export function confirmHandoff(machineId: number, personName: string): PlaceResult {
+export function confirmHandoff(machineId: number, personName: string, requestedSpot?: string): PlaceResult {
+  // Validated before any write: a bad spot must not leave the laundry
+  // half-moved (IN_TRANSIT) with nothing placed.
+  if (requestedSpot !== undefined) {
+    const bad = checkRequestedSpot(requestedSpot);
+    if (bad) return bad;
+  }
+
   const alreadyInTransit = db
     .select({ id: reservations.id })
     .from(reservations)
@@ -1106,7 +1196,7 @@ export function confirmHandoff(machineId: number, personName: string): PlaceResu
     logging.logEvent("laundry_picked_up", { reservation: laundry.id, room: laundry.personName, machine: machineId, movedBy: personName });
   }
 
-  return placeLaundry(machineId, personName);
+  return placeLaundry(machineId, personName, requestedSpot);
 }
 
 // The original owner confirming they've collected their laundry —

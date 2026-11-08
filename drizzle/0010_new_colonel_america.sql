@@ -1,0 +1,1 @@
+ALTER TABLE `reservations` ADD `intended_spot` text;
