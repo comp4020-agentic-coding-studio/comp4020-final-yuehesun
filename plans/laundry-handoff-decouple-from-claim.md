@@ -650,3 +650,62 @@ HTTP sequence: before claiming, `state` is `"your-turn"`, not
 succeeds, `state` becomes `"claimed"` with `canHandOff` still true, and
 the swap fires exactly then. `pnpm check` re-confirmed green (15 files,
 52 tests) after the fix, against a freshly wiped scratch server.
+
+## A second, related bug found after that fix — reported directly by the user
+
+The first fix above stopped the premature pre-claim jump, but didn't
+cover the whole picture. Reported directly, after using the fixed
+build: clicked "Pick up" exactly once, it worked, but re-interacting
+with the same machine brought the exact same "Take out [room]'s
+laundry?" prompt right back — and clicking "Pick up" a second time
+failed with "no unclaimed laundry on this machine," which read as a
+real bug (the user's own words: "I'm sure I only clicked once").
+
+**Root cause, confirmed directly, not assumed.** `doneUnacknowledgedOnMachine()`
+(`src/queue.ts`) deliberately keeps reporting a machine's unclaimed
+laundry while it's `IN_TRANSIT` — correct for the status light (from
+every *other* viewer's perspective, the situation hasn't resolved just
+because someone started carrying it), but `canHandoffOn` (fed by this
+same field) was being read as "should I still be offered the pickup
+prompt," which is a different question once *this specific resident* is
+the one who already picked it up. Confirmed with a real HTTP sequence
+against a scratch server: right after a successful `pickUpLaundry`
+call, `GET /laundry/machines-state` still reports
+`unclaimedLaundry.canHandOff: true` for that machine — exactly the
+condition both the overlay-swap logic and `handleInteract`'s own
+re-interact branch were reading, with nothing checking whether *this*
+resident was the one already carrying it. A second `pickUpLaundry` call
+in that exact state does genuinely 404 ("no unclaimed laundry") — the
+error itself was correct; the real bug was letting the user reach a
+second pickup attempt at all.
+
+**Fix:** both places now additionally check
+`carryingFromMachine === <this machine>` (the one fact scoped to
+exactly the resident currently carrying it, via `queue.ts`'s own
+`carryingFor()`) and skip the pickup prompt when true:
+
+- The overlay-swap condition (`applyMachineState`) now takes the
+  freshly-fetched `carryingFromMachine` value as a parameter, rather
+  than reading the outer `carryingFromMachine` variable — found as a
+  real ordering bug while fixing this: `applyMachineState` runs
+  *before* `applyBasketState` (which sets that outer variable) inside
+  `refetchMachineState`, so reading it directly inside
+  `applyMachineState` would always see the *previous* refetch's stale
+  value, not this one's.
+- `handleInteract`'s own re-interact branch now checks the outer
+  `carryingFromMachine` variable directly — safe there, since it only
+  runs in response to a real user action, well after any
+  `refetchMachineState` call has already finished updating it.
+- Both now show a new, shared `showCarryingReminder()` ("Picked up —
+  carry this to the drop-off table to place it on a shelf.") instead of
+  either the claim/QR screen or a second pickup confirm — extracted
+  from `doPickup`'s own existing success message rather than duplicated.
+
+Confirmed directly: right after a real `pickUpLaundry` call,
+`GET /laundry/machines-state` shows `carryingFromMachine` equal to that
+exact machine id while `unclaimedLaundry.canHandOff` is still `true` —
+the precise combination that used to slip through both checks. A second
+`pickUpLaundry` call in that state still correctly 404s server-side
+(that was never the bug), but the fixed client no longer offers a path
+that leads there. `pnpm check`: 15 files, 52 tests, green against a
+freshly wiped scratch server.

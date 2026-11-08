@@ -1437,7 +1437,14 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // screen (point 1) rather than ever branching on canHandoffOn first.
   var isMyTurnOn = {};
 
-  function applyMachineState(entries) {
+  // carryingFromMachineNow is passed in explicitly, not read off the
+  // outer carryingFromMachine variable below — found as a real bug while
+  // fixing a related one: applyMachineState runs BEFORE applyBasketState
+  // in refetchMachineState's own call order, so reading the outer
+  // variable here would always see the PREVIOUS refetch's value, not
+  // this one's. Passing the freshly-fetched value in directly sidesteps
+  // that ordering entirely.
+  function applyMachineState(entries, carryingFromMachineNow) {
     entries.forEach(function (entry) {
       var light = statusLights[entry.id];
       if (!light) return;
@@ -1512,7 +1519,28 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       // branch on initial interact. Cleared (openClaimOverlayMachineId =
       // null) so this only fires once per claim, not on every subsequent
       // SSE refetch while the prompt is already showing.
-      if (openClaimOverlayMachineId === entry.id && canHandoffOn[entry.id] && entry.state === "claimed") {
+      //
+      // Second real bug found and fixed, same root cause as the first:
+      // canHandoffOn stays true even after this resident has already
+      // called pickUpLaundry once and the laundry is now IN_TRANSIT —
+      // doneUnacknowledgedOnMachine() (src/queue.ts) deliberately keeps
+      // reporting it while in transit, since from every OTHER viewer's
+      // perspective the machine's own situation hasn't resolved yet
+      // (that's correct for the status light). But this resident
+      // specifically already did pick it up — reported directly: "I only
+      // clicked Pick up once, but the prompt came back, and the second
+      // click failed with 'no unclaimed laundry.'" carryingFromMachineNow
+      // === entry.id is the one fact that's actually true only for the
+      // resident currently carrying it (confirmed: carryingFor() in
+      // src/queue.ts is scoped to carriedBy === this exact person), so
+      // it's what's missing from canHandoffOn's own broader "is this
+      // reservation entitled to handle it at all" question.
+      if (
+        openClaimOverlayMachineId === entry.id &&
+        canHandoffOn[entry.id] &&
+        entry.state === "claimed" &&
+        carryingFromMachineNow !== entry.id
+      ) {
         openClaimOverlayMachineId = null;
         openHandoffExamine(entry.id);
       }
@@ -1541,7 +1569,13 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         if (!data) return;
-        applyMachineState(data.machines || []);
+        // data.carryingFromMachine (this refetch's own value, not the
+        // outer carryingFromMachine variable applyBasketState is about
+        // to set below) is what applyMachineState needs to tell "still
+        // untouched in the machine" apart from "already being carried by
+        // me" — see applyMachineState's own comment for the real bug
+        // this fixes.
+        applyMachineState(data.machines || [], data.carryingFromMachine == null ? null : data.carryingFromMachine);
         applyBasketState(data);
         applySpotOccupancy(data.occupiedSpots);
       })
@@ -1856,6 +1890,15 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     return lastKnownUnclaimedRoom[machineId] || "this room";
   }
 
+  // Shown both right after a successful pickup, and again if the
+  // resident re-interacts with the same machine while still mid-carry
+  // (see handleInteract's own carryingFromMachine check below) — a
+  // reminder of what to do next, not a new pickup confirm, since there's
+  // genuinely nothing left on this machine to pick up a second time.
+  function showCarryingReminder() {
+    showExamineOverlay("<h3>Picked up</h3><p>Carry this to the drop-off table to place it on a shelf.</p>");
+  }
+
   function doPickup(machineId) {
     fetch("/machines/" + machineId + "/pickup", { method: "POST" })
       .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
@@ -1865,9 +1908,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
           return;
         }
         refetchMachineState(); // picks up the server's own carryingFromMachine/basketKind right away, not on the next SSE tick
-        showExamineOverlay(
-          "<h3>Picked up</h3><p>Carry this to the drop-off table to place it on a shelf.</p>"
-        );
+        showCarryingReminder();
       })
       .catch(function () {
         showExamineOverlay("<h3>Can't move this laundry</h3><p>Something went wrong — try again.</p>");
@@ -1965,11 +2006,29 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // prompt and walk up again) — canHandoffOn (still true, since its own
   // server-side canHandOff now also covers "claimed", not just
   // "waiting") is exactly the right check for that re-interact case.
+  //
+  // Second real bug, same root cause as applyMachineState's own fix
+  // above: canHandoffOn stays true even after this resident already
+  // called pickUpLaundry once and is now carrying it (IN_TRANSIT) —
+  // reported directly: re-interacting with the machine after a
+  // successful pickup brought the same "Take out ...'s laundry?" prompt
+  // right back, and clicking Pick up a second time correctly failed
+  // ("no unclaimed laundry"), since there genuinely was nothing left
+  // untouched to pick up. carryingFromMachine === highlighted.id (read
+  // here, not passed in — unlike applyMachineState's own fix, this runs
+  // on a real user action, well after any refetchMachineState call has
+  // already finished updating it, so there's no stale-value risk here)
+  // is what's missing from canHandoffOn's own broader question.
   function handleInteract() {
     if (!highlighted) return;
     if (highlighted.kind === "machine") {
       if (isMyTurnOn[highlighted.id]) {
         openMachineExamine(highlighted.id);
+      } else if (carryingFromMachine === highlighted.id) {
+        // Already picked up and mid-carry — nothing left to pick up here
+        // a second time; remind, don't re-offer the claim/QR screen or
+        // the pickup confirm.
+        showCarryingReminder();
       } else if (canHandoffOn[highlighted.id]) {
         openHandoffExamine(highlighted.id);
       } else {
