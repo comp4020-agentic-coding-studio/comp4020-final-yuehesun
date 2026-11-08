@@ -708,11 +708,21 @@ and the offer moves to the next person instead.
   verification in this stage used a separate scratch port/database
   instead, per `CLAUDE.md`'s own existing rule.
 - **A second, smaller round of 3D-room feedback — three items built and
-  verified, one (the drop-off flow rework) scoped into its own plan, not
-  coded.** (1) Scroll-wheel zoom's own range widened (0.6-7, was 1.8-5)
-  and its sensitivity quadrupled (0.01 per `deltaY`, was 0.0025) — the
-  original range/sensitivity couldn't get close enough to read small
-  detail (the iron prop) even scrolled all the way in. (2) A real
+  verified (one of them revised twice after further real bugs the first
+  pass introduced), one (the drop-off flow rework) scoped into its own
+  plan, not coded.** (1) Scroll-wheel zoom, through two follow-up
+  corrections: the first widened range (0.6-7) and 4x sensitivity moved
+  too fast in both directions and, worse, zooming in close enough
+  revealed a real pre-existing-shape bug — `updateCamera()`'s vertical
+  pitch offset (`Math.sin(pitch) * 1.2`) was a fixed absolute height
+  change applied regardless of `CAM_DISTANCE`, so the same offset reads
+  as a mild tilt at the original distance but snaps to a near-top-down
+  angle once the camera sits much closer — fixed by scaling the offset
+  with `CAM_DISTANCE` (`PITCH_HEIGHT_RATIO`) so the look angle stays
+  constant at any zoom level. Final shape: sensitivity and max (zoom-out)
+  distance reverted to their original values (0.0025, 5); only the
+  zoom-in minimum stays closer (0.6, down from 1.8) — "zoom in more,
+  zoom out doesn't need as much," per the user's own framing. (2) A real
   "this machine is yours" marker in the 3D room: `GET
   /laundry/machines-state` previously only derived `nextRoom`/`isMyTurn`
   from the *front* row of a machine's queue (`front?.person === identity`),
@@ -720,21 +730,29 @@ and the offer moves to the next person instead.
   when a different row is front — a real bug, fixed with a proper
   `rows.some((r) => r.person === identity)` check (mirroring
   `src/views.ts`'s own `homePage`, which already did this correctly), now
-  exposed as a new `isMine` field driving a downward marker reusing the
-  local character's own existing "this is you" selfMarker convention
-  (same cone shape/colour). (3) A door added to the south wall, directly
-  behind the character's own spawn point — two wall segments with a real
-  gap instead of one solid wall, a lintel closing the height difference, a
-  procedural wood-tone door panel and handle; no collision-box change
-  needed since none of the four room walls were ever in `collisionBoxes`
-  to begin with (the room boundary is `clampToRoom`'s own
-  `roomHalfWidth`/`roomHalfDepth` range). `pnpm check` green (40 tests)
-  against a scratch database; `src/queue.ts` untouched. **The fourth item
-  — reworking the unclaimed-laundry drop-off flow into a real two-step
-  pick-up/place sequence — was investigated to a precise root cause (the
-  3D carry animation has no corresponding two-step server state; the
-  reported flickering basket is two sources of truth racing, not timing
-  jitter) and designed in full in
+  exposed as a new `isMine` field. Revised from its first pass (the local
+  character's own muted amber self-marker colour) to the app's existing
+  red alert colour (`STATE_COLOR`'s "your-turn"/"unclaimed" red) plus a
+  gentle per-frame vertical bob, after feedback that picking your own
+  machine out of a room of ten needed to be more attention-grabbing than
+  a static colour match. (3) A door on the south wall, behind the
+  character's own spawn point — two wall segments with a real gap, a
+  lintel, a procedural wood-tone panel and handle; no collision-box
+  change needed since none of the four room walls were ever in
+  `collisionBoxes` (the room boundary is `clampToRoom`'s own range).
+  **A real placement bug in the first pass** — the door panel was
+  centered 0.088 units off from the doorway gap it sits in, both of
+  which should share x=0 — was found and fixed, confirmed symmetric by
+  direct recomputation (0.044 clearance on both sides) rather than by
+  screenshot angle alone, since the room's own perspective made the
+  misalignment hard to judge reliably by eye. `pnpm check` green (40
+  tests) against a scratch database throughout every revision;
+  `src/queue.ts` untouched. **The fourth item — reworking the
+  unclaimed-laundry drop-off flow into a real two-step pick-up/place
+  sequence — was investigated to a precise root cause (the 3D carry
+  animation has no corresponding two-step server state; the reported
+  flickering basket is two sources of truth racing, not timing jitter)
+  and designed in full in
   [`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md), but
   deliberately not coded this session**: it needs a schema migration (a
   new `carriedBy` column), a new in-transit sentinel state, and splits one
