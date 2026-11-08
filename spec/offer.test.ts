@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { cleanupReservation, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
+import { acknowledgePickup, cleanupReservation, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
 import { acceptOffer, claimAndStart, declineOffer, finish, waitForOffer } from "./support/offer-client.ts";
 
 // Crit 9 Stage 3 (plans/crit-9.md): the "earlier machine" offer. The
@@ -69,6 +69,12 @@ it("offers a newly idle machine to the longest-waiting eligible person elsewhere
 
     await cleanupReservation(baseUrl, holder, holderReservation);
     if (candidateRow) await cleanupReservation(baseUrl, candidate, candidateRow.reservationId);
+    // plans/laundry-handoff-decouple-from-claim.md: finisherReservation
+    // reached "done" via finish() above and was never acknowledged —
+    // cancel() (cleanupReservation's own action) has no effect on a done
+    // reservation, so without this, IDLE_MACHINE carries a real
+    // unacknowledged-laundry record into this file's own next test.
+    await acknowledgePickup(baseUrl, finisher, finisherReservation);
   } finally {
     await releaseOthers(fillers);
   }
@@ -99,6 +105,11 @@ it("declining an offer leaves the original reservation untouched", async () => {
 
     await cleanupReservation(baseUrl, holder, holderReservation);
     await cleanupReservation(baseUrl, candidate, candidateReservation);
+    // plans/laundry-handoff-decouple-from-claim.md: same reasoning as the
+    // previous test — finisherReservation is "done" and never
+    // acknowledged; without this, IDLE_MACHINE carries a real
+    // unacknowledged-laundry record past this file's own run.
+    await acknowledgePickup(baseUrl, finisher, finisherReservation);
   } finally {
     await releaseOthers(fillers);
   }

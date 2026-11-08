@@ -326,3 +326,253 @@ it("rejects a place when the pool fills up between pickup and placement, without
   }
   expect(carrierSpot).toMatch(/^A[1-6]$/);
 });
+
+// plans/laundry-handoff-decouple-from-claim.md: claim is now always
+// unconditional on a machine's laundry state, and the resident entitled
+// to move the previous resident's laundry stays entitled after claiming
+// (isFrontWaitingHolder widened to "waiting" | "claimed") — this is the
+// real behaviour change this plan makes to an existing authorization
+// function, verified directly here rather than assumed from reading the
+// diff.
+it("lets a claimed (not just waiting) front-holder pick up and place the previous resident's laundry", async () => {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const next = await identityCookie(baseUrl, uniqueRoom());
+
+  const ownerReservation = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, ownerReservation);
+
+  const nextReservation = await join(baseUrl, next, MACHINE_ID);
+  await scan(baseUrl, next, MACHINE_ID);
+  const claimStatus = await claim(baseUrl, next, nextReservation);
+  expect(claimStatus, "claiming should succeed with no dependency on this machine's laundry state").toBeLessThan(400);
+
+  const pickupRes = await pickUp(next, MACHINE_ID);
+  expect(pickupRes.status, "a claimed (not just waiting) front-holder should still be able to pick up").toBe(200);
+
+  const placeRes = await place(next, MACHINE_ID);
+  expect(placeRes.status, "the same claimed resident should be able to place it").toBe(200);
+  const { spot } = (await placeRes.json()) as { spot: string };
+  expect(spot).toMatch(/^A[1-6]$/);
+
+  await acknowledgePickup(owner, ownerReservation);
+  await cleanupReservation(baseUrl, next, nextReservation);
+});
+
+// plans/laundry-handoff-decouple-from-claim.md: the real, physically-
+// grounded constraint this plan adds — start() must reject outright if
+// the machine still holds the previous resident's laundry, and must
+// succeed once it's been moved. This is what actually enforces "the
+// machine has to be empty before a wash can begin," not just a UI
+// confirm dialog the resident could ignore.
+it("rejects start() while the previous resident's laundry is still in the machine, and allows it once moved", async () => {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const next = await identityCookie(baseUrl, uniqueRoom());
+
+  const ownerReservation = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, ownerReservation);
+
+  const nextReservation = await join(baseUrl, next, MACHINE_ID);
+  await scan(baseUrl, next, MACHINE_ID);
+  const claimStatus = await claim(baseUrl, next, nextReservation);
+  expect(claimStatus, "claiming should succeed regardless of laundry state").toBeLessThan(400);
+
+  const blockedStart = await fetch(new URL(`/reservations/${nextReservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(blockedStart.status, "starting should be rejected while laundry is still in the machine").toBe(409);
+  const blockedBody = await blockedStart.text();
+  // The apostrophe in the real message ("resident's") is HTML-escaped by
+  // html`` in errorPage() — matched on a substring without it rather than
+  // the exact raw message, confirmed against the real rendered response.
+  expect(blockedBody, "the rejection should name the real constraint, not a generic failure").toContain(
+    "move the previous resident",
+  );
+  expect(blockedBody, "the rejection should name moving the laundry out").toContain("laundry out first");
+
+  const pickupRes = await pickUp(next, MACHINE_ID);
+  expect(pickupRes.status, "pick up should succeed").toBe(200);
+  const placeRes = await place(next, MACHINE_ID);
+  expect(placeRes.status, "place should succeed").toBe(200);
+
+  const allowedStart = await fetch(new URL(`/reservations/${nextReservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(allowedStart.status, "starting should succeed once the machine is genuinely empty").toBeLessThan(400);
+
+  const { spot } = (await placeRes.json()) as { spot: string };
+  await acknowledgePickup(owner, ownerReservation);
+  // cleanupReservation's own cancel() has no effect on a "running"
+  // reservation (confirmed the hard way: a prior version of this test
+  // left nextReservation running, which blocked every later test sharing
+  // MACHINE_ID with a real 409 on claim — the same class of gap found and
+  // fixed in spec/offer.test.ts's own cleanup). finish() is what actually
+  // frees the machine for the next test.
+  const finishRes = await fetch(new URL(`/reservations/${nextReservation}/finish`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(finishRes.status, "ending the wash should succeed, so this doesn't leave MACHINE_ID blocked for later tests").toBeLessThan(400);
+  await acknowledgePickup(next, nextReservation);
+  expect(spot).toMatch(/^A[1-6]$/);
+});
+
+// plans/laundry-handoff-decouple-from-claim.md: confirmHandoff() is the
+// home page's own "Yes, I moved it" action — it must work as a complete,
+// standalone confirm for a resident who never touched the 3D scene's
+// pickup step at all (pickUp/place above), not only as a second half of
+// that two-step flow.
+it("lets confirmHandoff() complete the whole pickup-and-place in one call, with no prior pickUp step", async () => {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const next = await identityCookie(baseUrl, uniqueRoom());
+
+  const ownerReservation = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, ownerReservation);
+
+  const nextReservation = await join(baseUrl, next, MACHINE_ID);
+  await scan(baseUrl, next, MACHINE_ID);
+  await claim(baseUrl, next, nextReservation);
+
+  const confirmRes = await fetch(new URL(`/machines/${MACHINE_ID}/confirm-handoff`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(confirmRes.status, "confirmHandoff should succeed as a single standalone action").toBe(303);
+  expect(confirmRes.headers.get("location"), "should redirect home like every other action").toBe("/");
+
+  const stateAfter = await machinesState(next);
+  const machineAfter = stateAfter.machines.find((m) => m.id === MACHINE_ID);
+  expect(machineAfter?.unclaimedLaundry, "the machine should no longer report unclaimed laundry").toBeUndefined();
+
+  const startRes = await fetch(new URL(`/reservations/${nextReservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(startRes.status, "starting should now succeed, since confirmHandoff already moved the laundry").toBeLessThan(400);
+
+  const ownerStatus = await myStatusHtml(owner);
+  expect(ownerStatus, "the owner should see the real notice with a real spot, same as the two-step flow").toMatch(
+    /Shelf A[1-6]/,
+  );
+
+  await acknowledgePickup(owner, ownerReservation);
+  // nextReservation is "running" at this point (startRes succeeded
+  // above) — cleanupReservation's own cancel() has no effect on it;
+  // finish it properly so MACHINE_ID is genuinely free for later tests.
+  const finishRes = await fetch(new URL(`/reservations/${nextReservation}/finish`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(finishRes.status, "ending the wash should succeed").toBeLessThan(400);
+  await acknowledgePickup(next, nextReservation);
+});
+
+// plans/laundry-handoff-decouple-from-claim.md: the home page's own
+// "did you move it?" card — appears once claimed with unclaimed laundry
+// present, disappears on "No" and stays gone, disappears on its own once
+// start() succeeds (laundry necessarily moved by then) with no action
+// ever taken.
+it("shows the home-page handoff card once claimed, hides it on \"No\" permanently, and clears it once start() succeeds with no action", async () => {
+  const owner1 = await identityCookie(baseUrl, uniqueRoom());
+  const next1 = await identityCookie(baseUrl, uniqueRoom());
+
+  const owner1Reservation = await join(baseUrl, owner1, MACHINE_ID);
+  await startAndFinish(owner1, owner1Reservation);
+  const next1Reservation = await join(baseUrl, next1, MACHINE_ID);
+  await scan(baseUrl, next1, MACHINE_ID);
+  await claim(baseUrl, next1, next1Reservation);
+
+  const homeWithCard = await myStatusHtml(next1);
+  expect(homeWithCard, "the card should appear once claimed with unclaimed laundry present").toContain(
+    "to the drop-off area?",
+  );
+
+  const dismissRes = await fetch(new URL(`/reservations/${next1Reservation}/dismiss-handoff-prompt`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next1 },
+    redirect: "manual",
+  });
+  expect(dismissRes.status, "dismissing should succeed").toBeLessThan(400);
+
+  const homeAfterDismiss = await myStatusHtml(next1);
+  expect(homeAfterDismiss, "the card should be gone immediately after \"No\"").not.toContain("to the drop-off area?");
+  const homeAfterReload = await myStatusHtml(next1);
+  expect(homeAfterReload, "the card should stay gone on a later render, not just this one").not.toContain(
+    "to the drop-off area?",
+  );
+
+  // Now the laundry still needs moving before next1 can start — pick it
+  // up and place it directly (not via the dismissed card), confirming the
+  // card's own dismissal didn't block the real pickup/place actions.
+  await pickUp(next1, MACHINE_ID);
+  await place(next1, MACHINE_ID);
+  await acknowledgePickup(owner1, owner1Reservation);
+
+  // next1's own first claim has to actually run its course (start,
+  // finish) before owner2 can become front of this machine's queue —
+  // otherwise next1's still-claimed reservation blocks owner2's own join
+  // from ever reaching the front, and owner2's startAndFinish below fails
+  // with a 409 on claim (found exactly this way: a real ordering mistake
+  // in this test itself, not assumed).
+  const next1FirstStart = await fetch(new URL(`/reservations/${next1Reservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next1 },
+    redirect: "manual",
+  });
+  expect(next1FirstStart.status, "next1's first wash should now be able to start").toBeLessThan(400);
+  const next1FirstFinish = await fetch(new URL(`/reservations/${next1Reservation}/finish`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next1 },
+    redirect: "manual",
+  });
+  expect(next1FirstFinish.status, "ending next1's first wash should succeed").toBeLessThan(400);
+  await acknowledgePickup(next1, next1Reservation);
+
+  // A second room's own claim on a fresh laundry cycle should see a
+  // fresh, undismissed card — dismissal is scoped to one specific claim,
+  // not a permanent opt-out for this resident.
+  const owner2 = await identityCookie(baseUrl, uniqueRoom());
+  const owner2Reservation = await join(baseUrl, owner2, MACHINE_ID);
+  await startAndFinish(owner2, owner2Reservation);
+  const next1SecondReservation = await join(baseUrl, next1, MACHINE_ID);
+  await scan(baseUrl, next1, MACHINE_ID);
+  await claim(baseUrl, next1, next1SecondReservation);
+
+  const homeSecondClaim = await myStatusHtml(next1);
+  expect(homeSecondClaim, "a fresh claim should show a fresh, undismissed card").toContain("to the drop-off area?");
+
+  // This time, resolve it by actually starting the wash with no action on
+  // the card at all — the card should disappear on its own.
+  await pickUp(next1, MACHINE_ID);
+  await place(next1, MACHINE_ID);
+  const startRes = await fetch(new URL(`/reservations/${next1SecondReservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next1 },
+    redirect: "manual",
+  });
+  expect(startRes.status, "starting should succeed once the laundry is moved").toBeLessThan(400);
+
+  const homeAfterStart = await myStatusHtml(next1);
+  expect(homeAfterStart, "the card should be gone once running, with no action ever taken on it").not.toContain(
+    "to the drop-off area?",
+  );
+
+  await acknowledgePickup(owner2, owner2Reservation);
+  // next1SecondReservation is "running" at this point — cleanupReservation's
+  // own cancel() has no effect on it; finish properly so MACHINE_ID is
+  // genuinely free for later tests/files sharing this machine id.
+  const finishRes = await fetch(new URL(`/reservations/${next1SecondReservation}/finish`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next1 },
+    redirect: "manual",
+  });
+  expect(finishRes.status, "ending the wash should succeed").toBeLessThan(400);
+  await acknowledgePickup(next1, next1SecondReservation);
+});

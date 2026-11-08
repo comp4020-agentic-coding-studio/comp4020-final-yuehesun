@@ -1430,6 +1430,12 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   window.__laundryFlashCount = flashCount;
 
   var canHandoffOn = {}; // machineId -> bool, the viewer's own permission, read by the click handler below
+  // plans/laundry-handoff-decouple-from-claim.md: machineId -> bool,
+  // "I'm front of this machine's queue and still waiting (i.e. not yet
+  // claimed)" — exactly entry.isMyTurn from the server payload, read by
+  // handleInteract() to decide whether to always open the claim/QR
+  // screen (point 1) rather than ever branching on canHandoffOn first.
+  var isMyTurnOn = {};
 
   function applyMachineState(entries) {
     entries.forEach(function (entry) {
@@ -1460,6 +1466,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       if (justClaimed) flashClaimed(entry.id);
 
       canHandoffOn[entry.id] = !!(entry.unclaimedLaundry && entry.unclaimedLaundry.canHandOff);
+      isMyTurnOn[entry.id] = !!entry.isMyTurn;
 
       // plans/laundry-scan-gated-claim.md Stage 6.2: switched from
       // entry.isMine (true for ANY active reservation on this machine —
@@ -1473,6 +1480,24 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       // was simply never read here before.
       var mineMarker = mineMarkers[entry.id];
       if (mineMarker) mineMarker.visible = !!entry.isMyTurn;
+
+      // plans/laundry-handoff-decouple-from-claim.md point 2: the 3D
+      // scene's own pickup prompt. If the claim/QR overlay is currently
+      // open for exactly this machine, and this machine's state just
+      // became "my own claimed reservation, with unclaimed laundry still
+      // present" (canHandoffOn, now true for "claimed" too per the
+      // server-side widening above), swap the overlay content in place —
+      // reusing the exact same confirm-then-pickUpLaundry flow
+      // openHandoffExamine already implements, just reached by a state
+      // change instead of a branch on initial interact. Cleared
+      // (openClaimOverlayMachineId = null) so this only fires once per
+      // claim, not on every subsequent SSE refetch while the prompt is
+      // already showing — a resident dismissing/ignoring it and walking
+      // away doesn't get it re-forced back open on the next tick.
+      if (openClaimOverlayMachineId === entry.id && canHandoffOn[entry.id]) {
+        openClaimOverlayMachineId = null;
+        openHandoffExamine(entry.id);
+      }
     });
     stateEverPainted = true;
   }
@@ -1719,6 +1744,17 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var overlayBody = document.getElementById("laundry-examine-body");
   var overlayClose = document.getElementById("laundry-examine-close");
 
+  // plans/laundry-handoff-decouple-from-claim.md: which machine's
+  // claim/QR overlay is currently open, if any — needed so
+  // applyMachineState (below) can tell "did the machine whose overlay is
+  // open right now just become my own claimed reservation" apart from
+  // every other machine's state change arriving over the same SSE
+  // stream. Cleared whenever the overlay shows anything other than the
+  // claim/QR screen (closed, or swapped to the pickup prompt itself) so
+  // the swap only ever fires once per claim, not on every subsequent
+  // refetch while the pickup prompt is already showing.
+  var openClaimOverlayMachineId = null;
+
   function showExamineOverlay(contentHtml) {
     if (!overlay || !overlayBody) return;
     overlayBody.innerHTML = contentHtml;
@@ -1732,6 +1768,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   function hideExamineOverlay() {
     if (!overlay) return;
     overlay.classList.add("is-hidden");
+    openClaimOverlayMachineId = null;
   }
   if (overlayClose) overlayClose.addEventListener("click", hideExamineOverlay);
 
@@ -1755,6 +1792,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // claim attempt with "scan the machine's code first," which would look
   // broken rather than simulating anything.
   function openMachineExamine(machineId) {
+    openClaimOverlayMachineId = machineId;
     var label = "Machine " + machineId;
     var m = machines.find(function (mm) { return mm.id === machineId; });
     if (m) label = m.label;
@@ -1818,62 +1856,103 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       });
   }
 
+  // plans/laundry-handoff-decouple-from-claim.md: wording covers both
+  // ways this is reached — the SSE-driven swap right after claim
+  // succeeds (point 2), and a resident re-interacting with an
+  // already-claimed machine that still has unclaimed laundry (the
+  // second entry point, point 5) — "You've claimed this machine" reads
+  // correctly either way, since by the time this ever shows, claiming
+  // has already happened.
   function openHandoffExamine(machineId) {
     var room = unclaimedRoomFor(machineId);
     showExamineOverlay(
-      "<h3>Move " + room + "'s laundry?</h3>" +
-      "<p>Move " + room + "'s finished laundry to the drop-off shelf so this machine is free?</p>" +
+      "<h3>You've claimed this machine</h3>" +
+      "<p>Take out " + room + "'s finished laundry?</p>" +
       '<p><button type="button" class="btn-primary" id="laundry-confirm-pickup">Pick up</button></p>'
     );
     var confirmBtn = document.getElementById("laundry-confirm-pickup");
     if (confirmBtn) confirmBtn.addEventListener("click", function () { doPickup(machineId); });
   }
 
-  function openDropoffExamine() {
-    if (carryingFromMachine == null) {
-      showExamineOverlay("<h3>Drop-off table</h3><p>Nothing to place here right now.</p>");
-      return;
+  // plans/laundry-handoff-decouple-from-claim.md point 6: display-only,
+  // computed purely client-side from state already tracked here
+  // (lastKnownOccupiedSpots, the local PICKUP_SPOTS copy) — no database
+  // write, no new state. The real spot is still chosen atomically,
+  // server-side, only when the phone-side confirm action actually runs
+  // (point 6b). Returns undefined if every spot already shows occupied
+  // (the suggestion is just a best-effort hint, not a guarantee — the
+  // real placeLaundry()/confirmHandoff() call is still the authority on
+  // whether a spot is actually free).
+  function suggestedSpot() {
+    var occupied = {};
+    (lastKnownOccupiedSpots || []).forEach(function (s) { occupied[s] = true; });
+    for (var i = 0; i < PICKUP_SPOTS.length; i++) {
+      if (!occupied[PICKUP_SPOTS[i]]) return PICKUP_SPOTS[i];
     }
-    var machineId = carryingFromMachine;
+    return undefined;
+  }
+
+  // plans/laundry-handoff-decouple-from-claim.md point 6b: the drop-off
+  // table no longer places directly from the 3D scene. It shows a
+  // suggested (not guaranteed) spot and a "confirm on your phone" button
+  // — same iframe-insertion mechanism openMachineExamine's own "No
+  // phone? Simulate a phone scan" button already uses, reworded since
+  // nothing here is a QR scan (the resident is already identified; this
+  // is purely about confirming a handoff). The iframe lands on the real
+  // home page, where the resident sees the real "did you move it?" card
+  // (src/views.ts's handoffPromptCard) — its own "Yes" button is the
+  // actual confirm action (calls queue.confirmHandoff via
+  // POST /machines/:id/confirm-handoff), not a second input here.
+  // Works whether or not this resident ever used the 3D scene's own
+  // "Pick up" step (carryingFromMachine may be null) — confirmHandoff
+  // handles both starting points itself.
+  function openDropoffExamine() {
+    var spot = suggestedSpot();
+    var spotText = spot ? "Looks like Shelf " + spot + " is free." : "The shelf looks full right now — check with the server when you confirm.";
     showExamineOverlay(
-      "<h3>Place it here?</h3>" +
-      '<p class="laundry-hint">The server will pick the next free numbered shelf spot.</p>' +
-      '<p><button type="button" class="btn-primary" id="laundry-confirm-placed">Confirm placed</button></p>'
+      "<h3>Drop-off table</h3>" +
+      "<p>" + spotText + "</p>" +
+      '<p class="laundry-hint">Confirm on your phone that you moved laundry here — the server picks the real spot when you do.</p>' +
+      '<p><button type="button" class="btn-quiet" id="laundry-simulate-confirm">No phone? Simulate confirming on your phone</button></p>'
     );
-    var confirmBtn = document.getElementById("laundry-confirm-placed");
-    if (confirmBtn) {
-      confirmBtn.addEventListener("click", function () {
-        fetch("/machines/" + machineId + "/place", { method: "POST" })
-          .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
-          .then(function (result) {
-            if (!result.ok) {
-              showExamineOverlay("<h3>Can't place it here</h3><p>" + (result.body.error || "Something went wrong.") + "</p>");
-              return;
-            }
-            refetchMachineState(); // restores correct own-basket visibility immediately, rather than waiting for the next SSE tick
-            // plans/laundry-dropoff-flow.md "Bug A" follow-up: this used to
-            // read "...to let them know," implying the carrier still had
-            // to do something to notify the owner. They don't —
-            // placeLaundry() already wrote the owner's own notice
-            // server-side, in this same request, before this response
-            // ever came back. Worded to say so plainly, not to imply a
-            // manual step the system already performed.
-            showExamineOverlay(
-              "<h3>Placed on Shelf " + result.body.spot + "</h3>" +
-              '<p>You placed the laundry on Shelf ' + result.body.spot + ' — the owner will see it on their own home page.</p>'
-            );
-          })
-          .catch(function () {
-            showExamineOverlay("<h3>Can't place it here</h3><p>Something went wrong — try again.</p>");
-          });
+    var simBtn = document.getElementById("laundry-simulate-confirm");
+    if (simBtn) {
+      simBtn.addEventListener("click", function () {
+        simBtn.remove();
+        var frame = document.createElement("div");
+        frame.className = "phone-frame";
+        var iframe = document.createElement("iframe");
+        iframe.src = "/";
+        iframe.title = "Simulated phone — the real home page";
+        frame.appendChild(iframe);
+        if (overlay) overlay.insertBefore(frame, overlayClose || null);
       });
     }
   }
 
+  // plans/laundry-handoff-decouple-from-claim.md: claim is always
+  // unconditional on interact — the old canHandoffOn-first branch
+  // (canHandoffOn true meant openHandoffExamine, else openMachineExamine)
+  // forced the pickup confirm screen in front of the claim/QR screen
+  // whenever unclaimed laundry was present, blocking the one thing that
+  // actually protects the resident's 3-minute claim window behind an
+  // unrelated chore. The
+  // claim/QR overlay now always opens first (isMyTurn — front of queue,
+  // still "waiting," i.e. not yet claimed at all). Once genuinely
+  // claimed, applyMachineState's own SSE-driven swap (below) already
+  // handles showing the pickup prompt the instant claim succeeds — this
+  // is only reached again, for the *second* entry point, if the
+  // resident re-interacts with an already-claimed machine that still has
+  // unclaimed laundry (e.g. they dismissed/missed the auto-swapped
+  // prompt and walk up again) — canHandoffOn (still true, since its own
+  // server-side canHandOff now also covers "claimed", not just
+  // "waiting") is exactly the right check for that re-interact case.
   function handleInteract() {
     if (!highlighted) return;
     if (highlighted.kind === "machine") {
-      if (canHandoffOn[highlighted.id]) {
+      if (isMyTurnOn[highlighted.id]) {
+        openMachineExamine(highlighted.id);
+      } else if (canHandoffOn[highlighted.id]) {
         openHandoffExamine(highlighted.id);
       } else {
         openMachineExamine(highlighted.id);

@@ -68,3 +68,30 @@ answer is whoever is currently recorded (`reservations.carriedBy`) as
 carrying it — not "whoever is still the machine's front waiting holder,"
 since that may have changed by the time it's placed. The original
 owner's acknowledgement step is unaffected either way.
+
+## Addendum: `isFrontWaitingHolder` widened to include `claimed`
+(`plans/laundry-handoff-decouple-from-claim.md`)
+
+Claiming a machine used to be forced through the pickup flow first
+(the 3D scene's own interaction made `canHandoffOn` override the
+claim/QR overlay entirely whenever unclaimed laundry was present) —
+`isFrontWaitingHolder`'s original `front.status === "waiting"` check
+matched that: a resident was only ever asked to pick up laundry *before*
+claiming, while still `waiting`. That ordering was reversed: claiming is
+now always unconditional (never gated on this machine's laundry state),
+and the pickup prompt is surfaced to the claiming resident only *after*
+their own claim succeeds — by which point their own status has already
+moved from `waiting` to `claimed`.
+
+`isFrontWaitingHolder` now accepts `"waiting" | "claimed"` for the same
+reservation/person that's front of the machine's queue. The underlying
+authorization question is unchanged from the original decision above —
+"is this the room the handoff is for" — only the statuses that still
+count as "is this room" are widened to match what claiming itself does
+to that status. Deliberately excludes `"running"`: `start()` gained its
+own new precondition in the same plan (rejecting the start attempt
+outright if `unacknowledgedLaundryOn` still finds a row on that
+machine), so by the time a reservation is genuinely `running`, the
+machine is already confirmed empty — a running resident has no
+remaining reason to ever need `isFrontWaitingHolder` to return true for
+this purpose.
