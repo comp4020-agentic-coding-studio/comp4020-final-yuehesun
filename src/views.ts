@@ -1220,6 +1220,23 @@ export function errorPage(message: string, status: number): Html {
   return page("Error", html`<p class="error">${message} (${status})</p><p><a href="/">← All machines</a></p>`);
 }
 
+// plans/laundry-scan-gated-claim.md Stage 3: the one rejection reason
+// that needs a different page from errorPage's generic shape — a
+// resident who clicks "Claim" with no scan recorded needs to be told
+// *where* to go, not just that the action failed. Reuses the exact nav
+// link text/destination ("Go to the laundry" -> /laundry) every other
+// page in this app already shows, per the original request's own
+// condition that the 3D room has to be unmistakably what this message
+// refers to, rather than inventing new wording for the same place.
+export function scanRequiredPage(): Html {
+  return page(
+    "Scan first",
+    html`<p class="error">Scan the machine's code first — in the 3D laundry room, or with your phone's camera on the real machine.</p>
+      <p><a class="btn-primary" href="/laundry">Go to the laundry</a></p>
+      <p><a href="/">← All machines</a></p>`,
+  );
+}
+
 // README.md, rendered to HTML (src/readme.ts) and published in full here —
 // `raw` because marked already escaped/produced the HTML, not user input.
 export function readmePage(renderedHtml: string): Html {

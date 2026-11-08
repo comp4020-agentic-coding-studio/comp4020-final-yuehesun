@@ -13,7 +13,7 @@ import { readSimulationResults } from "./simulation-results.ts";
 import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
+import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredPage, simulationPage } from "./views.ts";
 import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
 import { scanUrlFor } from "./qr.ts";
@@ -475,7 +475,30 @@ function actionRoute(path: string, name: string, act: (id: number, identity: str
   });
 }
 
-actionRoute("/reservations/:id/claim", "reservation_claimed", queue.claim);
+// plans/laundry-scan-gated-claim.md Stage 3: claim gets its own route
+// instead of actionRoute()'s generic wrapper, solely so its one new
+// rejection reason ("scan the machine's code first") can render through
+// scanRequiredPage() — a page that names where to go, not just that the
+// action failed — while every other rejection from the same call
+// (ownership, front-of-queue, window timing) still renders through the
+// same errorPage() every other action uses. No change to queue.claim()
+// itself or to any other action's own route.
+app.post("/reservations/:id/claim", (c) => {
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  if (!identity) return c.html(errorPage("sign in first", 400), 400);
+
+  const id = Number(c.req.param("id"));
+  const result = queue.claim(id, identity);
+  if (!result.ok) {
+    logging.logEvent("reservation_claimed_denied", { id, room: identity, reason: result.message });
+    if (result.message === "scan the machine's code first") {
+      return c.html(scanRequiredPage(), result.status);
+    }
+    return c.html(errorPage(result.message, result.status), result.status);
+  }
+  logging.logEvent("reservation_claimed", { id, room: identity });
+  return c.redirect("/", 303);
+});
 actionRoute("/reservations/:id/start", "reservation_started", queue.start);
 actionRoute("/reservations/:id/cancel", "reservation_cancelled", queue.cancel);
 actionRoute("/reservations/:id/finish", "reservation_finished", queue.finish);
