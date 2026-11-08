@@ -913,7 +913,15 @@ function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
 // just-scanned visitor back to the machine they scanned instead of always
 // to "/". Every existing call site (GET / and GET /laundry with no
 // cookie) omits it and gets the exact same page as before.
-export function identityPage(redirect?: string): Html {
+//
+// docs/adr/0012's addendum: `roomPrefill`, passed only by the scan
+// landing page when the QR code's own ?room= carried an
+// already-normalizeRoom()-validated value, fills the room field's value
+// rather than leaving it blank — the phone's own visitor still has to
+// press "Continue" themselves, so this is a convenience, not a skipped
+// step. Every other call site omits it and gets the same blank field as
+// before.
+export function identityPage(redirect?: string, roomPrefill?: string): Html {
   return page(
     "Room number",
     html`<div class="intro">
@@ -933,7 +941,7 @@ export function identityPage(redirect?: string): Html {
       else is stored, no name.</p>
       <form method="post" action="/identity">
         ${redirect ? html`<input type="hidden" name="redirect" value="${redirect}" />` : raw("")}
-        <input type="text" name="room" placeholder="e.g. 304 or room304" inputmode="numeric" required maxlength="12" />
+        <input type="text" name="room" value="${roomPrefill ?? ""}" placeholder="e.g. 304 or room304" inputmode="numeric" required maxlength="12" />
         <button class="btn-primary" type="submit">Continue</button>
       </form>`,
   );

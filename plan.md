@@ -883,6 +883,36 @@ and the offer moves to the next person instead.
   animation now recovers correctly even after 2 of the 3 attempts fail.
   `pnpm check` green (15 files, 42 tests) against a scratch server;
   `src/queue.ts` untouched.
+- **A real two-device scan still landed on a blank room-number form, even
+  though the desktop session in `/laundry` already knew the room number
+  — fixed with a prefill, not a skip.** Reported after deploying: scanning
+  a machine's real QR code with a phone redirected straight to the
+  identity form (correct per `docs/adr/0012` — a different device has no
+  cookie), but the phone's own visitor then had to retype a room number
+  they'd already typed once on the desktop session that showed them the
+  code. `docs/adr/0012` gained an addendum rather than being reopened: the
+  room number already rides along visibly in the 3D room (the character's
+  own floating label, the home page board), so carrying it into the QR
+  payload exposes nothing new — only *skipping* the phone's own
+  confirmation step would have reopened the trust boundary, so that's
+  exactly what wasn't built. `GET /machines/:id/qrcode.png` now reads its
+  own request's identity cookie and encodes `?room=<identity>` in the scan
+  URL when one exists (confirmed via a real jsQR decode of the rendered
+  PNG, not inferred from file size: `.../laundry/scan/1?room=room777` with
+  identity, a bare `.../laundry/scan/1` without); `GET /laundry/scan/:id`
+  runs that query value through the same `normalizeRoom()` every other
+  identity input goes through before ever using it, so a malformed or
+  hostile value just fails to prefill rather than being trusted — and
+  **prefill only**: the route still returns the real form (`200`), not an
+  auto-redirect, so the phone's visitor still presses "Continue"
+  themselves before any cookie is set. URL assembly split into a new,
+  directly-testable pure function (`src/qr.ts`'s `scanUrlFor`) rather than
+  tested only by decoding a rendered image — this project has no QR-decode
+  dependency, and adding one just to test a URL string would be
+  disproportionate. `spec/laundry-scan.test.ts` grew by 4 cases (the pure
+  function, a valid prefill, a rejected hostile value, the unchanged blank
+  case). `pnpm check` green (15 files, 46 tests) against a scratch server;
+  `src/queue.ts` untouched.
 
 ## Final project deadline — read this before planning further work
 

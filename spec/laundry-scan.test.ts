@@ -1,4 +1,5 @@
 import { expect, inject, it } from "vitest";
+import { scanUrlFor } from "../src/qr.ts";
 import { claim, cleanupReservation, identityCookie, join, uniqueRoom } from "./support/queue-client.ts";
 
 // plans/3d-walkthrough.md Stage 3 built GET /laundry/scan/:id's three
@@ -20,8 +21,10 @@ async function qrcodePng(machineId: number): Promise<Response> {
   return fetch(new URL(`/machines/${machineId}/qrcode.png`, baseUrl));
 }
 
-async function scanPage(cookie: string | undefined, machineId: number): Promise<Response> {
-  return fetch(new URL(`/laundry/scan/${machineId}`, baseUrl), {
+async function scanPage(cookie: string | undefined, machineId: number, roomQuery?: string): Promise<Response> {
+  const url = new URL(`/laundry/scan/${machineId}`, baseUrl);
+  if (roomQuery !== undefined) url.searchParams.set("room", roomQuery);
+  return fetch(url, {
     headers: cookie ? { cookie } : {},
     redirect: "manual",
   });
@@ -36,6 +39,18 @@ async function postIdentity(room: string, redirect?: string): Promise<Response> 
     redirect: "manual",
   });
 }
+
+// docs/adr/0012's addendum: the 3D room's own identity cookie rides along
+// in the QR payload as ?room=, so a scanning phone's identity form can be
+// prefilled instead of asking the same person to retype a number they
+// already typed once on the desktop session showing them this code.
+it("scanUrlFor carries the identity as ?room= only when one is given", () => {
+  const withIdentity = scanUrlFor("http://example.test", 9, "room304");
+  expect(withIdentity.toString()).toBe("http://example.test/laundry/scan/9?room=room304");
+
+  const noIdentity = scanUrlFor("http://example.test", 9, undefined);
+  expect(noIdentity.toString()).toBe("http://example.test/laundry/scan/9");
+});
 
 it("serves a real QR PNG encoding the machine's scan URL, and 404s for a nonexistent machine", async () => {
   const res = await qrcodePng(MACHINE_ID);
@@ -61,6 +76,31 @@ it("shows the identity page with a redirect field when scanning with no cookie, 
   const identityRes = await postIdentity(room, `/laundry/scan/${MACHINE_ID}`);
   expect(identityRes.status).toBe(303);
   expect(identityRes.headers.get("location"), "should redirect to the scan page, not /").toBe(`/laundry/scan/${MACHINE_ID}`);
+});
+
+it("prefills the identity form's room field from a valid ?room= query, but still requires pressing Continue", async () => {
+  const res = await scanPage(undefined, MACHINE_ID, "room411");
+  expect(res.status, "a prefilled scan is still just the identity form, not an auto-redirect").toBe(200);
+  const html = await res.text();
+  expect(html).toContain('name="room" value="room411"');
+  // The redirect field (back to this machine's scan URL) still has to be
+  // present too — prefilling the room shouldn't drop the existing
+  // "come back here once identified" behaviour.
+  expect(html).toContain(`name="redirect" value="/laundry/scan/${MACHINE_ID}"`);
+});
+
+it("ignores a malformed or hostile ?room= query instead of prefilling it", async () => {
+  const res = await scanPage(undefined, MACHINE_ID, '"><script>alert(1)</script>');
+  expect(res.status).toBe(200);
+  const html = await res.text();
+  expect(html).toContain('name="room" value=""');
+  expect(html).not.toContain("<script>alert(1)</script>");
+});
+
+it("leaves the room field blank with no ?room= query, same as before this feature existed", async () => {
+  const res = await scanPage(undefined, MACHINE_ID);
+  const html = await res.text();
+  expect(html).toContain('name="room" value=""');
 });
 
 it("rejects an attempted open redirect and falls back to /", async () => {

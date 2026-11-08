@@ -2146,6 +2146,12 @@ export function scanPage(machine: Machine, rows: QueueRow[], identity: string, n
 // URL once a room number is entered, per docs/adr/0012/the plan's Decision
 // 2 (this is the "log-in page" shape Bill described, without inventing a
 // second identity mechanism — ADR 0004 stays exactly as it was).
-export function scanIdentityPage(machineId: number): Html {
-  return identityPage(`/laundry/scan/${machineId}`);
+//
+// docs/adr/0012's addendum: `roomPrefill`, when the QR code's own ?room=
+// carried an already-validated room number, fills the form field so the
+// phone's own visitor doesn't have to retype a number they likely already
+// typed once on the desktop session that showed them this code — they
+// still press "Continue" themselves.
+export function scanIdentityPage(machineId: number, roomPrefill?: string): Html {
+  return identityPage(`/laundry/scan/${machineId}`, roomPrefill);
 }

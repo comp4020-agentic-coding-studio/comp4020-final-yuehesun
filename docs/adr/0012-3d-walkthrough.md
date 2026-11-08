@@ -27,3 +27,25 @@ QR code shouldn't be held to a stricter standard than the rest of the app.
   the code to use it.
 - No extra logic (tokens, expiry, state checks) was built for this, which
   keeps the feature small.
+
+## Addendum: carrying the 3D room's own room number as a scan convenience
+
+A real two-device scan (the 3D room on a desktop, a phone's camera doing
+the scanning) landed the phone on the same blank room-number form as a
+stranger finding a sticker cold — correct per the decision above, but
+worse UX than it needs to be: the person in the 3D room already typed
+their room number once, to get into `/laundry` at all, and had to type
+it a second time on the phone. Fixed by carrying that already-known room
+number from the desktop session into the QR payload as a `?room=`
+query parameter, read by `/laundry/scan/:id` and used only to **prefill**
+the phone's identity form — never to skip it. The phone's own visitor
+still has to press "Continue" themselves; nothing claims, reserves, or
+sets a cookie on their device without that explicit action.
+
+This doesn't reopen the decision above: the room number was already
+visible in the 3D room (the floating label over that person's own
+character, per `plans/laundry-presence.md`) and on the home page board
+to begin with, so putting it in the QR payload exposes nothing a
+bystander glancing at the screen couldn't already read off it directly.
+The trust boundary stays exactly where it was — anyone who can see the
+code can use the page it points to, prefilled or not.

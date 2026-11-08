@@ -16,6 +16,7 @@ import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, simulationPage } from "./views.ts";
 import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
+import { scanUrlFor } from "./qr.ts";
 import QRCode from "qrcode";
 import { serveStatic } from "@hono/node-server/serve-static";
 
@@ -203,14 +204,26 @@ app.get("/laundry/machines-state", (c) => {
 // machine-id URL, no token — exactly as trusted as a sticker on a real
 // machine, matching how identity is unverified everywhere else in this
 // app (ADR 0002).
+//
+// docs/adr/0012's addendum: if the browser requesting this image already
+// has an identity cookie (true for the 3D room's own desktop session,
+// which required one to reach /laundry at all), that room number rides
+// along as a ?room= query param. /laundry/scan/:id below uses it only to
+// prefill — never to skip — the phone's own identity form, so the
+// scanning phone still has to press "Continue" itself before anything is
+// set. The room number was already visible on that same desktop session
+// (the 3D character's floating label, the home page board), so this
+// exposes nothing a bystander glancing at the screen couldn't already
+// read directly.
 app.get("/machines/:id/qrcode.png", async (c) => {
   const machineId = Number(c.req.param("id"));
   const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
   if (!machine) return c.notFound();
 
   const origin = new URL(c.req.url).origin;
-  const scanUrl = `${origin}/laundry/scan/${machineId}`;
-  const png = await QRCode.toBuffer(scanUrl, { type: "png", margin: 1 });
+  const identity = getCookie(c, IDENTITY_COOKIE);
+  const scanUrl = scanUrlFor(origin, machineId, identity);
+  const png = await QRCode.toBuffer(scanUrl.toString(), { type: "png", margin: 1 });
   return c.body(new Uint8Array(png), 200, { "content-type": "image/png" });
 });
 
@@ -232,7 +245,17 @@ app.get("/laundry/scan/:id", (c) => {
   if (!machine) return c.html(errorPage("no such machine", 404), 404);
 
   const identity = getCookie(c, IDENTITY_COOKIE);
-  if (!identity) return c.html(scanIdentityPage(machineId));
+  if (!identity) {
+    // docs/adr/0012's addendum: ?room= (set by the QR code above, from the
+    // 3D room desktop session's own identity cookie) only ever prefills
+    // the form field — run through the same normalizeRoom() every other
+    // identity input goes through, so a malformed or hostile query value
+    // just fails to prefill rather than being trusted outright. The
+    // scanning phone still has to press "Continue" itself; nothing here
+    // sets a cookie or claims anything on its own.
+    const prefill = normalizeRoom(c.req.query("room") ?? "");
+    return c.html(scanIdentityPage(machineId, prefill));
+  }
 
   return c.redirect("/", 303);
 });
