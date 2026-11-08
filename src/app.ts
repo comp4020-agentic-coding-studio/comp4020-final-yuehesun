@@ -16,7 +16,7 @@ import { durationFor, isWashingType } from "./washing-types.ts";
 import { aheadLabelFor, errorPage, handoffRequiredBanner, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredBanner, scanRequiredPage, simulationPage } from "./views.ts";
 import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
-import { scanUrlFor } from "./qr.ts";
+import { publicOrigin, scanUrlFor } from "./qr.ts";
 import QRCode from "qrcode";
 import { serveStatic } from "@hono/node-server/serve-static";
 
@@ -238,7 +238,7 @@ app.get("/machines/:id/qrcode.png", async (c) => {
   const machine = db.select().from(machines).where(eq(machines.id, machineId)).get();
   if (!machine) return c.notFound();
 
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const identity = getCookie(c, IDENTITY_COOKIE);
   const scanUrl = scanUrlFor(origin, machineId, identity);
   const png = await QRCode.toBuffer(scanUrl.toString(), { type: "png", margin: 1 });

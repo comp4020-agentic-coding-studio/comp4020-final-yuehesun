@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { scanUrlFor } from "../src/qr.ts";
+import { publicOrigin, scanUrlFor } from "../src/qr.ts";
 import { claim, cleanupReservation, identityCookie, join, uniqueRoom } from "./support/queue-client.ts";
 
 // plans/3d-walkthrough.md Stage 3 built GET /laundry/scan/:id's three
@@ -50,6 +50,17 @@ it("scanUrlFor carries the identity as ?room= only when one is given", () => {
 
   const noIdentity = scanUrlFor("http://example.test", 9, undefined);
   expect(noIdentity.toString()).toBe("http://example.test/laundry/scan/9");
+});
+
+// Regression: behind Fly's TLS-terminating proxy the app sees plain http,
+// so the QR used to encode http://… and real phones took an extra
+// redirect. Deployed hosts must come out https; local hosts stay as-is.
+it("publicOrigin forces https for deployed hosts but leaves localhost alone", () => {
+  expect(publicOrigin("http://comp4020-final-yuehesun.fly.dev/machines/2/qrcode.png")).toBe(
+    "https://comp4020-final-yuehesun.fly.dev",
+  );
+  expect(publicOrigin("http://localhost:8080/machines/2/qrcode.png")).toBe("http://localhost:8080");
+  expect(publicOrigin("http://127.0.0.1:8090/x")).toBe("http://127.0.0.1:8090");
 });
 
 it("serves a real QR PNG encoding the machine's scan URL, and 404s for a nonexistent machine", async () => {
