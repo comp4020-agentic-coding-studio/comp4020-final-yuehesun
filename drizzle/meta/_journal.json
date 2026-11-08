@@ -57,6 +57,13 @@
       "when": 1794118191895,
       "tag": "0007_mixed_pepper_potts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794141108524,
+      "tag": "0008_tidy_firestar",
+      "breakpoints": true
     }
   ]
 }

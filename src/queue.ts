@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 import { now as clockNow } from "./clock.ts";
 import { db } from "./db.ts";
 import * as logging from "./logging.ts";
-import { machines, type Machine, type Offer, offers, type Reservation, reservations } from "./schema.ts";
+import { machines, type Machine, type Offer, offers, type Reservation, reservations, scans } from "./schema.ts";
 import { PICKUP_SPOTS } from "./pickup-spots.ts";
 
 export const CLAIM_WINDOW_MS = 3 * 60 * 1000;
@@ -14,6 +14,15 @@ export const START_WINDOW_MS = 5 * 60 * 1000;
 // already camped at — plan.md gives this case 10 minutes, not 3.
 export const OFFER_CLAIM_WINDOW_MS = 10 * 60 * 1000;
 export const OFFER_RESPOND_WINDOW_MS = 2 * 60 * 1000;
+// plans/laundry-scan-gated-claim.md: how long a scan stays good enough to
+// claim on. Deliberately the same constant as OFFER_CLAIM_WINDOW_MS, not
+// a second, independently-tuned value — the real-world gap this covers
+// (scan the code, then walk back to confirm on a phone, or simply pause
+// before clicking Claim) is the same order of magnitude plan.md's own
+// User story already treats as "enough time to physically travel to a
+// machine," so if that window is ever retuned, this one moves with it
+// rather than drifting out of sync with no reasoning of its own.
+export const SCAN_VALIDITY_MS = OFFER_CLAIM_WINDOW_MS;
 // Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008): a
 // double-submit window — a resident on a slow connection taps "Reserve"
 // again because nothing seemed to happen. Far longer than a double tap,
@@ -370,6 +379,36 @@ function loadOwned(reservationId: number, personName: string): Reservation | Act
   return row;
 }
 
+// plans/laundry-scan-gated-claim.md: records a real scan event. Called
+// from the same route a real phone's camera lands on after scanning a
+// machine's actual QR code (GET /laundry/scan/:id) — no uniqueness
+// constraint, since re-scanning the same machine after walking away and
+// coming back is a normal, expected case, not an error. Every caller of
+// claim() below (production, spec/, sim/) reaches this exact function to
+// set up the same real precondition, rather than a parallel fake path.
+export function recordScan(machineId: number, personName: string): void {
+  db.insert(scans).values({ machineId, personName, scannedAt: clockNow() }).run();
+}
+
+// True iff this identity has a scan of this exact machine recent enough
+// (SCAN_VALIDITY_MS) to still count as "currently present." Deliberately
+// per-machine, not per-person: an offer landing on a different machine
+// than whichever one was last scanned correctly has no valid scan yet
+// (plans/laundry-scan-gated-claim.md's "Interaction with offers") — the
+// gate is "are you at *this* machine," not "have you scanned anything
+// recently."
+function hasValidScan(machineId: number, personName: string, now: number): boolean {
+  const cutoff = now - SCAN_VALIDITY_MS;
+  const recent = db
+    .select({ scannedAt: scans.scannedAt })
+    .from(scans)
+    .where(and(eq(scans.machineId, machineId), eq(scans.personName, personName), gte(scans.scannedAt, cutoff)))
+    .orderBy(desc(scans.scannedAt))
+    .limit(1)
+    .get();
+  return recent != null;
+}
+
 export function claim(reservationId: number, personName: string): ActionResult {
   const row = loadOwned(reservationId, personName);
   if ("ok" in row) return row;
@@ -378,6 +417,15 @@ export function claim(reservationId: number, personName: string): ActionResult {
   const [front] = activeReservations(row.machineId);
   if (!front || front.id !== row.id || front.status !== "waiting") {
     return { ok: false, status: 409, message: "it's not your turn" };
+  }
+
+  // plans/laundry-scan-gated-claim.md: claiming means "I've arrived" —
+  // plan.md's own User story says so in those words — so it requires a
+  // real, recent scan of this exact machine, not just being front of the
+  // queue. Checked last, after the ownership/ordering checks above, so an
+  // unrelated 403/409 isn't masked by this one.
+  if (!hasValidScan(row.machineId, personName, clockNow())) {
+    return { ok: false, status: 409, message: "scan the machine's code first" };
   }
 
   db.update(reservations).set({ status: "claimed", claimedAt: clockNow() }).where(eq(reservations.id, row.id)).run();

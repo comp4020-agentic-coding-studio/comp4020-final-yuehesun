@@ -483,3 +483,55 @@ let the first, incomplete fix go out as "done."
 
 **Backed by:** commit `935bad5`; `plan.md`'s Current state entry on the
 same (documents both the incomplete first attempt and the real fix).
+
+## Overruling the agent's rejection of a scan-gated claim
+
+**What happened:** asked whether claiming a machine on the home page
+should require having actually scanned the machine's real QR code first
+— the home page button still just says "Claim (scan)" and lets you
+click it with no scan at all, which struck me as the wrong side of what
+the 3D room's whole purpose was supposed to be. A parallel session's
+own pass at this exact question had already concluded "reject" with five
+numbered arguments, and the agent initially repeated that same
+conclusion back to me (it isn't filling a real gap, it would narrow "a
+phone alone is enough," the QR code carries no real trust signal to gate
+on, it would fork test/production behaviour, and it needs new state with
+open questions).
+
+**The obvious alternative:** accept the rejection at face value — it was
+well-argued, consistent with the project's own documented "good"
+argument, and backed by a close reading of the code.
+
+**What I decided instead:** pushed back on three specific points: (1)
+claim/start being two separate taps was always strange without a real
+arrival check behind it — the 3D room is exactly what makes that check
+possible now; (2) letting someone claim from their phone with no
+presence check is itself the unfair thing, since they can then sit on
+the machine without ever coming down, blocking whoever's actually next;
+(3) this isn't a change to the fairness/ordering rule itself, just a new
+precondition on one existing action. I asked for a real plan — not just
+agreement — that specifically worked out whether the test/simulation
+fork problem could be solved another way, instead of treating it as a
+dead end.
+
+**Why it helped:** on inspection, the "no real trust signal" argument
+didn't hold up — the gate doesn't need to cryptographically prove
+presence to do real work, the same way an unverified room number still
+does real work for identity elsewhere in this app. And the "test fork"
+problem turned out to have a real answer: every existing spec and the
+simulator already call `join()` before `claim()` to build up real
+preconditions, so a new `recordScan()` function, called the same way by
+production and by every test/sim caller, adds one more precondition
+without forking any behaviour. The push-back also surfaced that one of
+the rejection's own "open questions" (what happens if the fairness rule
+moves someone to a different machine after they've scanned) was based on
+a wrong assumption about `moveBackOnePlace` — it never changes which
+machine a reservation is on, so that risk doesn't actually exist.
+Treating the first rejection as final would have left a real gap in the
+app's own claimed fairness unaddressed, on the strength of an argument
+that didn't survive being checked against the actual code.
+
+**Backed by:** `docs/adr/0015-scan-gated-claim.md` (the original
+rejection, left unedited, status updated to record the overrule);
+`plans/laundry-scan-gated-claim.md` (the full design, not yet built —
+pending: a future stage).

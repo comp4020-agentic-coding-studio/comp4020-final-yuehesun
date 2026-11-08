@@ -114,6 +114,26 @@ export const reservations = sqliteTable("reservations", {
   carriedBy: text("carried_by"),
 });
 
+// plans/laundry-scan-gated-claim.md: a real record of "this identity
+// scanned this machine's code," read by claim()'s new precondition
+// (hasValidScan). A real table, not an in-memory structure like
+// presence.ts — unlike presence (continuous, per-frame, harmless to lose
+// on a restart), losing a scan record permanently and silently blocks a
+// real claim attempt, the same durability argument plan.md's own
+// "persists" requirement already makes for reservations themselves. No
+// uniqueness constraint: re-scanning the same machine (walking away and
+// coming back) is a normal, expected case, not an error — one row per
+// scan, read as "is there one recent enough," never updated in place.
+export const scans = sqliteTable("scans", {
+  id: int("id").primaryKey({ autoIncrement: true }),
+  machineId: int("machine_id")
+    .notNull()
+    .references(() => machines.id),
+  personName: text("person_name").notNull(),
+  scannedAt: int("scanned_at").notNull(),
+});
+
 export type Machine = typeof machines.$inferSelect;
 export type Reservation = typeof reservations.$inferSelect;
 export type Offer = typeof offers.$inferSelect;
+export type Scan = typeof scans.$inferSelect;
