@@ -707,6 +707,39 @@ and the offer moves to the next person instead.
   `localhost:8080`, the same port `pnpm dev` uses; cleaned up, and every
   verification in this stage used a separate scratch port/database
   instead, per `CLAUDE.md`'s own existing rule.
+- **A second, smaller round of 3D-room feedback — three items built and
+  verified, one (the drop-off flow rework) scoped into its own plan, not
+  coded.** (1) Scroll-wheel zoom's own range widened (0.6-7, was 1.8-5)
+  and its sensitivity quadrupled (0.01 per `deltaY`, was 0.0025) — the
+  original range/sensitivity couldn't get close enough to read small
+  detail (the iron prop) even scrolled all the way in. (2) A real
+  "this machine is yours" marker in the 3D room: `GET
+  /laundry/machines-state` previously only derived `nextRoom`/`isMyTurn`
+  from the *front* row of a machine's queue (`front?.person === identity`),
+  missing a viewer waiting second-or-later or already claimed/running
+  when a different row is front — a real bug, fixed with a proper
+  `rows.some((r) => r.person === identity)` check (mirroring
+  `src/views.ts`'s own `homePage`, which already did this correctly), now
+  exposed as a new `isMine` field driving a downward marker reusing the
+  local character's own existing "this is you" selfMarker convention
+  (same cone shape/colour). (3) A door added to the south wall, directly
+  behind the character's own spawn point — two wall segments with a real
+  gap instead of one solid wall, a lintel closing the height difference, a
+  procedural wood-tone door panel and handle; no collision-box change
+  needed since none of the four room walls were ever in `collisionBoxes`
+  to begin with (the room boundary is `clampToRoom`'s own
+  `roomHalfWidth`/`roomHalfDepth` range). `pnpm check` green (40 tests)
+  against a scratch database; `src/queue.ts` untouched. **The fourth item
+  — reworking the unclaimed-laundry drop-off flow into a real two-step
+  pick-up/place sequence — was investigated to a precise root cause (the
+  3D carry animation has no corresponding two-step server state; the
+  reported flickering basket is two sources of truth racing, not timing
+  jitter) and designed in full in
+  [`plans/laundry-dropoff-flow.md`](plans/laundry-dropoff-flow.md), but
+  deliberately not coded this session**: it needs a schema migration (a
+  new `carriedBy` column), a new in-transit sentinel state, and splits one
+  existing server action into two — real design work the user asked to
+  see planned before any code, not a small fix like the other three.
 
 ## Final project deadline — read this before planning further work
 

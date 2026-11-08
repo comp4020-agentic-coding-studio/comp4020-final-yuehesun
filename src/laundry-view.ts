@@ -145,9 +145,48 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     return wall;
   }
   addWall(0, -roomHalfDepth, roomHalfWidth * 2, 0.15);
-  addWall(0, roomHalfDepth, roomHalfWidth * 2, 0.15);
   addWall(-roomHalfWidth, 0, 0.15, roomHalfDepth * 2);
   addWall(roomHalfWidth, 0, 0.15, roomHalfDepth * 2);
+
+  // Stage 10: a door on the south wall, directly behind the character's
+  // own spawn point (southZ) — the wall a resident would actually be
+  // facing on walking in. The wall itself is split into two side segments
+  // (not one full-width wall) so there's a real gap, not a painted-on
+  // door that still blocks movement; this doesn't need its own collision
+  // box since none of the four room walls are in collisionBoxes at all —
+  // the room boundary is clampToRoom's own roomHalfWidth/roomHalfDepth
+  // range, not per-wall boxes, so a gap here is purely visual and doesn't
+  // risk letting the character walk through the *wall* on either side of
+  // it (clampToRoom still stops at roomHalfDepth regardless).
+  var DOOR_WIDTH = 1.1, DOOR_HEIGHT = 2.1;
+  var doorSideWidth = (roomHalfWidth * 2 - DOOR_WIDTH) / 2;
+  addWall(-(DOOR_WIDTH / 2 + doorSideWidth / 2), roomHalfDepth, doorSideWidth, 0.15);
+  addWall(DOOR_WIDTH / 2 + doorSideWidth / 2, roomHalfDepth, doorSideWidth, 0.15);
+  // A lintel above the doorway, closing the gap between the door's own
+  // height and the room's full wallHeight, so the opening doesn't read as
+  // a full-height missing wall segment.
+  var lintel = new THREE.Mesh(new THREE.BoxGeometry(DOOR_WIDTH, wallHeight - DOOR_HEIGHT, 0.15), wallMat);
+  lintel.position.set(0, DOOR_HEIGHT + (wallHeight - DOOR_HEIGHT) / 2, roomHalfDepth);
+  lintel.receiveShadow = true;
+  scene.add(lintel);
+
+  // A simple panel door, inset slightly into the doorway (not flush with
+  // the wall's own face) and shown mostly closed — reads as a real door
+  // rather than an empty doorway, without needing a hinge/open-close
+  // interaction the room doesn't otherwise support for anything else.
+  var doorMat = new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.7 }); // a wood tone distinct from --paper walls
+  var door = new THREE.Mesh(new THREE.BoxGeometry(DOOR_WIDTH * 0.92, DOOR_HEIGHT * 0.97, 0.06), doorMat);
+  door.position.set(DOOR_WIDTH * 0.08, DOOR_HEIGHT * 0.485, roomHalfDepth - 0.05);
+  door.castShadow = true;
+  door.receiveShadow = true;
+  scene.add(door);
+  var doorHandle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9aa7b0, metalness: 0.6, roughness: 0.4 }),
+  );
+  doorHandle.rotation.z = Math.PI / 2;
+  doorHandle.position.set(DOOR_WIDTH * 0.08 - DOOR_WIDTH * 0.92 * 0.35, DOOR_HEIGHT * 0.5, roomHalfDepth - 0.08);
+  scene.add(doorHandle);
 
   var ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(roomHalfWidth * 2, roomHalfDepth * 2),
@@ -325,6 +364,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var machineGroups = {}; // machineId -> THREE.Group
   var statusLights = {}; // machineId -> Mesh, the thing live state actually recolours
   var qrAnchors = {}; // machineId -> THREE.Object3D, the point the examine overlay's "you are here" check uses
+  var mineMarkers = {}; // machineId -> Mesh, Stage 10's "this machine is yours" downward marker
 
   placedMachines.forEach(function (p) {
     var type = p.type === "dryer" ? "dryer" : "washer";
@@ -444,9 +484,28 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     var numberLabel = buildLabelSprite((p.type === "dryer" ? "Dryer " : "Washer ") + p.id, { scale: [0.7, 0.175], fontPx: 56 });
     numberLabel.position.set(0, footprint.h + 0.25, 0);
     group.add(numberLabel);
+
+    // Stage 10: a downward-pointing marker above the number label on
+    // whichever machine(s) the viewer holds an active reservation on —
+    // same visual language as the local character's own "this is you"
+    // selfMarker (a downward ConeGeometry, same colour), so "this points
+    // at something that's yours" reads as one consistent convention
+    // across the scene rather than two different shapes meaning the same
+    // thing. Hidden by default; applyMachineState (below) toggles it from
+    // the real isMine field GET /laundry/machines-state now returns.
+    var mineMarker = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09, 0.18, 4),
+      new THREE.MeshStandardMaterial({ color: 0xe6b422, emissive: 0x6b4f00, emissiveIntensity: 0.4 }),
+    );
+    mineMarker.rotation.x = Math.PI; // point down, toward the number label/machine below it
+    mineMarker.position.set(0, footprint.h + 0.5, 0);
+    mineMarker.visible = false;
+    group.add(mineMarker);
+    mineMarkers[p.id] = mineMarker;
   });
   window.__laundryMachineGroups = machineGroups; // Playwright-inspectable escape hatch
   window.__laundryStatusLights = statusLights;
+  window.__laundryMineMarkers = mineMarkers;
 
   // --- Stage 9.2: sink + ironing table merge into one free-standing
   // island in open floor (replacing Stage 8.2's two separate west-wall
@@ -975,11 +1034,17 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // and it doesn't touch movement/collision at all (clampCameraPos,
   // called every frame from CAM_DISTANCE's current value, already keeps
   // the resulting camera position off the walls regardless of distance).
-  // Bounds: 1.8 (close enough to still clearly see the character, not
-  // inside it) to 5 (far enough to see more of the room without the
-  // follow camera itself clipping through a wall at typical room widths —
-  // clampCameraPos's own per-frame clamp is the real backstop either way).
-  var CAM_DISTANCE_MIN = 1.8, CAM_DISTANCE_MAX = 5;
+  // Bounds and sensitivity revised per user feedback: the original range
+  // (1.8-5, at a weak 0.0025 multiplier) couldn't get close enough to
+  // read small detail (e.g. the iron on the table) even scrolled all the
+  // way in — one wheel notch (~100 deltaY) only moved the camera ~0.25
+  // units. 0.6 is close enough to inspect small props up close while
+  // standing next to them without the camera clipping into the character
+  // model itself; 7 gives a genuinely wider room overview than 5 did.
+  // The multiplier itself is also raised 4x (0.0025 -> 0.01) so a normal
+  // scroll gesture covers the whole range in a handful of notches instead
+  // of needing dozens.
+  var CAM_DISTANCE_MIN = 0.6, CAM_DISTANCE_MAX = 7;
 
   function collidesAt(x, z) {
     for (var i = 0; i < collisionBoxes.length; i++) {
@@ -1102,7 +1167,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // also move the surrounding page).
   renderer.domElement.addEventListener("wheel", function (e) {
     e.preventDefault();
-    CAM_DISTANCE = Math.max(CAM_DISTANCE_MIN, Math.min(CAM_DISTANCE_MAX, CAM_DISTANCE + e.deltaY * 0.0025));
+    CAM_DISTANCE = Math.max(CAM_DISTANCE_MIN, Math.min(CAM_DISTANCE_MAX, CAM_DISTANCE + e.deltaY * 0.01));
   }, { passive: false });
 
   // --- touch: a left-side joystick for movement, a drag-anywhere-else
@@ -1340,6 +1405,9 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       if (justClaimed) flashClaimed(entry.id);
 
       canHandoffOn[entry.id] = !!(entry.unclaimedLaundry && entry.unclaimedLaundry.canHandOff);
+
+      var mineMarker = mineMarkers[entry.id];
+      if (mineMarker) mineMarker.visible = !!entry.isMine;
     });
     stateEverPainted = true;
   }

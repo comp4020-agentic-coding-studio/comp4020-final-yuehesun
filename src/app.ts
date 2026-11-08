@@ -128,12 +128,22 @@ app.get("/laundry/machines-state", (c) => {
     const front = rows[0];
     const state = boardStateFor(front, front?.person === identity);
     const unclaimed = queue.doneUnacknowledgedOnMachine(m.id);
+    // Stage 10 (3D room marker): whether the viewer holds ANY active
+    // reservation on this machine, not just the front one — front?.person
+    // === identity (used by isMyTurn/unclaimedLaundry below, which really
+    // do only care about the front reservation) would miss a viewer
+    // waiting second-or-later, or already claimed/running when a
+    // different row happens to be front. Mirrors src/views.ts's own
+    // homePage, which already does `rowsForMachine.find((r) => r.person
+    // === identity)` for exactly this reason.
+    const mine = rows.some((r) => r.person === identity);
     return {
       id: m.id,
       state,
       label: boardStateLabel(state, m.type),
       nextRoom: front ? (front.person === identity ? "you" : front.person) : undefined,
       isMyTurn: front?.person === identity && front.status === "waiting",
+      isMine: mine,
       unclaimedLaundry: unclaimed ? { room: unclaimed.reservationId, canHandOff: front?.person === identity && front.status === "waiting" } : undefined,
     };
   });
