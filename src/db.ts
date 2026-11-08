@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -18,6 +18,15 @@ client.pragma("journal_mode = WAL");
 client.pragma("foreign_keys = ON");
 
 export const db = drizzle(client);
+
+// Exposed (via /__db-path in app.ts) so spec/global-setup.ts can refuse to
+// run an HTTP-driving spec against whatever server happens to be listening
+// on its target port without checking what that server is actually backed
+// by first — a bare `pnpm check` used to default to localhost:8080, which
+// is also what `pnpm dev` binds, so the spec silently wrote 50 fake
+// reservations into a real developer's working database twice in one
+// session before this check existed.
+export const dbPath = path === ":memory:" ? ":memory:" : resolve(path);
 
 // Migrations run at boot, on whatever machine holds the volume — there's no
 // separate machine to run them from (ADR 0003). Edit src/schema.ts,

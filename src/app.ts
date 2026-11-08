@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
-import { db } from "./db.ts";
+import { db, dbPath } from "./db.ts";
 import { normalizeRoom } from "./identity.ts";
 import * as logging from "./logging.ts";
 import * as queue from "./queue.ts";
@@ -39,6 +39,12 @@ app.use(async (c, next) => {
   const user = getCookie(c, IDENTITY_COOKIE) ?? "-";
   logging.logRequest(tag, c.req.method, c.req.path, c.res.status, Date.now() - start, user);
 });
+
+// spec/global-setup.ts checks this before running any HTTP-driving spec
+// against APP_URL, so a bare `pnpm check` that lands on a stray dev server
+// (localhost:8080 or anything else) refuses to run rather than writing
+// fake reservations into that server's real .data/app.db.
+app.get("/__db-path", (c) => c.text(dbPath));
 
 app.get("/readme/", (c) => c.html(readmePage(renderReadme())));
 
