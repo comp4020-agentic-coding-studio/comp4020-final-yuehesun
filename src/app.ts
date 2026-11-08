@@ -13,7 +13,7 @@ import { readSimulationResults } from "./simulation-results.ts";
 import { type Machine, machines, offers, reservations } from "./schema.ts";
 import { dryingDurationFor, isDryingType } from "./drying-types.ts";
 import { durationFor, isWashingType } from "./washing-types.ts";
-import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredPage, simulationPage } from "./views.ts";
+import { aheadLabelFor, errorPage, homePage, identityPage, machineCard, myStatusBlock, readmePage, scanRequiredBanner, scanRequiredPage, simulationPage } from "./views.ts";
 import { laundryPage, scanIdentityPage } from "./laundry-view.ts";
 import { boardStateFor, boardStateLabel } from "./board-state.ts";
 import { scanUrlFor } from "./qr.ts";
@@ -475,15 +475,44 @@ function actionRoute(path: string, name: string, act: (id: number, identity: str
   });
 }
 
-// plans/laundry-scan-gated-claim.md Stage 3: claim gets its own route
+// plans/laundry-scan-gated-claim.md Stage 3/6.1: claim gets its own route
 // instead of actionRoute()'s generic wrapper, solely so its one new
-// rejection reason ("scan the machine's code first") can render through
-// scanRequiredPage() — a page that names where to go, not just that the
-// action failed — while every other rejection from the same call
-// (ownership, front-of-queue, window timing) still renders through the
-// same errorPage() every other action uses. No change to queue.claim()
-// itself or to any other action's own route.
+// rejection reason ("scan the machine's code first") can render
+// differently from every other rejection (ownership, front-of-queue,
+// window timing), which still render through the same errorPage() every
+// other action uses. No change to queue.claim() itself or to any other
+// action's own route.
+//
+// Stage 6.1: the home page's Claim button is now an htmx request
+// (src/views.ts's actionButtons(), hx-target="#claim-feedback-:id"), so a
+// resident clicking it with no scan recorded sees an inline notice
+// instead of the whole page navigating to scanRequiredPage() — but every
+// existing non-browser caller (spec/*.test.ts, sim/driver.ts, a plain
+// curl) still gets exactly the old shape, nothing broken for them.
+// htmx itself is what makes this branch possible to do safely:
+// - It sends "HX-Request: true" on every request it issues (confirmed
+//   against htmx's own docs, not assumed) — the one reliable way to tell
+//   an htmx-originated request apart from a plain form POST or a test's
+//   bare fetch(), without adding a new query param or header convention
+//   of this app's own.
+// - htmx's default response handling never swaps a non-2xx response's
+//   body into hx-target at all (it only fires htmx:responseError and
+//   leaves the target untouched) — so returning the old scanRequiredPage()
+//   at its real 409 status, unchanged, for an htmx request would make the
+//   Claim button look like it silently does nothing. The inline banner
+//   below is returned at 200 instead, specifically so htmx actually
+//   swaps it in; the real failure is still logged server-side exactly as
+//   before, and a non-htmx caller (every spec file, sim/driver.ts) still
+//   sees the real 409/403/404 status it already asserts on.
+// - A 3xx status is intercepted by the browser's own XHR/fetch layer
+//   before htmx's own header/response logic ever runs, so an htmx request
+//   can't be redirected via Location the way a plain form submit is —
+//   htmx's own documented alternative is the HX-Redirect response
+//   header, which triggers a full client-side navigation exactly like a
+//   3xx would for a plain form. Used only for the htmx branch below; the
+//   non-htmx branch keeps the original 303 redirect unchanged.
 app.post("/reservations/:id/claim", (c) => {
+  const isHtmx = c.req.header("HX-Request") === "true";
   const identity = getCookie(c, IDENTITY_COOKIE);
   if (!identity) return c.html(errorPage("sign in first", 400), 400);
 
@@ -492,11 +521,16 @@ app.post("/reservations/:id/claim", (c) => {
   if (!result.ok) {
     logging.logEvent("reservation_claimed_denied", { id, room: identity, reason: result.message });
     if (result.message === "scan the machine's code first") {
+      if (isHtmx) return c.html(scanRequiredBanner(), 200);
       return c.html(scanRequiredPage(), result.status);
     }
     return c.html(errorPage(result.message, result.status), result.status);
   }
   logging.logEvent("reservation_claimed", { id, room: identity });
+  if (isHtmx) {
+    c.header("HX-Redirect", "/");
+    return c.body(null, 200);
+  }
   return c.redirect("/", 303);
 });
 actionRoute("/reservations/:id/start", "reservation_started", queue.start);
