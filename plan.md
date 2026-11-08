@@ -913,6 +913,59 @@ and the offer moves to the next person instead.
   function, a valid prefill, a rejected hostile value, the unchanged blank
   case). `pnpm check` green (15 files, 46 tests) against a scratch server;
   `src/queue.ts` untouched.
+- **Claim now requires a real, recent scan of the exact machine —
+  five-stage build, full design in
+  [`plans/laundry-scan-gated-claim.md`](plans/laundry-scan-gated-claim.md),
+  decision in
+  [`docs/adr/0016-scan-gated-claim-accepted.md`](docs/adr/0016-scan-gated-claim-accepted.md).**
+  The home page's "Claim (scan)" button used to claim with no scan
+  involved at all — a real gap against `plan.md`'s own User story
+  ("Claiming means the machine is theirs because they've arrived"). A
+  separate session's first pass at this question
+  ([`docs/adr/0015-scan-gated-claim.md`](docs/adr/0015-scan-gated-claim.md))
+  concluded "reject"; the user overruled it with real counter-arguments,
+  one of which (claim never verified arrival at all) held up on
+  inspection — full decision history in the plan file and
+  `process-notes.md`. **Stage 1**: a new `scans` table
+  (`drizzle/0008_tidy_firestar.sql`, via `drizzle-kit generate`),
+  `queue.ts`'s `recordScan()`/`hasValidScan()`, `claim()`'s new
+  precondition (`SCAN_VALIDITY_MS` reuses `OFFER_CLAIM_WINDOW_MS` rather
+  than a second, independently-tuned constant) — verified over real HTTP
+  against a scratch server (rejects with no scan, succeeds once scanned,
+  still rejects for a scan of a different machine or an expired one).
+  **Stage 2**: `GET /laundry/scan/:id` now calls `recordScan()` — the one
+  real place a scan event happens, reached by a real phone's camera or
+  the just-identified visitor's own redirect back through this route;
+  the phone-simulator's iframe (`plans/laundry-scan-phone-simulator.md`)
+  changed from a fixed `src="/"` to this machine's own
+  `/laundry/scan/:id`, since claiming inside the simulator would
+  otherwise hit the new gate with no real scan behind it. **Stage 3**: a
+  rejected claim now renders `scanRequiredPage()` ("Scan the machine's
+  code first — in the 3D laundry room, or with your phone's camera on
+  the real machine," with a real `/laundry` link) instead of a generic
+  error — confirmed this doesn't leak into every 409 (a stranger's "it's
+  not your turn" still shows the plain, unchanged `errorPage()`).
+  **Stage 4**: every existing caller of `claim()` — five `spec/*.test.ts`
+  files, `spec/support/queue-client.ts`'s new `scan()` helper,
+  `offer-client.ts`'s `claimAndStart()`, and `sim/driver.ts`'s new
+  `"scan"` Action kind — now scans first, through the exact same real
+  `recordScan()`/`GET /laundry/scan/:id` mechanism production itself
+  calls, so no env var, flag, or code path behaves differently under
+  test (the single argument from the rejected ADR that didn't survive
+  inspection: every spec/sim already calls `join()` before `claim()` to
+  build up real preconditions, so this is additive to that existing
+  pattern, not a special case). `spec/fairness-properties.test.ts`'s own
+  200-run random-sequence property test can now generate a scan action,
+  confirmed via a standalone script to genuinely exercise both claim's
+  rejection and success paths, not just one. One real bug caught by
+  running the full suite rather than assumed: `laundry-handoff.test.ts`'s
+  `startAndFinish()` is called against two different machines in that
+  file, not one fixed `MACHINE_ID` as first assumed — fixed by adding a
+  `machineId` parameter, the same pattern `claimAndStart()` already uses.
+  `pnpm check` green (15 files, 46 tests) against a scratch server;
+  `src/queue.ts`'s only change throughout is additive (the new
+  precondition plus two new exported functions). **Stage 5**: this ADR,
+  this `plan.md` entry.
 
 ## Final project deadline — read this before planning further work
 
@@ -1009,6 +1062,11 @@ there; "gap" means nobody's claimed it yet.
 14. **Claim vs. start as separate actions** — core, crit 8. Scanning claims
     a machine ("it's mine"); starting is a separate tap that just records
     the real start time (duration was already chosen at reservation time).
+    **"Scanning" now really means a real scan**: claim requires a recent
+    scan of the exact machine (`docs/adr/0016-scan-gated-claim-accepted.md`,
+    `plans/laundry-scan-gated-claim.md`) — the home page's "Claim (scan)"
+    button isn't removed, it now fails with a link to `/laundry` if no
+    scan exists yet.
 15. **Cancelling moves the line up by one** — core, crit 8, simple to add.
 16. **Changing washing/drying type after reserving** — **gap**, no crit
     assigned. Came up because the default dropdown option is the 1-minute
