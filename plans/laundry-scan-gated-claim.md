@@ -518,3 +518,178 @@ cleanly on the first attempt. Whether to build this now or after the
 deadline is the user's call, not a default either way — this plan is
 written so that call can be made with the design already settled,
 instead of under time pressure with open questions.
+
+## Stage 6 — real-use follow-up (three issues found after shipping)
+
+Stages 1-5 are built, tested, and deployed
+(`docs/adr/0016-scan-gated-claim.md` supersedes `0015`). Trying the live
+feature surfaced three real UX issues — none of them a defect in the
+gate's own authorization logic (`hasValidScan()`/`claim()`'s precondition
+is unchanged by anything in this stage), all of them about how the
+rejection and the 3D room's existing "this machine is yours" marker
+present the gate to a resident.
+
+### 6.1 — the rejection is a full-page navigation, not an inline notice
+
+**Current behaviour, confirmed by reading the code.** The home page's
+"Claim (scan)" button (`src/views.ts`'s `actionButtons()`) is a plain
+`<form method="post" action="/reservations/:id/claim">` — an ordinary
+browser form submit, not an htmx request. `POST /reservations/:id/claim`
+(`src/app.ts`) is its own dedicated route (not the shared
+`actionRoute()` wrapper every other action uses), specifically so a
+"scan first" rejection can render `scanRequiredPage()` — a full
+`page(...)`-wrapped document with its own nav, title ("Scan first"), and
+a link to `/laundry` — instead of the generic `errorPage()`. On success
+it's a plain `c.redirect("/", 303)`. Either way, the browser navigates
+away from wherever the resident was looking (the home page's pinned
+status block) to a brand-new document. This is the same coarse
+"one click, one full page round-trip" shape every action in this app has
+always used — crit 9's own real-time work (`myStatusBlock`,
+`noticeBanner`, the `turn-alert` `<dialog>`, ADR 0009) already built a
+precedent for *not* doing this for other kinds of status messages, just
+never applied it to an action's own rejection before.
+
+**The existing precedent this reuses, not a new mechanism.**
+`src/views.ts` already has two patterns for "tell the resident something
+without leaving the page they're on":
+
+1. `noticeBanner(row)` / `pendingPickupCard(item)` — small
+   `.notice-banner` divs rendered inline inside `myStatusBlock`, which
+   re-renders automatically on `sse:changed` (crit 9's existing realtime
+   tick) without any action needing to trigger it directly.
+2. The `turn-alert` `<dialog>` (ADR 0009) — a modal that opens in
+   response to the same SSE-driven refresh, for the two moments
+   README already promises to interrupt a resident for.
+
+Neither of these is reusable *as-is* for a claim rejection, since a
+rejection is a direct, synchronous response to *this specific click*,
+not something the next SSE tick happens to reveal — but the *style*
+(a small inline banner, no navigation) is exactly right, and the
+`.notice-banner` CSS class already exists.
+
+**Plan: make the Claim button an htmx request, render the rejection as
+an inline banner, not a new document.**
+
+- `src/views.ts`'s `actionButtons()`: the claim `<form>` gains
+  `hx-post="/reservations/${row.reservationId}/claim"`,
+  `hx-target="#claim-feedback-${row.reservationId}"`,
+  `hx-swap="innerHTML"` (htmx is already loaded site-wide via
+  `page()`'s `<script src="https://unpkg.com/htmx.org@2.0.4">` — no new
+  dependency). An empty `<div id="claim-feedback-${row.reservationId}">`
+  sits directly under the button, inside `statusHero`'s own markup, so
+  htmx has somewhere to swap into without touching anything else on the
+  page.
+- `POST /reservations/:id/claim` (`src/app.ts`): on the "scan the
+  machine's code first" rejection, instead of
+  `c.html(scanRequiredPage(), result.status)`, return a small HTML
+  fragment — a `.notice-banner`-styled div with the same message and the
+  same `<a href="/laundry">Go to the laundry</a>` link, at the rejection
+  status code (409) — not a full `page(...)` document. Every *other*
+  rejection from the same call (ownership, front-of-queue, window
+  timing) is unaffected: those already return quickly before reaching
+  real users in practice (loadOwned's 403, the "it's not your turn" 409)
+  and aren't in scope for this stage — only the scan-specific message
+  needs the inline treatment the original request asked for,
+  so this stays a small, targeted change, not a rewrite of every
+  rejection path.
+- On success: the gated route currently does `c.redirect("/", 303)`,
+  which an htmx request follows as a full navigation anyway (htmx honors
+  a redirect response by default) — no change needed here, since a
+  successful claim *should* refresh the whole status block (the
+  button disappears, "Start the wash" appears in its place), and letting
+  the browser just reload `/` is the simplest way to get that without
+  inventing a second, partial-refresh success path alongside the
+  rejection one.
+- **Verify:** over real HTTP (not just reading the diff) — a claim
+  attempt with no scan record returns the inline fragment at 409, with
+  the page's own URL and scroll position unchanged (confirmed by reading
+  `window.location` before/after in a Playwright check, not assumed from
+  the status code alone); a claim attempt with a valid scan still
+  redirects to `/` and succeeds, unchanged from today.
+
+### 6.2 — the "this machine is yours" marker doesn't distinguish "claim me now" from "not your turn yet"
+
+**Current behaviour, confirmed by reading the code.** `src/laundry-view.ts`'s
+`mineMarkers[p.id].visible` is set from `entry.isMine` (`src/app.ts`'s
+`GET /laundry/machines-state`), which is true whenever the viewer holds
+*any* active reservation on that machine — `waiting` (queued, possibly
+not yet front), `claimed`, or `running`, or an unacknowledged `done`
+reservation. A resident holding two machines (the app's own
+`MAX_ACTIVE_PER_TYPE = 2` cap allows this per machine type) sees the
+same red marker on both, with no way to tell from the 3D room alone
+which one is actually asking for a scan-and-claim right now versus
+one that's still mid-cycle or still queued behind someone else.
+
+**The field this needs already exists and is already computed, just
+never read by the 3D scene.** The same `GET /laundry/machines-state`
+response already includes `isMyTurn`:
+`front?.person === identity && front.status === "waiting"` — true
+exactly when the viewer is the front reservation on this machine *and*
+it hasn't been claimed yet, which is precisely "go scan this one now."
+`src/laundry-view.ts` never reads this field at all today (confirmed by
+grep — zero occurrences of `isMyTurn` in that file).
+
+**Plan: switch the marker's visibility from `isMine` to `isMyTurn`.**
+
+- `src/laundry-view.ts`, wherever `mineMarkers[entry.id].visible` is set
+  (currently `!!entry.isMine`): change to `!!entry.isMyTurn`.
+- No server-side change needed — `isMyTurn` is already computed and
+  already sent in the same payload; this is a one-line client read, not
+  a new field.
+- **What this changes in practice:** a machine the resident is still
+  queued behind someone else on, already `claimed`, or already `running`
+  no longer shows the marker — only a machine where the resident is
+  genuinely front-of-queue and still `waiting` (i.e., the exact
+  precondition `claim()`'s scan gate checks) shows it. This directly
+  answers the original request: the marker now means "go scan this one,"
+  not "you have some relationship to this machine."
+- **What this does not change:** `unclaimedLaundry`'s own marker/ring
+  (the drop-off/handoff indicator) is a separate field and mesh,
+  untouched — this stage only touches the red "this is yours, claim it"
+  cone marker.
+- **Verify:** a resident holding two reservations, one front-of-queue
+  `waiting` and one `running`, sees the marker on only the first —
+  confirmed via `GET /laundry/machines-state`'s real response plus a
+  Playwright check of `mineMarkers[id].visible` for both ids, not just a
+  visual screenshot.
+
+### 6.3 — two machines genuinely needing a claim at once: no new rule needed
+
+**The actual mechanism, confirmed by reading `queue.ts`.**
+`MAX_ACTIVE_PER_TYPE = 2` is the only cap on how many active reservations
+one room can hold per machine type — `claim()` itself has no concept of
+"another one of your machines" at all; it only ever checks the one
+reservation it was called with (ownership, front-of-queue, `waiting`,
+now the scan gate). Two machines can independently reach "front of
+queue, waiting, scanned" for the same identity at the same time with no
+interaction between them, and `claim()` would allow either (or both, in
+either order).
+
+**Decision: this is correct behaviour, not a gap to close.** The app's
+own rationale for `MAX_ACTIVE_PER_TYPE = 2` (`README.md`/`plan.md`) is
+letting someone wash darks and lights separately — two genuinely
+independent, parallel tasks. If both happen to reach "claim me" at the
+same moment, that's two real, simultaneous demands on the resident's
+time, not a conflict the system should arbitrate by picking one over the
+other. Per 6.2 above, once the marker is switched to `isMyTurn`, both
+machines would correctly show the marker at once in this case — which is
+the honest representation (both genuinely need attention now), not a bug
+to suppress by only ever lighting up one marker.
+
+**What this stage does not add:** any ordering/priority rule between two
+simultaneously-claimable machines, any UI that picks one to highlight
+over the other, or any change to `MAX_ACTIVE_PER_TYPE` or `claim()`'s own
+preconditions. Confirmed against `plan.md`'s own fairness rule (the
+documented miss-your-window swap, `docs/adr/0005`) — nothing about two
+of a resident's *own* machines being simultaneously claimable touches
+the fairness rule at all, since fairness only ever governs order between
+*different* residents on the *same* machine.
+
+### Build order for Stage 6
+
+6.2 first (one-line change, no new request/response shape, easiest to
+verify in isolation) — then 6.1 (the htmx/inline-banner change, the
+largest single piece of new surface in this stage) — 6.3 needs no code,
+just this plan's own written confirmation that the current behaviour is
+intentional, so it's recorded here rather than scheduled as a build
+step.
