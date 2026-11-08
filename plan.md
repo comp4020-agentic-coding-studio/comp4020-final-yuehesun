@@ -852,6 +852,37 @@ and the offer moves to the next person instead.
   needed (routine UI, no authorization/fairness weight, per the plan
   file's own reasoning against ADRs 0012-0014). `pnpm check` green (15
   files, 42 tests) against a scratch server; `src/queue.ts` untouched.
+- **A real "character's limbs don't animate until a refresh" bug,
+  root-caused and fixed, not just re-tuned.** Reported as "walk into
+  `/laundry` and often the arms/legs just don't move, reloading fixes
+  it." Investigated with real evidence, not a guess: a real
+  `characterModel.traverse()` bone-rotation sample across 8 frames
+  confirmed the arm/leg bones genuinely rotate on an ordinary first
+  navigation (ruling out a rendering/frustum regression), and a
+  Playwright `page.route()` test that deliberately aborted the first two
+  `character.glb` requests and let the third through reproduced the real
+  failure shape instead: the local character's animation data used to
+  come from a **second, fully independent** network request
+  (`loadGltfWithRetry("/models/character.glb", ...)` a few lines below
+  the model's own `loadModel()` load), issued purely because that
+  callback's own cloned model carries no `animations` array — each
+  request had its own separate 3-attempt retry budget, so the character
+  could render and move correctly (position/camera all fine, matching
+  the pre-existing "retry a failed load" fix's own framing) while its
+  *second* request's retries all failed independently, leaving
+  `walkClip`/`idleClip`/`characterMixer` `null` for the rest of that page
+  load with nothing printed to explain why — exactly the kind of blip
+  `fly.toml`'s cold-start `auto_stop_machines` setup makes more likely
+  right after a cold start, and exactly why a refresh (a fresh set of 3
+  attempts) usually "fixed" it. Fixed by deleting the second request
+  entirely: `loadModel()` already caches the full `gltf` (animations
+  included) in `modelCache` before invoking its callback, so the
+  animation setup now reads `modelCache["/models/character.glb"].animations`
+  directly — one request, one retry budget, no separate failure window.
+  Verified by the same abort-twice-then-succeed Playwright test: the walk
+  animation now recovers correctly even after 2 of the 3 attempts fail.
+  `pnpm check` green (15 files, 42 tests) against a scratch server;
+  `src/queue.ts` untouched.
 
 ## Final project deadline — read this before planning further work
 

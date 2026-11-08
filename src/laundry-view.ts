@@ -967,59 +967,61 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     // window.__laundryGltfAnimations is exposed for a quick Playwright
     // sanity check that the expected clip names actually exist, without
     // needing to re-inspect the raw GLB from a test.
+    //
+    // Found investigating a real "my character's limbs never animate,
+    // only a hard refresh fixes it" report: this used to issue a SECOND,
+    // fully independent network request for character.glb (via
+    // loadGltfWithRetry directly, bypassing modelCache) purely to get at
+    // gltf.animations, since this callback's own model argument is
+    // already a clone with no animations array attached. That second
+    // request had its own 3-attempt retry budget — if all 3 happened to
+    // fail (exactly the kind of transient blip fly.toml's cold-start
+    // auto_stop_machines setup makes more likely right after a cold
+    // start), walkClip/idleClip/characterMixer stayed null for the rest
+    // of that page load, silently, with the character model itself still
+    // rendering and moving correctly (so nothing else looked broken).
+    // loadModel() above already stores the raw gltf (animations and all)
+    // in modelCache before ever calling this callback, so there's no
+    // reason to fetch it a second time at all — reading
+    // modelCache[url].animations here removes the whole failure window,
+    // not just retries it harder.
+    var gltfAnimations = modelCache["/models/character.glb"].animations;
+    window.__laundryGltfAnimations = gltfAnimations.map(function (a) { return a.name; });
+    characterMixer = new THREE.AnimationMixer(characterModel);
+    walkClip = THREE.AnimationClip.findByName(gltfAnimations, "walk");
+    idleClip = THREE.AnimationClip.findByName(gltfAnimations, "idle");
+    // Stage 9.1 fix (1 of 2 — the disappearing-character bug had two
+    // independent causes stacked together, not one): the "walk" clip
+    // (unlike "idle") ships a "root.position" keyframe track — Kenney's
+    // rig has a top-level "root" Bone (parent of every other bone,
+    // confirmed by a real scene-graph dump: Group > Object3D > Bone
+    // "root" > {leg-left, leg-right, torso{arm-left, arm-right, head}},
+    // with body-mesh/head-mesh as SkinnedMeshes siblings of "root"). That
+    // track moves the root BONE's own local position every frame the
+    // walk animation plays, which (since every other bone and both
+    // skinned meshes hang off it) drags the whole character's real
+    // world-space position away from whatever characterRoot.position
+    // (the Object3D this file actually drives) says it should be —
+    // confirmed by a live Box3().setFromObject() reading on the character
+    // diverging further from characterRoot.position the longer "w" was
+    // held. This alone explained long-held-movement disappearance (the
+    // mesh drifting entirely outside the camera's view); it did NOT
+    // explain a shorter repro where the mesh vanished with zero measured
+    // drift — that turned out to be a second, independent bug, fixed
+    // separately where frustumCulled is set above. The fix here removes
+    // the root-motion track from the walk clip before ever creating its
+    // AnimationAction, so only its rotation tracks (the actual arm/leg
+    // swing) play — characterRoot's own position, set once per frame in
+    // the render loop below, is the only thing that ever moves the
+    // character through the room.
+    if (walkClip) { stripRootMotion(walkClip); walkAction = characterMixer.clipAction(walkClip); walkAction.play(); walkAction.setEffectiveWeight(0); }
+    if (idleClip) { idleAction = characterMixer.clipAction(idleClip); idleAction.play(); idleAction.setEffectiveWeight(1); }
   }, function () {});
 
-  // loadModel's callback signature above doesn't carry the raw gltf (it
-  // clones gltf.scene only, deliberately, since clones are what every
-  // other model placement above uses for cache-sharing) — animations need
-  // the original gltf.animations array, so the character is loaded once
-  // more, directly, just for its AnimationClip data. This is the one
-  // model not using the loadModel()/modelCache path, by necessity: an
-  // AnimationMixer must run against the exact clone it was built for.
-  // Stage 9.1 fix (1 of 2 — the disappearing-character bug had two
-  // independent causes stacked together, not one): the "walk" clip
-  // (unlike "idle") ships a "root.position" keyframe track — Kenney's rig
-  // has a top-level "root" Bone (parent of every other bone, confirmed by
-  // a real scene-graph dump: Group > Object3D > Bone "root" >
-  // {leg-left, leg-right, torso{arm-left, arm-right, head}}, with
-  // body-mesh/head-mesh as SkinnedMeshes siblings of "root"). That track
-  // moves the root BONE's own local position every frame the walk
-  // animation plays, which (since every other bone and both skinned
-  // meshes hang off it) drags the whole character's real world-space
-  // position away from whatever characterRoot.position (the Object3D
-  // this file actually drives) says it should be — confirmed by a live
-  // Box3().setFromObject() reading on the character diverging further
-  // from characterRoot.position the longer "w" was held. This alone
-  // explained long-held-movement disappearance (the mesh drifting
-  // entirely outside the camera's view); it did NOT explain a shorter
-  // repro where the mesh vanished with zero measured drift — that
-  // turned out to be a second, independent bug, fixed separately where
-  // frustumCulled is set below. The fix here removes the root-motion
-  // track from the walk clip before ever creating its AnimationAction,
-  // so only its rotation tracks (the actual arm/leg swing) play —
-  // characterRoot's own position, set once per frame in the render loop
-  // below, is the only thing that ever moves the character through the
-  // room.
   function stripRootMotion(clip) {
     clip.tracks = clip.tracks.filter(function (t) { return t.name !== "root.position"; });
     return clip;
   }
-
-  // Real bug this used to have no protection against at all: unlike
-  // loadModel() above (which at least logged a failure), this call had no
-  // error callback whatsoever — a failed load here silently left
-  // walkClip/idleClip/characterMixer at null forever, for the rest of
-  // that page load, with nothing printed anywhere to explain why the
-  // character's limbs never moved. Now goes through the same
-  // loadGltfWithRetry() path as every other model load.
-  loadGltfWithRetry("/models/character.glb", function (gltf) {
-    window.__laundryGltfAnimations = gltf.animations.map(function (a) { return a.name; });
-    characterMixer = new THREE.AnimationMixer(characterModel || characterRoot);
-    walkClip = THREE.AnimationClip.findByName(gltf.animations, "walk");
-    idleClip = THREE.AnimationClip.findByName(gltf.animations, "idle");
-    if (walkClip) { stripRootMotion(walkClip); walkAction = characterMixer.clipAction(walkClip); walkAction.play(); walkAction.setEffectiveWeight(0); }
-    if (idleClip) { idleAction = characterMixer.clipAction(idleClip); idleAction.play(); idleAction.setEffectiveWeight(1); }
-  });
 
   // --- camera: a third-person follow rig, not orbit controls — look
   // direction and movement direction stay linked (the player doesn't
