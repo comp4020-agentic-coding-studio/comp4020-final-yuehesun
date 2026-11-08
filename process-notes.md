@@ -339,6 +339,45 @@ note is supposed to take a position on.
 (pending: next commit); `sim/results.json` (committed, this session);
 `research-note.md`'s DST section (pending: next commit).
 
+## Turning a vague outside note into a concrete feature, without reopening identity
+
+**What happened:** a course staff member reviewing the deployed app said
+the bot-filled simulation on `/simulation` didn't convince him this was
+something a real hall manager would actually adopt — his suggestion was
+to picture pitching it to one, and build whatever would make that pitch
+land. His own image of the fix was "scan a machine's code, get taken to
+a log-in page" — taken literally, that's a second identity mechanism,
+which would reopen ADR 0004 (room number only, no accounts) for no good
+reason.
+
+**The obvious alternative:** build the literal image he gave — a scan
+flow that lands on its own login step — since it's an easy brief to
+follow exactly as worded, and the feedback came from someone grading the
+project.
+
+**What I decided instead:** read past the literal wording to what he was
+actually pointing at — a flow where scanning lands somewhere, that
+somewhere already knows who you are, and lets you act immediately — and
+confirmed the existing room-number cookie already does exactly that; the
+only real gap was a physical, spatial entry point into it. The result is
+the 3D walkthrough: a first-person room at `/laundry` with a real,
+server-rendered QR code per machine, landing on the exact same
+identity/claim flow the home page already uses, not a parallel one.
+
+**Why it helped:** outside feedback is real signal, but it's a reaction
+to the current build, not a spec to copy verbatim — this app had already
+settled, with its own reasoning, that identity stays a plain room number
+(ADR 0002/0004). Taking "log-in page" literally would have meant undoing
+that decision to satisfy one reviewer's phrasing instead of his actual
+point. The feature that resulted makes the same underlying case —
+"you've arrived, the system already knows you, act now" — real enough to
+walk through and scan with an actual phone, which is the thing that was
+actually missing.
+
+**Backed by:** `docs/adr/0012-3d-walkthrough.md`; `plans/3d-walkthrough.md`'s
+Background section, which records the literal feedback and the
+confirmed reading of it side by side.
+
 ## Requiring a real regression test for the backwards-machine bug, not just a one-line fix
 
 **What happened:** I noticed several washing machines in the 3D room had

@@ -48,7 +48,7 @@ it("offers a newly idle machine to the longest-waiting eligible person elsewhere
     // real duration.
     const finisher = await identityCookie(baseUrl, uniqueRoom());
     const finisherReservation = await join(baseUrl, finisher, IDLE_MACHINE);
-    await claimAndStart(baseUrl, finisher, finisherReservation);
+    await claimAndStart(baseUrl, finisher, finisherReservation, IDLE_MACHINE);
     await finish(baseUrl, finisher, finisherReservation);
 
     const offerId = await waitForOffer(baseUrl, candidate);
@@ -85,7 +85,7 @@ it("declining an offer leaves the original reservation untouched", async () => {
 
     const finisher = await identityCookie(baseUrl, uniqueRoom());
     const finisherReservation = await join(baseUrl, finisher, IDLE_MACHINE);
-    await claimAndStart(baseUrl, finisher, finisherReservation);
+    await claimAndStart(baseUrl, finisher, finisherReservation, IDLE_MACHINE);
     await finish(baseUrl, finisher, finisherReservation);
 
     const offerId = await waitForOffer(baseUrl, candidate);

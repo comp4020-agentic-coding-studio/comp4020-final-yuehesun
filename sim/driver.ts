@@ -11,6 +11,7 @@ import type { Harness } from "./harness.ts";
 
 export type Action =
   | { kind: "join"; room: string; machineId: number; washingType: string }
+  | { kind: "scan"; room: string; machineId: number }
   | { kind: "claim"; room: string; reservationId: number }
   | { kind: "start"; room: string; reservationId: number }
   | { kind: "cancel"; room: string; reservationId: number }
@@ -46,6 +47,16 @@ export function applyAction(h: Harness, action: Action): ActionOutcome {
       if (duration == null) return { action, ok: false, message: "invalid washing/drying type" };
       const result = h.queue.join(action.machineId, action.room, action.washingType, duration);
       return { action, ok: result.ok, message: result.ok ? undefined : result.message };
+    }
+    case "scan": {
+      // plans/laundry-scan-gated-claim.md: recordScan() never fails (no
+      // uniqueness constraint, no preconditions of its own), so this is
+      // always ok — included as a real Action kind anyway, not called
+      // directly from the driver's caller, so fast-check's own generated
+      // sequences exercise "claim without a preceding scan" exactly as
+      // often as any other missing-precondition case it already covers.
+      h.queue.recordScan(action.machineId, action.room);
+      return { action, ok: true };
     }
     case "claim": {
       const result = h.queue.claim(action.reservationId, action.room);

@@ -18,6 +18,7 @@ const ROOMS = ["room201", "room202", "room203", "room204"] as const;
 const TYPE_KEYS = ["test", "quick", "normal", "heavy"] as const;
 const KINDS = [
   "join",
+  "scan",
   "claim",
   "start",
   "cancel",
@@ -64,6 +65,18 @@ function resolveAndApply(h: Harness, step: Step): void {
       if (machine.type === "dryer" && !isDryingType(step.type)) return;
       if (machine.type === "washer" && !isWashingType(step.type)) return;
       applyAction(h, { kind: "join", room: step.room, machineId: machine.id, washingType: step.type });
+      return;
+    }
+    // plans/laundry-scan-gated-claim.md: always applicable (recordScan()
+    // never fails) — this is what lets a "claim" step later in a random
+    // sequence actually succeed sometimes, exactly mirroring how "join"
+    // has to come before "claim" can ever do anything either. Also
+    // exercises claim's own rejection path: a sequence that never
+    // generates "scan" for this room/machine before "claim" correctly
+    // keeps seeing claim fail, which invariant-checking below still has
+    // to hold through.
+    case "scan": {
+      applyAction(h, { kind: "scan", room: step.room, machineId: machine.id });
       return;
     }
     case "claim": {

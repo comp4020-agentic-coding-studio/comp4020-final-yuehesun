@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { scan } from "./queue-client.ts";
 
 // Thin client for crit 9 Stage 3's "earlier machine" offer
 // (plans/crit-9.md), shared by offer.test.ts.
@@ -8,7 +9,13 @@ export interface Offer {
   machineLabel: string;
 }
 
-export async function claimAndStart(baseUrl: string, cookie: string, reservationId: number): Promise<void> {
+// plans/laundry-scan-gated-claim.md: machineId added so this helper can
+// scan the real machine before claiming, the same real precondition
+// production itself now requires — every existing call site already
+// knows which machine it just joined, so this is a pure addition, not a
+// behaviour change for callers.
+export async function claimAndStart(baseUrl: string, cookie: string, reservationId: number, machineId: number): Promise<void> {
+  await scan(baseUrl, cookie, machineId);
   const claimRes = await fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {
     method: "POST",
     headers: { cookie },

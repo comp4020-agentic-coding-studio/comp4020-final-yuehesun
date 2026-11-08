@@ -46,6 +46,11 @@ it("moves a reservation back one place when its start window (claimed but not st
   const back = h.queue.join(1, "room304", "normal", 30);
   if (!front.ok || !back.ok) throw new Error("setup failed");
 
+  // plans/laundry-scan-gated-claim.md: recordScan() is the same real
+  // function GET /laundry/scan/:id calls in production — calling it
+  // directly here mirrors how every other action here is driven through
+  // the real queue.ts function, not a copy of its rule.
+  h.queue.recordScan(1, "room303");
   const claimResult = h.queue.claim(front.reservationId, "room303");
   expect(claimResult.ok).toBe(true);
 
@@ -81,6 +86,7 @@ it("gives an accepted offer a 10-minute claim window, not the normal 3 minutes",
   // Make the idle machine idle by having someone finish their wash early.
   const finisher = h.queue.join(idleMachine, "room307", "test", 1);
   if (!finisher.ok) throw new Error("setup failed");
+  h.queue.recordScan(idleMachine, "room307");
   expect(h.queue.claim(finisher.reservationId, "room307").ok).toBe(true);
   expect(h.queue.start(finisher.reservationId, "room307").ok).toBe(true);
   expect(h.queue.finish(finisher.reservationId, "room307").ok).toBe(true);
@@ -142,11 +148,13 @@ it("expires an unanswered offer after 2 minutes and passes it on to the next eli
   // test advances to let the *offer's* 2-minute window lapse, triggering
   // an unrelated moveBackOnePlace swap on the holder machine that isn't
   // what this test means to exercise.
+  h.queue.recordScan(holderMachine, "room308");
   expect(h.queue.claim(holder.reservationId, "room308").ok).toBe(true);
   expect(h.queue.start(holder.reservationId, "room308").ok).toBe(true);
 
   const finisher = h.queue.join(idleMachine, "room311", "test", 1);
   if (!finisher.ok) throw new Error("setup failed");
+  h.queue.recordScan(idleMachine, "room311");
   h.queue.claim(finisher.reservationId, "room311");
   h.queue.start(finisher.reservationId, "room311");
   h.queue.finish(finisher.reservationId, "room311");
@@ -172,6 +180,7 @@ it("holds a dryer reservation's claim window until its linked wash is done", () 
 
   const wash = h.queue.join(1, "room312", "test", 1); // 1-minute wash
   if (!wash.ok) throw new Error("setup failed");
+  h.queue.recordScan(1, "room312");
   expect(h.queue.claim(wash.reservationId, "room312").ok).toBe(true);
   expect(h.queue.start(wash.reservationId, "room312").ok).toBe(true);
 

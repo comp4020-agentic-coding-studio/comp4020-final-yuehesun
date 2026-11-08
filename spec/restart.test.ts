@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { claim, cleanupReservation, identityCookie, join, state, uniqueRoom } from "./support/queue-client.ts";
+import { claim, cleanupReservation, identityCookie, join, scan, state, uniqueRoom } from "./support/queue-client.ts";
 
 // Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
 // state is already in SQLite on the volume (ADR 0003) — this tests that
@@ -82,6 +82,12 @@ it("keeps every reservation's position and status across a server restart, on th
   const reservationA = await join(BASE_URL, cookieA, MACHINE_ID);
   const reservationB = await join(BASE_URL, cookieB, MACHINE_ID);
 
+  // plans/laundry-scan-gated-claim.md: the scans table lives in the same
+  // SQLite database as everything else this test already checks survives
+  // a restart (src/schema.ts, not an in-memory structure), so recording
+  // the scan before the restart and claiming before the restart is the
+  // realistic order, not a workaround.
+  await scan(BASE_URL, cookieA, MACHINE_ID);
   const claimStatus = await claim(BASE_URL, cookieA, reservationA);
   expect(claimStatus, "the front reservation should claim successfully before the restart").toBeLessThan(400);
 

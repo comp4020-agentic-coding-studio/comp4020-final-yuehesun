@@ -136,6 +136,11 @@ it("redirects an already-identified scanner to the real home page even when the 
   // across a whole spec run is still safest treated as "something else
   // might already be there," not assumed empty).
   const reservationId = await join(baseUrl, owner, OTHER_MACHINE_ID);
+  // plans/laundry-scan-gated-claim.md: this file's own scanPage() helper
+  // already hits the real GET /laundry/scan/:id route — reused directly
+  // rather than importing a second scan helper, since it's the same real
+  // request either way.
+  await scanPage(owner, OTHER_MACHINE_ID);
   const claimStatus = await claim(baseUrl, owner, reservationId);
   expect(claimStatus, "the owner's own claim should succeed, to put this reservation in an unambiguous non-waiting state").toBeLessThan(400);
 

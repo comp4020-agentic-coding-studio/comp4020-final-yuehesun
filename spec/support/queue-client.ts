@@ -50,6 +50,21 @@ export async function join(baseUrl: string, cookie: string, machineId: number): 
   return id;
 }
 
+// plans/laundry-scan-gated-claim.md Stage 4: claim() now requires a real,
+// recent scan of this exact machine — this hits the same real route
+// (GET /laundry/scan/:id) that a real phone's camera lands on after
+// scanning the machine's actual code, so every spec builds this
+// precondition the same way production does, rather than a parallel
+// fake path. Call this before claim() for any machine a test means to
+// actually claim.
+export async function scan(baseUrl: string, cookie: string, machineId: number): Promise<void> {
+  const res = await fetch(new URL(`/laundry/scan/${machineId}`, baseUrl), {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  expect(res.status, "scanning a machine's code should succeed").toBeLessThan(400);
+}
+
 export async function claim(baseUrl: string, cookie: string, reservationId: number): Promise<number> {
   const res = await fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {
     method: "POST",

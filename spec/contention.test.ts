@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { cleanupReservation, identityCookie, state, uniqueRoom } from "./support/queue-client.ts";
+import { cleanupReservation, identityCookie, scan, state, uniqueRoom } from "./support/queue-client.ts";
 
 // Crit 10 extension, Stage 10 (plans/crit-10.md "Extension"; ADR 0008):
 // simultaneous joins, a doubled claim, and the join-dedup window, all
@@ -61,6 +61,11 @@ it("lets only one of two simultaneous claims from the front room succeed", async
   const front = await identityCookie(baseUrl, uniqueRoom());
   const joinRes = await rawJoin(front);
   const reservationId = reservationIdFromLocation(joinRes);
+  // plans/laundry-scan-gated-claim.md: recorded once, before the race —
+  // this test means to exercise the double-claim mutual-exclusion rule,
+  // not the scan precondition, so the scan itself happens sequentially
+  // first.
+  await scan(baseUrl, front, MACHINE_ID);
 
   const claim = () =>
     fetch(new URL(`/reservations/${reservationId}/claim`, baseUrl), {

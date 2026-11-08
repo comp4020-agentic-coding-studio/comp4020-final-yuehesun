@@ -1,5 +1,5 @@
 import { expect, inject, it } from "vitest";
-import { cleanupReservation, claim, identityCookie, join, uniqueRoom } from "./support/queue-client.ts";
+import { cleanupReservation, claim, identityCookie, join, scan, uniqueRoom } from "./support/queue-client.ts";
 
 // Stage 8.4b (plans/3d-walkthrough.md, docs/adr/0013): the real
 // unclaimed-laundry handoff, driven against the real running app over
@@ -23,7 +23,12 @@ import { cleanupReservation, claim, identityCookie, join, uniqueRoom } from "./s
 const baseUrl = inject("baseUrl");
 const MACHINE_ID = 2;
 
-async function startAndFinish(cookie: string, reservationId: number): Promise<void> {
+async function startAndFinish(cookie: string, reservationId: number, machineId: number = MACHINE_ID): Promise<void> {
+  // plans/laundry-scan-gated-claim.md: scans the exact machine this
+  // reservation is on — this function is called against both MACHINE_ID
+  // and FILLER_MACHINE_ID elsewhere in this file, so the machine can't be
+  // assumed fixed.
+  await scan(baseUrl, cookie, machineId);
   const claimStatus = await claim(baseUrl, cookie, reservationId);
   expect(claimStatus, "claiming should succeed").toBeLessThan(400);
   const startRes = await fetch(new URL(`/reservations/${reservationId}/start`, baseUrl), {
@@ -294,7 +299,7 @@ it("rejects a place when the pool fills up between pickup and placement, without
     const owner = await identityCookie(baseUrl, uniqueRoom());
     const mover = await identityCookie(baseUrl, uniqueRoom());
     const ownerReservation = await join(baseUrl, owner, FILLER_MACHINE_ID);
-    await startAndFinish(owner, ownerReservation);
+    await startAndFinish(owner, ownerReservation, FILLER_MACHINE_ID);
     const moverReservation = await join(baseUrl, mover, FILLER_MACHINE_ID);
     const res = await pickUpAndPlace(mover, FILLER_MACHINE_ID);
     expect(res.status, `filler round ${round} should succeed`).toBe(200);
