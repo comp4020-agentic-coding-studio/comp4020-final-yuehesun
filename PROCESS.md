@@ -19,9 +19,7 @@ The first step was settling on a topic and a design plan. The agent first
 suggested three generic ideas and a co-op-game direction, all rejected
 ([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
 In the end I started from a pain point in my own life, the time wasted
-queueing for the laundry room in my residence, and chose the laundry queue
-as my topic. At first the agent couldn't write a plan I was happy with
-either. Only once I had worked out the real scenario myself and explained
+queueing for the laundry room in my residence. At first the agent couldn't write a 令人满意的plan either. Only once I had worked out the real scenario myself and explained
 it step by step did the plan start to match what I expected
 ([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
 `docs/adr/0001-app-concept.md`). As the work went on, the division of labour
@@ -32,7 +30,11 @@ what the app should finally become, stay mine to decide.
 During the build I tried several ways of managing the agent. One is the
 workflow in `CLAUDE.md`: the overall plan is split into small stages, and
 each stage starts with planning and can only end after I've tested it by
-hand. Another is unattended runs. After trying one in the tutorial riff, I
+hand. That testing once kept showing me old text after the agent's fixes,
+because one of its test servers was still on my dev port serving old code. I
+made that a rule in `CLAUDE.md` instead of asking it to be more careful
+([`71f3426`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/71f3426)).
+Another way of managing it is unattended runs. After trying one in the tutorial riff, I
 wrote a `prompt.md` for crit 10's extension that could keep the agent
 working for two hours. I wrote every decision down first — identity, the
 harness, in-page alerts, no separate board — into ADRs, and used an
@@ -59,6 +61,10 @@ involved, and it crashed the same way. The real cause was the script never
 yielding control across its 150 seeds. Once that was fixed, the simulation
 worked
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
+Its first resident model was also wrong: each resident's lateness was fixed
+once, so a slow resident missed every chance forever. That only showed up once
+it ran, so I added a rule to write this kind of design down before coding
+([`c2abbcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/c2abbcd)).
 But at this stage the simulation still stayed at the level of data, and I'd
 always felt the project never connected to a real use case.
 
@@ -73,17 +79,14 @@ life, and problems in the details kept coming up. When building the 3D room,
 I found the character standing still while the agent's checks called it
 working as intended. I didn't accept the agent's first explanation, and had
 it swap in a simpler, bone-free placeholder instead — if that moved and the
-real one didn't, the bug was specific to the rigged model. It moved,
-narrowing the cause to the model-copying code sharing one skeleton across
-every clone, so the bones never tracked a position variable that had been
-correct all along
+real one didn't, the bug was specific to the rigged model. It moved, so the
+fault was in the code that copied the model, not the position logic
 ([`8e33e09`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8e33e09)).
-A later camera bug was somewhat similar — a "fix" whose symptom proved
-unchanged the moment I tried it, resolved only once I insisted on a full
-re-check, not another tuning pass
-([`935bad5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/935bad5)).
 A clean-looking check was never proof; re-testing the symptom caught an
-incomplete fix each time.
+incomplete fix each time. Also during this work, `pnpm check` twice wrote fake
+reservations into my real dev database, so the specs now refuse to run against
+it
+([`8d05e54`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8d05e54)).
 
 After several days of attempts, I finally got the 3D walkthrough laundry
 room deployed online
@@ -122,26 +125,7 @@ requiring a scan to prove you're there, someone could claim a machine while
 lying in their room without ever actually starting a wash, wasting the time
 of everyone behind them. That is exactly the unfair behaviour the system was
 meant to prevent. I also checked further whether this change would really
-break the original design, and the actual code showed that `claim()` never
-verified arrival, an unverified scan does the same work an unverified room
-number does for identity, and every spec already calls `join()` before
-`claim()`, so teaching them to scan first added one precondition without
-forking anything
+break the original design. The code showed that `claim()` never verified
+arrival, and tests only needed one more precondition
 ([`docs/adr/0016`](docs/adr/0016-scan-gated-claim-accepted.md)). The feature
 was finally built.
-
-When something went wrong, I tried to put the fix in the harness instead of
-just asking the agent to be more careful. The simulation's design flaw became
-a rule to write the design down before coding
-([`c2abbcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/c2abbcd)).
-The agent's test servers taking over my dev port became another rule
-([`71f3426`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/71f3426)).
-Specs writing into my real dev database became a check that refuses to run
-against it
-([`8d05e54`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8d05e54)).
-
-The process above shows that automated checks (`pnpm check`) confirm the
-app builds and invariants hold. They can't judge
-whether a decision honors the project's own argument, or a rejection's
-premises are true — that judgment happened by hand, logged in
-`process-notes.md`, the most load-bearing moments promoted here.
