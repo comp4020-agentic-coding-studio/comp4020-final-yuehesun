@@ -887,7 +887,14 @@ function dryingTypeOptions(): Html {
 function actionButtons(row: QueueRow, machineType: Machine["type"]): Html {
   const verb = machineType === "dryer" ? "dry" : "wash";
   return html`${row.status === "waiting" && row.position === 1
-      ? html`<form method="post" action="/reservations/${row.reservationId}/claim"><button class="btn-primary" type="submit">Claim (scan)</button></form>`
+      ? html`<form
+          method="post"
+          action="/reservations/${row.reservationId}/claim"
+          hx-post="/reservations/${row.reservationId}/claim"
+          hx-target="#claim-feedback-${row.reservationId}"
+          hx-swap="innerHTML"
+        ><button class="btn-primary" type="submit">Claim (scan)</button></form>
+        <div id="claim-feedback-${row.reservationId}"></div>`
       : raw("")}
     ${row.status === "claimed"
       ? html`<form method="post" action="/reservations/${row.reservationId}/start"><button class="btn-primary" type="submit">Start the ${verb}</button></form>`
@@ -1235,6 +1242,21 @@ export function scanRequiredPage(): Html {
       <p><a class="btn-primary" href="/laundry">Go to the laundry</a></p>
       <p><a href="/">← All machines</a></p>`,
   );
+}
+
+// plans/laundry-scan-gated-claim.md Stage 6.1: the same "scan first"
+// message as scanRequiredPage above, but as a bare fragment — no page()
+// wrapper, no nav, no <!doctype> — for htmx to swap into the small
+// #claim-feedback-${id} div actionButtons() renders right under the
+// Claim button, instead of navigating the whole page to a new document.
+// Reuses .notice-banner, the same class noticeBanner()/pendingPickupCard()
+// already use for "something happened, here's what to do" messages that
+// don't take over the page.
+export function scanRequiredBanner(): Html {
+  return html`<div class="notice-banner">
+    <span>Scan the machine's code first — in the 3D laundry room, or with your phone's camera on the real machine.</span>
+    <a class="btn btn-quiet" href="/laundry">Go to the laundry</a>
+  </div>`;
 }
 
 // README.md, rendered to HTML (src/readme.ts) and published in full here —
