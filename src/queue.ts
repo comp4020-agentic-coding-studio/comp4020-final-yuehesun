@@ -874,7 +874,33 @@ function unacknowledgedLaundryOn(machineId: number): Reservation | undefined {
         isNull(reservations.pickupSpot),
       ),
     )
+    .orderBy(desc(reservations.id))
     .get();
+}
+
+// plans/laundry-dropoff-spot-confirm.md Stage 1: the user's rule is that
+// once anyone has moved the laundry out of a machine, the machine is
+// empty — whether the owner later collects it from the shelf is not the
+// machine's business. A machine can hold several untouched `done` rows
+// (an owner who never pressed "collected", a wash ended early, an old
+// test run), and unacknowledgedLaundryOn above reads only the newest one,
+// so handling that one used to let the next stale row surface and ask for
+// another pick-up. Called right after a row becomes IN_TRANSIT: every
+// other untouched `done` row on the machine is marked gone (pickedUpAt),
+// so "laundry is in the drum" is false until a genuinely new wash ends.
+function sweepStaleLaundry(machineId: number, carriedId: number): void {
+  db.update(reservations)
+    .set({ pickedUpAt: clockNow() })
+    .where(
+      and(
+        eq(reservations.machineId, machineId),
+        eq(reservations.status, "done"),
+        isNull(reservations.pickedUpAt),
+        isNull(reservations.pickupSpot),
+        ne(reservations.id, carriedId),
+      ),
+    )
+    .run();
 }
 
 export interface HandoffSuggestion {
@@ -976,6 +1002,7 @@ export function pickUpLaundry(machineId: number, personName: string): PickupResu
     .set({ pickupSpot: IN_TRANSIT, carriedBy: personName })
     .where(eq(reservations.id, laundry.id))
     .run();
+  sweepStaleLaundry(machineId, laundry.id);
   logging.logEvent("laundry_picked_up", { reservation: laundry.id, room: laundry.personName, machine: machineId, movedBy: personName });
   return { ok: true };
 }
@@ -1075,6 +1102,7 @@ export function confirmHandoff(machineId: number, personName: string): PlaceResu
       .set({ pickupSpot: IN_TRANSIT, carriedBy: personName })
       .where(eq(reservations.id, laundry.id))
       .run();
+    sweepStaleLaundry(machineId, laundry.id);
     logging.logEvent("laundry_picked_up", { reservation: laundry.id, room: laundry.personName, machine: machineId, movedBy: personName });
   }
 
@@ -1171,41 +1199,17 @@ export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] 
     .all();
 }
 
-// The done-but-unacknowledged reservation sitting on this machine, if
-// any — used by the handoff UI to show "room123's laundry is still here"
-// and by pickUpLaundry's own unacknowledgedLaundryOn (which duplicates
-// this query shape rather than calling this function, since that one
-// needs the full Reservation row, not just this display-shaped subset).
-// Deliberately still returns a row while pickupSpot is the IN_TRANSIT
-// sentinel — from every other viewer's perspective the machine's own
-// situation ("someone needs to deal with this") hasn't resolved just
-// because someone started carrying it; only an actual placement does.
-//
-// plans/laundry-dropoff-flow.md "Bug B": once pickupSpot is a real spot
-// name (not IN_TRANSIT, not NULL), this machine is done with the
-// reservation entirely — the laundry already left for a numbered shelf,
-// and what's left (the owner's own acknowledgement) is the owner's
-// business, not this machine's. Filtering only on pickedUpAt (as this
-// used to) kept reporting "still needs attention" here even after a real
-// spot was assigned, since pickedUpAt isn't set until the owner
-// acknowledges, confusing "placed on a shelf" with "still on this
-// machine." The `ne(pickupSpot, IN_TRANSIT)` exclusion alone isn't
-// enough here (that would also exclude the in-transit case this
-// function deliberately keeps); the real spot has to be told apart from
-// both NULL and IN_TRANSIT explicitly.
-export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
-  return db
-    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
-    .from(reservations)
-    .where(
-      and(
-        eq(reservations.machineId, machineId),
-        eq(reservations.status, "done"),
-        isNull(reservations.pickedUpAt),
-        or(isNull(reservations.pickupSpot), eq(reservations.pickupSpot, IN_TRANSIT)),
-      ),
-    )
-    .get();
+// plans/laundry-dropoff-spot-confirm.md Stage 1: the 3D room's "this
+// machine still has laundry in it" reader, on the SAME definition
+// start() and pickUpLaundry use (unacknowledgedLaundryOn): untouched
+// laundry only. It replaces doneUnacknowledgedOnMachine, which also
+// counted the IN_TRANSIT case, so the 3D room kept offering a pick-up on
+// a machine start() already considered empty — two definitions of one
+// fact. Display-shaped (not the full row).
+export function laundryInDrumOn(machineId: number): DoneUnacknowledged | undefined {
+  const row = unacknowledgedLaundryOn(machineId);
+  if (!row) return undefined;
+  return { reservationId: row.id, machineId: row.machineId, pickupSpot: row.pickupSpot, personName: row.personName };
 }
 
 // Which machine, if any, this room is currently carrying someone else's

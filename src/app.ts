@@ -143,7 +143,7 @@ app.get("/laundry/machines-state", (c) => {
     const rows = queue.queueFor(m.id, now);
     const front = rows[0];
     const state = boardStateFor(front, front?.person === identity);
-    const unclaimed = queue.doneUnacknowledgedOnMachine(m.id);
+    const unclaimed = queue.laundryInDrumOn(m.id);
     // Stage 10 (3D room marker): whether the viewer holds ANY active
     // reservation on this machine, not just the front one — front?.person
     // === identity (used by isMyTurn/unclaimedLaundry below, which really

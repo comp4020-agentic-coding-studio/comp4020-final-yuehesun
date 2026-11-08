@@ -1538,6 +1538,10 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
       // Second real bug found and fixed, same root cause as the first:
       // canHandoffOn stays true even after this resident has already
       // called pickUpLaundry once and the laundry is now IN_TRANSIT —
+      // [Superseded by plans/laundry-dropoff-spot-confirm.md Stage 1: the
+      // server now reports no unclaimedLaundry once anyone has picked the
+      // laundry up, so the carryingFromMachineNow guard below is kept only
+      // as a harmless belt-and-braces check.]
       // doneUnacknowledgedOnMachine() (src/queue.ts) deliberately keeps
       // reporting it while in transit, since from every OTHER viewer's
       // perspective the machine's own situation hasn't resolved yet

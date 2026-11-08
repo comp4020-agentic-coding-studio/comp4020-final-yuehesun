@@ -115,15 +115,16 @@ it("lets the front-of-queue room move a finished stranger's laundry to a free sp
   const strangerAttempt = await pickUp(stranger, MACHINE_ID);
   expect(strangerAttempt.status, "only the front, waiting room for this machine may pick up its laundry").toBe(403);
 
-  // While the laundry is in transit (picked up but not yet placed), the
-  // machine's own handoff indicator must still show it as unclaimed — it
-  // hasn't resolved from any other viewer's perspective until it's
-  // actually placed somewhere.
+  // plans/laundry-dropoff-spot-confirm.md Stage 1 (the user's rule): once
+  // anyone has picked the laundry up, the machine is empty — so the
+  // machine's handoff indicator goes off at pick-up, not at placement.
+  // (This used to assert the opposite; the old rule made the 3D room keep
+  // offering a pick-up that start() no longer needed.)
   const pickupRes = await pickUp(next, MACHINE_ID);
   expect(pickupRes.status, "the front, waiting room should be able to pick up the finished laundry").toBe(200);
   const stateWhileCarrying = await machinesState(next);
   const machineWhileCarrying = stateWhileCarrying.machines.find((m) => m.id === MACHINE_ID);
-  expect(machineWhileCarrying?.unclaimedLaundry, "the handoff indicator should stay on while the laundry is in transit").toBeTruthy();
+  expect(machineWhileCarrying?.unclaimedLaundry, "the machine counts as empty as soon as the laundry is picked up").toBeUndefined();
   expect(stateWhileCarrying.myBasketVisible, "the carrier's basket should be visible while carrying").toBe(true);
   expect(stateWhileCarrying.basketKind, "the carrier's basket should read as someone else's laundry").toBe("other");
   expect(stateWhileCarrying.carryingFromMachine, "the client should know which machine this carry came from").toBe(MACHINE_ID);
