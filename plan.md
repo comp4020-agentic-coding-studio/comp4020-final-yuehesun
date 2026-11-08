@@ -758,6 +758,42 @@ and the offer moves to the next person instead.
   new `carriedBy` column), a new in-transit sentinel state, and splits one
   existing server action into two — real design work the user asked to
   see planned before any code, not a small fix like the other three.
+- **A third round on the same two items — the zoom/pitch fix above
+  turned out not to actually fix the reported bug, and the "yours"
+  marker still disappeared too early.** The user pushed back rather than
+  accepting the previous fix at face value, which was the right call:
+  the previous "scale the pitch offset by `CAM_DISTANCE`" fix only
+  addressed half the real problem. `CAM_HEIGHT` itself (a fixed 1.6) was
+  still added to the camera's vertical position independently of
+  `CAM_DISTANCE`, and the lookAt target sits at a different fixed height
+  (0.9) — that 0.7-unit gap exists even at `pitch=0`, and grows into a
+  much steeper angle as `CAM_DISTANCE` shrinks (a mild ~12° tilt at the
+  original distance is already a ~49° tilt at the new closer-in zoom
+  range), which is what actually caused "zooming in snaps to top-down"
+  and "pitch barely moves once zoomed in" (the fixed gap had already used
+  up most of the pitch range's own headroom). Fixed properly this time
+  with a real spherical/orbital camera construction (the same shape
+  `OrbitControls` itself uses) — the camera sits on a sphere of radius
+  `CAM_DISTANCE` centred on the look target, so the viewing angle depends
+  only on `pitch`, never on distance — confirmed by reading the camera's
+  real position at both zoom extremes and recovering the identical angle
+  for the same `pitch` regardless of `CAM_DISTANCE`, and by a real
+  stepped mouse-drag test confirming pitch responds fully (14° to 50°
+  and back) even at the closest zoom. Separately, the "yours" marker's
+  `isMine` field could only ever derive from `queueFor()`'s active
+  (waiting/claimed/running) rows, which drop a reservation entirely the
+  moment it reaches "done" — so the marker vanished the instant a wash
+  finished, not (per the user's own expectation) persisting until the
+  owner actually collects their laundry. Fixed by adding `personName` to
+  `doneUnacknowledgedOnMachine`/`doneUnacknowledgedFor` (both already
+  scoped per-room everywhere they're used, so a pure addition) and
+  folding "the viewer's own done-and-uncollected laundry is sitting here"
+  into `isMine` — confirmed end to end over real HTTP calls (join, claim,
+  start, finish, then checking `isMine` stays `true` through "done,
+  not yet collected," only turning `false` after a real
+  `acknowledge-pickup` call). `pnpm check` green (40 tests) against a
+  scratch database; `src/queue.ts`'s only change is the additive
+  `personName` field, read nowhere it wasn't already selected.
 
 ## Final project deadline — read this before planning further work
 
