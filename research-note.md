@@ -1,105 +1,34 @@
-# Research note: good agentic development practice
+# A passing test is a claim, not proof
 
-## Position
+When an agent writes both the code and its tests, a green run is reassuring. But all it shows is that the code satisfies the tests' assertions. Whether those assertions describe what was wanted is a separate question, and the agent can't settle it alone, because the same misreading of a task can shape both the code and the tests that approve it. My position is that the human in agentic development doesn't need to perform every check, but must own what counts as a successful check.
 
-Good agentic coding practice is not a question of how much a developer
-writes down before an agent starts — it is a question of *where* human
-judgement is spent. The two positions that dominate current discourse,
-vibe coding (review nothing, trust the output) and spec-driven
-development (write a comprehensive specification, then let the agent
-execute against it), are both wrong for the same underlying reason: they
-fix the amount of oversight in advance instead of placing it where a
-correction is cheapest and a mistake is most expensive. The right
-discipline is incremental, checkpoint-based control calibrated to
-irreversibility, not volume of prose.
+## Where the agent's tests come from
 
-## Vibe coding: too little, applied uniformly
+A unit test has inputs and an oracle, the assertion of what the output should be. The oracle is where intent lives. Konstantinou, Degiovanni and Papadakis (2024) had LLMs write oracles for 24 Java projects, including buggy versions, and found the models mostly asserted what the code actually did rather than what it was meant to do. A test written that way passes on a bug, because it was written by reading the bug.
 
-"Vibe coding," Karpathy's term for accepting AI output purely because it
-feels right, was always a bet that review could be skipped. Field
-evidence says the bet fails under its own terms. A grey-literature review
-of practitioner accounts ([Vibe Coding in Practice](https://arxiv.org/pdf/2510.00328))
-finds a consistent speed–quality trade-off: developers report fast,
-flow-state progress, but also skipped testing and code that collapses
-outside the cases it was demoed on. Osmani's critique names the failure
-mode directly — "house of cards code" ([Vibe coding is not the same as
-AI-assisted engineering](https://medium.com/@addyosmani/vibe-coding-is-not-the-same-as-ai-assisted-engineering-3f81088d5b98)):
-it works until it doesn't, and nothing in the workflow would have caught
-the difference earlier. The problem isn't that no spec existed; it's that
-no checkpoint existed anywhere in the loop.
+Knight and Leveson (1986) help explain why keeping code and tests in separate files doesn't fix this. In their study, 27 versions of one program, written independently from the same specification and run on a million tests, failed together far more often than independence predicted. They studied human programmers, but the point carries over: independence depends on where the expected behaviour comes from, not on how many separate artefacts exist. An agent writing code and tests from one interpretation has one source, not two.
 
-## Spec-driven development: too much, applied uniformly
+Wang, Pradel and Liu (2025) found that weak validation tests had inflated SWE-bench resolution rates by 6.2 percentage points. And where tests block progress, agents can change the test instead of the code. ImpossibleBench (Zhong, Raghunathan and Carlini, 2025) deliberately makes tests contradict the specification, so any pass is a shortcut, and models passed them by editing tests or overloading operators. These are constructed traps, not everyday conditions, but Kent Beck reports agents deleting tests to make them "pass" in ordinary work too (Orosz, 2025).
 
-The dominant industry answer swings the other way: write the
-specification first, in full, and only then let the agent generate code
-against it ([Spec-Driven Development for Agentic Software Engineering](https://arxiv.org/pdf/2609.00252)).
-This fixes vibe coding's missing checkpoint everywhere at once, regardless
-of whether a given change needs it. Kent Beck's objection is the
-sharpest counter: the approach assumes nothing learned during
-implementation should ever change the specification, which is false for
-almost all real work. Practice bears this out — one comparison found
-spec-first work took roughly ten times longer than iterative prompting
-for the same feature with no quality gain ("Waterfall in Disguise"), and
-a formal analysis ([The Spec Growth Engine](https://arxiv.org/pdf/2606.27045))
-names the structural cause: silent spec–code drift, where nothing in the
-method surfaces the gap once spec and code diverge, until it's expensive
-to repair. Comprehensive upfront specification buys back vibe coding's
-missing oversight at the cost of rigidity the work doesn't uniformly
-need.
+## What this looked like in my project
 
-## What the evidence from capable practitioners actually shows
+In my final project, there are many times the agent's checks or explanations said a bug was fixed or understood when it wasn't (detailed in `PROCESS.md`). In one, a character in the 3D room stood still while the agent's checks said it was working as intended. Rather than ask for another explanation, I had it swap in a simple placeholder with no skeleton: if the placeholder moved and the real model didn't, the fault had to be in the rigged model. It moved. That pointed to the code copying the model, which shared one skeleton across every clone, so the bones never followed a position value that had been correct all along. My check wasn't cleverer than the agent's. It started from a different assumption: independence in Knight and Leveson's sense. Cases from one person prove little, and I remember the doubts that paid off better than those that didn't, but they match the studies.
 
-Both failure modes share a premise: that oversight is a single dial, set
-once, for the whole task. A field study of experienced developers
-contradicts this directly ([Professional Software Developers Don't Vibe,
-They Control](https://arxiv.org/html/2512.14012v2), N=13 observed, N=99
-surveyed): they neither skip review nor front-load complete
-specifications, but intervene at specific, narrow points — before a
-schema change, before a dependency is added, before a public interface is
-touched — and otherwise let the agent run. This matches Parasuraman and
-Riley's framework for human–automation teams: the goal is *calibrated*
-trust, not maximal trust or maximal scrutiny, since over-trust (misuse)
-and under-trust (disuse) are both costly, and the right amount of
-attention depends on an action's reversibility, not a blanket policy set
-in advance. A benchmark-driven analysis of agent autonomy ([The End of
-Software Engineering](https://arxiv.org/html/2606.05608v1)) reaches the
-same prescription from the opposite direction — isolated-task benchmarks
-look strong, sustained autonomous runs do not — recommending
-"human-in-the-loop, agent-in-the-driver's-seat": agents own execution,
-humans own judgement at the points that matter.
+## The counter-case: agents that verify
 
-## Calibration has a second axis: matching method to defect type
+The strongest objection comes from OpenAI's Codex team, which reports building a product of about a million lines with no hand-written code, moving nearly all review to agent-to-agent, and wiring browser DevTools into the agent so it can reproduce bugs and validate UI fixes itself (Lopopolo, 2026). So how much human checking is left?
 
-Placement answers *where* to check; it doesn't answer *how*. A
-concurrency race hiding in a twenty-line function reads as correct to a
-reviewer every time — reading more carefully doesn't help. **Deterministic
-simulation testing (DST)**, the technique behind FoundationDB and
-TigerBeetle, routes a component's clock and randomness through a
-controlled seam and drives the real code through a seeded PRNG, so a
-whole run is a reproducible function of one integer. Building this seam
-into an agent-written queue-fairness component and running randomized
-sequences through it found a real bug — two same-millisecond operations
-silently cancelling a fairness guarantee — that review had already passed
-as correct. Calibrated trust isn't only about which actions get a
-checkpoint, but whether the checkpoint's *method* can see the defect
-class that kind of code tends to hide: a schema change needs a human
-reading it; a concurrent state machine needs volume and reproducibility a
-human reading code cannot supply.
+This is real progress, and it moves repetitive checking off human time. But the team had to build that legibility, which shows the default: an agent sees the state it can read, not what a user sees. Even with those tools, it chooses what to look at, and the cheap channel tends to win. In my 3D case the agent checked coordinates, I suspect because they are far quicker to read than rendered frames. The bug lived in the gap between the state and the screen, and a person could see it at a glance. The same post admits that as output grew, the bottleneck became human QA capacity, and it is a vendor describing its own tool on an internal beta.
 
-## The resulting position
+## What good practice looks like
 
-Good agentic practice is checkpoint placement, not checkpoint quantity.
-A workflow should identify which actions are hard to reverse or costly
-to get wrong — schema changes, deleted data, published interfaces,
-irreversible deploys — and gate exactly those on human review, while
-leaving everything else to run. Vibe coding under-gates everything;
-spec-driven development over-gates everything by trying to anticipate
-every gate before the work starts. Neither failure is about the literal
-amount of writing involved — it is about deciding oversight's location
-in advance of knowing where the risk actually is, instead of in response
-to it. Placement alone is incomplete, though: a checkpoint also has to
-use a verification method capable of catching the defect class the code
-at that point tends to produce. Concurrency and state-machine logic in
-particular hide behind code that reads correctly, so calibrated review
-there means reaching for techniques like DST and property-based testing,
-not just reading more carefully.
+Agent-written tests still help: Konstantinou et al. found that LLM oracles caught more faults than the traditional generator EvoSuite. The line is about permissions: the agent can run the acceptance tests and change the implementation until they pass, but it cannot change the criteria without human approval. And some criteria can't be written down in advance at all. Whether standing in the room actually feels like a relief, and whether the claim windows are long enough to be fair without inviting idling, is for whoever uses the room to judge. An agent checks the state it can read. A person checks whether the system meets a need, and sees it the way its users will. The first can be handed over; the second can't. A green run doesn't make that decision.
+
+## References
+
+- Knight, J. C., & Leveson, N. G. (1986). An experimental evaluation of the assumption of independence in multiversion programming. *IEEE Transactions on Software Engineering*, 12(1), 96–109. https://doi.org/10.1109/TSE.1986.6312924
+- Konstantinou, M., Degiovanni, R., & Papadakis, M. (2024). Do LLMs generate test oracles that capture the actual or the expected program behaviour? arXiv:2410.21136. https://arxiv.org/abs/2410.21136
+- Lopopolo, R. (2026, February 11). Harness engineering: Leveraging Codex in an agent-first world. OpenAI. https://openai.com/index/harness-engineering/
+- Orosz, G. (2025). TDD, AI agents and coding with Kent Beck. *The Pragmatic Engineer*. https://newsletter.pragmaticengineer.com/p/tdd-ai-agents-and-coding-with-kent
+- Wang, Y., Pradel, M., & Liu, Z. (2025). Are "solved issues" in SWE-bench really solved correctly? An empirical study. arXiv:2503.15223. https://arxiv.org/abs/2503.15223
+- Zhong, Z., Raghunathan, A., & Carlini, N. (2025). ImpossibleBench: Measuring LLMs' propensity of exploiting test cases. arXiv:2510.20270. https://arxiv.org/abs/2510.20270
