@@ -300,10 +300,18 @@ const STYLES = `
      with no WebGL texture-filtering softness to fight (the real
      scannability risk HANDOFF.md flagged from Stage 3/6's in-scene QR
      plane). */
-  .laundry-examine-overlay { position: absolute; inset: 0; background: rgba(28,26,23,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #fff; }
+  .laundry-examine-overlay { position: absolute; inset: 0; background: rgba(28,26,23,0.88); display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-5); color: #fff; padding: var(--space-4); }
   .laundry-examine-overlay.is-hidden { display: none; }
   .laundry-examine-overlay img { width: 12rem; height: 12rem; background: #fff; padding: var(--space-3); border-radius: 0.5rem; }
   .laundry-examine-overlay .btn-quiet { color: #fff; border-color: rgba(255,255,255,0.4); }
+  /* plans/laundry-scan-phone-simulator.md: a no-phone fallback shown
+     beside the real QR code — not a second copy of the reservation UI,
+     just a real <iframe src="/"> (the same page a scan already redirects
+     an identified visitor to) framed to look like a phone. */
+  #laundry-examine-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
+  .phone-frame { width: 320px; height: 650px; max-height: 80vh; border-radius: 2.5rem; border: 10px solid #1c1a17; background: #000; box-shadow: 0 1rem 2rem rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; padding-top: 1.25rem; }
+  .phone-frame::before { content: ""; width: 5rem; height: 0.35rem; border-radius: 1rem; background: #444; margin-bottom: 0.75rem; }
+  .phone-frame iframe { width: 100%; flex: 1; border: 0; background: #fff; border-radius: 0 0 1.5rem 1.5rem; }
   /* Touch controls: a joystick (left) for movement, a drag-look zone
      (right, everywhere else) for camera — only shown on a touch-capable
      viewport (toggled by JS, not CSS media query, since touch capability
@@ -618,7 +626,7 @@ export function page(title: string, body: Html): Html {
       </head>
       <body hx-ext="sse" sse-connect="/events">
         <nav class="topnav">
-          <a href="/">Machines</a>
+          <a href="/">Home</a>
           <a href="/laundry">Go to the laundry</a>
           <a href="/readme/">What good means here</a>
           <a href="/simulation">Simulation</a>
@@ -1153,7 +1161,7 @@ export function homePage(
   const dryers = machines.filter((m) => m.type === "dryer");
 
   return page(
-    "Machines",
+    "Home",
     html`<div class="page-layout">
       <div class="status-column">
         <p>Signed in as <strong>${identity}</strong>.

@@ -828,6 +828,30 @@ and the offer moves to the next person instead.
   boundary. `pnpm check` green (15 files, 42 tests) against a scratch
   server; `drizzle-kit generate` used for the migration, never
   `drizzle-kit push`, per `CLAUDE.md`.
+- **Scan phone-simulator built and verified** (full design in
+  [`plans/laundry-scan-phone-simulator.md`](plans/laundry-scan-phone-simulator.md),
+  user-approved before any code): a quiet "No phone? Simulate a phone
+  scan" link beside the 3D room's QR examine overlay opens a CSS
+  phone-frame mockup containing a same-origin `<iframe src="/">` — the
+  exact real home page an identified visitor's real scan already
+  redirects to, not a second rendering of it, so claim/join actions taken
+  inside it are real writes against the real database. Verified
+  end-to-end with a real Playwright run (not just reading the diff): a
+  reservation submitted inside the iframe shows up for a *different*
+  identity's own `GET /machines/:id/card` fetch as "Next: room305" —
+  confirming it's a genuine server-side write, not a client-side-only
+  effect. Deliberately **not** a substitute for the still-outstanding
+  Stage 4 real two-device phone-camera rehearsal (feature #19) — it
+  proves nothing about whether a real phone camera can decode the QR
+  image itself; the code comment next to the button and this plan file
+  both say so explicitly. Folded in at the same time: the top nav's
+  `<a href="/">Machines</a>` (and `homePage()`'s own page `<title>`)
+  renamed to **"Home"**, matching the term `plan.md` and every crit plan
+  already use for this exact page everywhere else — "Machines" was the
+  only place in the repo still using a different word for it. No ADR
+  needed (routine UI, no authorization/fairness weight, per the plan
+  file's own reasoning against ADRs 0012-0014). `pnpm check` green (15
+  files, 42 tests) against a scratch server; `src/queue.ts` untouched.
 
 ## Final project deadline — read this before planning further work
 

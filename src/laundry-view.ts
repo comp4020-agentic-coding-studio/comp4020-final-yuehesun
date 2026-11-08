@@ -1718,15 +1718,41 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   }
   if (overlayClose) overlayClose.addEventListener("click", hideExamineOverlay);
 
+  // plans/laundry-scan-phone-simulator.md: "Simulate a phone scan" loads
+  // the real home page in a same-origin <iframe src="/"> — this is the
+  // exact page an identified visitor's real scan already redirects to
+  // (see src/app.ts's GET /laundry/scan/:id), not a second rendering of
+  // it, so claim/start done inside it are real actions against the real
+  // database. It's a no-phone fallback for someone evaluating the build
+  // (e.g. a tutor at a crit) — it does NOT stand in for, or satisfy, the
+  // real two-device phone-camera scan rehearsal plan.md still has
+  // outstanding, since it proves nothing about whether a real camera can
+  // actually decode the QR image itself.
   function openMachineExamine(machineId) {
     var label = "Machine " + machineId;
     var m = machines.find(function (mm) { return mm.id === machineId; });
     if (m) label = m.label;
     showExamineOverlay(
-      '<h3>' + label + '</h3>' +
-      '<img src="/machines/' + machineId + '/qrcode.png" alt="Scan to claim or reserve ' + label + '" />' +
-      '<p class="laundry-hint">Scan with your phone\\'s camera to claim or reserve this machine.</p>'
+      '<div>' +
+        '<h3>' + label + '</h3>' +
+        '<img src="/machines/' + machineId + '/qrcode.png" alt="Scan to claim or reserve ' + label + '" />' +
+        '<p class="laundry-hint">Scan with your phone\\'s camera to claim or reserve this machine.</p>' +
+        '<p><button type="button" class="btn-quiet" id="laundry-simulate-phone">No phone? Simulate a phone scan</button></p>' +
+      '</div>'
     );
+    var simBtn = document.getElementById("laundry-simulate-phone");
+    if (simBtn) {
+      simBtn.addEventListener("click", function () {
+        simBtn.remove();
+        var frame = document.createElement("div");
+        frame.className = "phone-frame";
+        var iframe = document.createElement("iframe");
+        iframe.src = "/";
+        iframe.title = "Simulated phone — the real home page";
+        frame.appendChild(iframe);
+        if (overlayBody) overlayBody.appendChild(frame);
+      });
+    }
   }
 
   // plans/laundry-dropoff-flow.md: pickup is now a real confirm step, not
