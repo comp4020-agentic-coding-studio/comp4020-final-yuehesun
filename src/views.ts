@@ -281,7 +281,7 @@ const STYLES = `
      The canvas fills whatever space is left under the page's own nav/h1,
      rather than taking over the whole viewport, so the walkthrough still
      reads as a page of this app, not a separate full-screen app. */
-  .laundry-canvas-wrap { position: relative; width: 100%; height: 70vh; min-height: 24rem; background: #000; border-radius: var(--card-radius); overflow: hidden; touch-action: none; }
+  .laundry-canvas-wrap { position: relative; width: 100%; height: 80vh; min-height: 28rem; background: #000; border-radius: var(--card-radius); overflow: hidden; touch-action: none; }
   .laundry-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
   .laundry-hint { margin: var(--space-3) 0; color: var(--ink-muted); font-size: var(--text-sm); }
   .laundry-crosshair { position: absolute; top: 50%; left: 50%; width: 0.5rem; height: 0.5rem; margin: -0.25rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); pointer-events: none; }
@@ -312,15 +312,23 @@ const STYLES = `
      direct children of the row-flex .laundry-examine-overlay above), not
      nested inside it — nesting it inside the column-flex body stacked it
      underneath the QR code instead of beside it.
-     Sized by height (min() against both the overlay's own box and a sane
-     cap) with aspect-ratio deriving the width, instead of a fixed
-     650px — a fixed height could exceed .laundry-canvas-wrap's own
-     height (70vh, with overflow:hidden), clipping the phone's bottom
-     half on shorter viewports. */
+     Sized from width first (22rem, close to a real phone's CSS viewport —
+     an iPhone-class device is ~375-430px), not from aspect-ratio off of
+     height: the previous height-first formula (height: min(85%, 34rem);
+     aspect-ratio: 9/19.5) made the frame only ~235px wide on a common
+     1400px-wide viewport, since .laundry-examine-overlay's own box capped
+     the height long before 34rem was reached — a real phone's own page
+     laid out that narrow reads as cramped/broken, not "mobile." Height is
+     now generous (min(92%, 46rem)) and the iframe scrolls internally for
+     anything taller, exactly like a real phone browser already does,
+     rather than squeezing the whole real home page into one screen
+     height via a forced aspect ratio. .laundry-canvas-wrap's own height
+     (80vh, up from 70vh) was grown alongside this so the extra height the
+     phone now asks for isn't immediately capped by its own container. */
   #laundry-examine-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
-  .phone-frame { flex: none; height: min(85%, 34rem); aspect-ratio: 9 / 19.5; border-radius: 2rem; border: 10px solid #1c1a17; background: #000; box-shadow: 0 1rem 2rem rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; padding-top: 1rem; }
+  .phone-frame { flex: none; width: min(22rem, 90vw); height: min(92%, 46rem); border-radius: 2rem; border: 10px solid #1c1a17; background: #000; box-shadow: 0 1rem 2rem rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; padding-top: 1rem; }
   .phone-frame::before { content: ""; width: 5rem; height: 0.35rem; border-radius: 1rem; background: #444; margin-bottom: 0.75rem; flex: none; }
-  .phone-frame iframe { width: 100%; flex: 1; min-height: 0; border: 0; background: #fff; border-radius: 0 0 1.5rem 1.5rem; }
+  .phone-frame iframe { width: 100%; flex: 1; min-height: 0; border: 0; background: #fff; border-radius: 0 0 1.5rem 1.5rem; overflow-y: auto; }
   /* Touch controls: a joystick (left) for movement, a drag-look zone
      (right, everywhere else) for camera — only shown on a touch-capable
      viewport (toggled by JS, not CSS media query, since touch capability
