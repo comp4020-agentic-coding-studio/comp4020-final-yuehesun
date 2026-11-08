@@ -7,79 +7,130 @@ Crit 8 shipped a working, persistent app with one machine type; crit 9
 added real-time sync; crit 10 added logging, then an extension making
 the fairness rules checkable at real scale with seeded scenarios, not
 just argued in words. A later addition, prompted by course feedback,
-added a first-person 3D walkthrough with real, scannable per-machine QR
-codes.
+added a 3D walkthrough with real, scannable per-machine QR codes.
 
 # Process overview
 
-第一步是确定选题和设计计划。the agent first suggested three generic ideas and
-a co-op-game direction, all rejected
-([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab))
-. 最红我从自身现实生活中的痛点入手，试图解决宿舍洗衣房排队浪费时间的问题，选择了 The laundry queue作为主题。起初Agent也没有写出一份令人满意的计划，直到我自己梳理出实际场景，一步步向它解释，方案才逐渐符合我的预期
+The first step was settling on a topic and a design plan. The agent first
+suggested three generic ideas and a co-op-game direction, all rejected
+([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
+In the end I started from a pain point in my own life, the time wasted
+queueing for the laundry room in my residence, and chose the laundry queue
+as my topic. At first the agent couldn't write a plan I was happy with
+either. Only once I had worked out the real scenario myself and explained
+it step by step did the plan start to match what I expected
 ([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
-`docs/adr/0001-app-concept.md`). 工作过程中，我逐渐明确了自己和 Agent 的分工：已经确定的决策，可以交给 Agent 去实现和论证；但要解决什么问题，以及最终要把应用做成什么样，仍然由我来决定。
+`docs/adr/0001-app-concept.md`). As the work went on, the division of labour
+between me and the agent became clear: decisions already made can be left
+to the agent to implement and argue for, but what problem to solve, and
+what the app should finally become, stay mine to decide.
 
-在building过程中我尝试了多种agent管理方法。比如CLAUDE.md中的workflow，把总plan拆为小stage，每个stage循环都从planning开始，并且必须人工test后才能结束。再比如无人值守的尝试。在tutorial riff 中体验后，自己也试着给 crit 10's
-extension 写了一份支持它工作2小时的`prompt.md`。我wrote every decision down first — identity, the harness, in-page alerts, no separate board — into ADRs
-and 用 an "Unattended runs" section in `CLAUDE.md` 启动了无人值守,让claude verify its own work with
-specs and screenshots
+During the build I tried several ways of managing the agent. One is the
+workflow in `CLAUDE.md`: the overall plan is split into small stages, and
+each stage starts with planning and can only end after I've tested it by
+hand. Another is unattended runs. After trying one in the tutorial riff, I
+wrote a `prompt.md` for crit 10's extension that could keep the agent
+working for two hours. I wrote every decision down first — identity, the
+harness, in-page alerts, no separate board — into ADRs, and used an
+"Unattended runs" section in `CLAUDE.md` to start the run, with Claude
+verifying its own work with specs and screenshots
 ([`95bc7e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/95bc7e7),
 [`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59)).
 It produced a home page that actually looked considered
 ([`8402c26`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8402c26)),
 cheaper than my usual back-and-forth.
 
-在这次经验后，我又用无人值守做了simulation页——这是我前期实况模拟的一个重要尝试。Crit 9 replaced "miss your window, get ejected" with "move
-back one place," 这个决定的理由记录在 `docs/adr/0005` 中，但那只是理论推导。我想测试实际使用情况，但我不可能真的把系统接上洗衣机，于是我想到了用种子数据模拟真实的使用规模——一个有 100 名居民、持续一整天的场景。That's what `/simulation` is — a 动画 to watch the result of 三种不同排队策略 at real scale.([`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59))。Running the
-simulation's full batch hung my machine, twice。Agent 最初认为问题出在它自己的后台任务处理机制上。但我没有直接相信它的判断，而是换到另一个 terminal，在完全不涉及 Agent 的情况下独立运行模拟脚本。结果依然发生了同样的崩溃。这排除了 Agent 后台进程的问题，也让我把注意力转向模拟脚本本身。最终发现，问题在于脚本运行 150 个 seeds 的过程中，从未主动让出控制权，导致程序一直占用执行资源。我通过人工测试debug，最终成功实现了这个模拟([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913))。不过这个阶段的模拟测试还是停留在数据层面，I'd always felt the project never connected to a
-real use case。
+After that run I built the simulation page, an important early attempt at
+simulating real use. Crit 9 replaced "miss your window, get ejected" with
+"move back one place." The reasoning is recorded in `docs/adr/0005`, but
+that was only a theoretical argument. I wanted to test how it would work in
+actual use, but I couldn't connect the system to real washing machines, so
+I came up with using seeded data to simulate real usage at scale: 100
+residents over a whole day. That's what `/simulation` is — an animation
+for watching the results of three different queueing policies at real scale
+([`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59)).
+Running the simulation's full batch hung my machine, twice. The agent first
+blamed its own handling of background tasks. I didn't simply take its word
+for it: I opened another terminal and ran the simulation script on its own,
+with no agent involved. The same crash happened. That ruled out the agent's
+background process and turned my attention to the script itself. The cause
+turned out to be that the script, while running 150 seeds, never yielded
+control, so it kept hold of the machine's resources. After debugging through
+manual testing, I finally got the simulation working
+([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
+But at this stage the simulation still stayed at the level of data, and I'd
+always felt the project never connected to a real use case.
 
-
-不久后，A tutor reviewing the deployed app 提出了一个问题：仅仅展示模拟结果，可能还不足以说服宿舍管理者真正采用这个系统。他建议构建一个 3D walkthrough 洗衣房，让user直接扫描虚拟洗衣机上的真实二维码,直接进入自己的homepage。这是一个我未曾设想过的角度，我觉得非常有意思，马上开始尝试搭建。但一个很酷的想法想要落地往往不那么容易，细节上的问题层出不穷。When Building the 3D room, I found the character standing still while the
-agent's checks called it working as intended. I didn't accept the agent's first explanation, and had it swap in a
-simpler, bone-free placeholder instead — if that moved and the real
-one didn't, the bug was specific to the rigged model. It moved,
-narrowing the cause to the model-copying code sharing one skeleton
-across every clone, so the bones never tracked a position variable
-that had been correct all along
+Not long after, a tutor reviewing the deployed app raised a question:
+showing simulation results alone might not be enough to convince a hall
+manager to actually adopt the system. The tutor suggested building a 3D
+walkthrough of the laundry room, where a user scans a real QR code on a
+virtual washing machine and goes straight to their own home page. I had
+never thought of it from that angle. I found it really interesting and
+started building it right away. But a cool idea is rarely easy to bring to
+life, and problems in the details kept coming up. When building the 3D room,
+I found the character standing still while the agent's checks called it
+working as intended. I didn't accept the agent's first explanation, and had
+it swap in a simpler, bone-free placeholder instead — if that moved and the
+real one didn't, the bug was specific to the rigged model. It moved,
+narrowing the cause to the model-copying code sharing one skeleton across
+every clone, so the bones never tracked a position variable that had been
+correct all along
 ([`8e33e09`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8e33e09)).
-A later camera bug 有些类似 — a "fix" whose symptom
-proved unchanged the moment I tried it, resolved only once I insisted
-on a full re-check, not another tuning pass
+A later camera bug was somewhat similar — a "fix" whose symptom proved
+unchanged the moment I tried it, resolved only once I insisted on a full
+re-check, not another tuning pass
 ([`935bad5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/935bad5)).
-A clean-looking check was never proof; re-testing the symptom caught
-an incomplete fix each time.
- 
-经过多日尝试，我终于成功线上部署了3d漫游洗衣房（哈希链接）The room later gained a way to see other residents' characters walking
-around it too — a small multiplayer-style addition answering the
-project's multi-user and real-time requirements a second way
+A clean-looking check was never proof; re-testing the symptom caught an
+incomplete fix each time.
+
+After several days of attempts, I finally got the 3D walkthrough laundry
+room deployed online
+([`060c6f7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/060c6f7)).
+The room later gained a way to see other residents' characters walking
+around it too — a small multiplayer-style addition answering the project's
+multi-user and real-time requirements a second way
 ([`docs/adr/0014-laundry-presence.md`](docs/adr/0014-laundry-presence.md)).
 
-由于对洗衣房物理布局进行了建模，另一个功能也有了实现基础——Letting the next person move a previous resident's uncollected laundry
-to a drop-pff区。 这同样是我想自己遇到的、想要解决的痛点，and I'd imagined it as simple. 
-但当我开始实现 3D 场景中的「拿起衣物、搬运、放置」这一完整动作时，才发现服务端根本没有与之对应的中间状态。
-
-数据库在衣物被拿起的瞬间，就已经将整个交接操作记录为完成。因此，当 3D 场景仍然显示衣物正在被搬运时，服务端的数据却会不断覆盖场景中的状态。
-
-要让这个交互真正正常工作，就必须在拿起和放置之间增加一个 in-transit 状态。同时，我还需要明确谁有权搬运衣物、如何完成置物架放置，以及什么时候通知原来的物主
+Having modelled the laundry room's physical layout also gave another feature
+something to build on: letting the next person move a previous resident's
+uncollected laundry to a drop-off area. This was another pain point I had
+run into myself and wanted to solve, and I'd imagined it as simple. But when
+I started building the full "pick up, carry, place" action in the 3D scene,
+I found the server had no in-between state to match it. The database
+recorded the whole handoff as complete the moment the laundry was picked up,
+so while the 3D scene still showed the laundry being carried, the server's
+data kept overwriting the scene's state. To make this interaction really
+work, an in-transit state had to be added between picking up and placing. I
+also had to settle who may carry the laundry, how placing it on the shelf is
+completed, and when the original owner is told
 ([`docs/adr/0013-laundry-handoff-authorization.md`](docs/adr/0013-laundry-handoff-authorization.md)).
-A good idea on paper still needed building to find what it missed.因此理解用户需求和真正实现一个可用的交互之间，仍然存在很大的距离。
+A good idea on paper still needed building to find what it missed. There is
+still a long way between understanding what users need and actually building
+an interaction that works.
 
-The last real fork overruled a rejection that read as well-argued. The
-home page's "Claim" button let anyone claim with no scan involved — 这是早期还没有 real QR code 时候选择一个省事的方法.。但既然现在有了3d洗衣房，我就想尽可能复原现实中认领洗衣机的方式。然而，当我让agent评估
-"should claiming require a scan" 时，它concluded no: it would narrow "a phone
-alone is enough," and tests would
-behave differently from production. [`0015`](docs/adr/0015-scan-gated-claim.md)I pushed back: 如果不强制扫码证明到场，那么有人完全可以躺在房间里直接领取洗衣机，但却没有真正开始洗衣服，浪费后面人的时间。这恰恰是系统原本希望避免的不公平行为。
-我也进一步检查了这个修改是否真的会破坏原有设计，而实际代码表明： `claim()` never verified arrival, an
-unverified scan does the same work an unverified room number does for
-identity, and every spec already calls `join()` before `claim()`, so
-teaching them to scan first added one precondition without forking
-anything. [`docs/adr/0016`](docs/adr/0016-scan-gated-claim-accepted.md) .最终此功能成功实现。
+Another real fork overruled a rejection that read as well-argued. The home
+page's "Claim" button let anyone claim with no scan involved — a shortcut
+chosen early on, when there was no real QR code yet. But now that the 3D
+laundry room existed, I wanted to reproduce as closely as possible how a
+machine is claimed in real life. Yet when I asked the agent to assess
+"should claiming require a scan," it concluded no: it would narrow "a phone
+alone is enough," and tests would behave differently from production
+([`0015`](docs/adr/0015-scan-gated-claim.md)). I pushed back: without
+requiring a scan to prove you're there, someone could claim a machine while
+lying in their room without ever actually starting a wash, wasting the time
+of everyone behind them. That is exactly the unfair behaviour the system was
+meant to prevent. I also checked further whether this change would really
+break the original design, and the actual code showed that `claim()` never
+verified arrival, an unverified scan does the same work an unverified room
+number does for identity, and every spec already calls `join()` before
+`claim()`, so teaching them to scan first added one precondition without
+forking anything
+([`docs/adr/0016`](docs/adr/0016-scan-gated-claim-accepted.md)). The feature
+was finally built.
 
-从上述过程可以看出。Automated checks (`pnpm check`) confirm the app builds and invariants
-hold. They can't judge whether a decision honors the project's own
-argument, or a rejection's premises are true — that judgment happened
-by hand, logged in `process-notes.md`, the most load-bearing moments
-promoted here.
-
-
+The process above shows that automated checks (`pnpm check`) confirm the
+app builds and invariants hold. They can't judge
+whether a decision honors the project's own argument, or a rejection's
+premises are true — that judgment happened by hand, logged in
+`process-notes.md`, the most load-bearing moments promoted here.
