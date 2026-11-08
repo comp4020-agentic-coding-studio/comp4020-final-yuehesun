@@ -875,6 +875,14 @@ export interface DoneUnacknowledged {
   reservationId: number;
   machineId: number;
   pickupSpot: string | null;
+  // Added for the 3D room's "this machine is yours" marker: whose
+  // reservation this is, so a viewer who isn't the owner (e.g. the next
+  // room in line, who may still see/act on this machine) doesn't get
+  // mismarked as this machine being theirs. Every existing caller already
+  // either looked this row up scoped to a known personName
+  // (doneUnacknowledgedFor) or didn't need the field, so adding it here
+  // is a pure addition, not a behaviour change for them.
+  personName: string;
 }
 
 // Every reservation of this room's that's finished but not yet
@@ -885,7 +893,7 @@ export interface DoneUnacknowledged {
 // laundry sitting in it.
 export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] {
   return db
-    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot })
+    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
     .where(and(eq(reservations.personName, personName), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
     .all();
@@ -898,7 +906,7 @@ export function doneUnacknowledgedFor(personName: string): DoneUnacknowledged[] 
 // needs the full Reservation row, not just this display-shaped subset).
 export function doneUnacknowledgedOnMachine(machineId: number): DoneUnacknowledged | undefined {
   return db
-    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot })
+    .select({ reservationId: reservations.id, machineId: reservations.machineId, pickupSpot: reservations.pickupSpot, personName: reservations.personName })
     .from(reservations)
     .where(and(eq(reservations.machineId, machineId), eq(reservations.status, "done"), isNull(reservations.pickedUpAt)))
     .get();

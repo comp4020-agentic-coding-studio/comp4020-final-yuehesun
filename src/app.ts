@@ -136,7 +136,17 @@ app.get("/laundry/machines-state", (c) => {
     // different row happens to be front. Mirrors src/views.ts's own
     // homePage, which already does `rowsForMachine.find((r) => r.person
     // === identity)` for exactly this reason.
-    const mine = rows.some((r) => r.person === identity);
+    //
+    // Also true while the viewer's own laundry is done-but-not-yet-
+    // collected on this machine (unclaimed.personName === identity) —
+    // without this, the marker disappeared the instant a wash finished,
+    // since queueFor()'s active rows (waiting/claimed/running) never
+    // include a "done" reservation at all. Per the user's own request:
+    // the marker should stay through the whole "yours in some sense"
+    // window, ending only once the laundry is actually collected
+    // (pickedUpAt set), not the moment the queue-position sense of
+    // "mine" lapses.
+    const mine = rows.some((r) => r.person === identity) || unclaimed?.personName === identity;
     return {
       id: m.id,
       state,

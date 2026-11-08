@@ -1033,16 +1033,13 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   var pos = { x: 0, z: southZ };
   var MOVE_SPEED = 2.6;
   var LOOK_SENSITIVITY = 0.0025;
-  // CAM_HEIGHT lowered from 1.8 to 1.6 (roughly eye height for an average
-  // adult standing — 1.8 was taller than a real person's eye line, not
-  // just "tall camera rig" placement). CAM_HEIGHT_MARGIN keeps the
-  // vertical component inside the room: clampCameraPos (below) already
-  // clamped X/Z against the walls, but nothing ever clamped Y against the
-  // floor/ceiling — pitching the look angle toward its extremes (the
-  // Math.sin(pitch) * 1.2 term below) could push the camera's own Y
-  // position above wallHeight (2.6) or below the floor, which reads as
-  // "the camera clips through the ceiling/wall" exactly as reported.
-  var CAM_DISTANCE = 3.2, CAM_HEIGHT = 1.6;
+  // CAM_HEIGHT_MARGIN keeps the vertical component inside the room:
+  // clampCameraPos (below) already clamps X/Z against the walls, but
+  // nothing ever clamps Y against the floor/ceiling — pitching toward the
+  // extremes of the orbital camera below (see updateCamera) could push
+  // the camera's own Y position above wallHeight (2.6) or below the
+  // floor, which reads as "the camera clips through the ceiling/wall."
+  var CAM_DISTANCE = 3.2;
   var CAM_HEIGHT_MARGIN = 0.15;
   var CAM_LERP = 0.12; // per-frame ease factor, not a time-scaled lerp — simple and stable at this fixed-ish frame rate
   // Stage 10: scroll-wheel zoom, changing how far back the existing
@@ -1102,44 +1099,58 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     };
   }
 
-  // Stage 10 zoom bug: the vertical pitch offset below used to be a fixed
-  // absolute height change (Math.sin(pitch) * 1.2) applied regardless of
-  // CAM_DISTANCE. Since the camera always looks at a fixed target (the
-  // character, y=0.9) from CAM_DISTANCE away, the same absolute vertical
-  // offset creates a much steeper viewing angle the closer the camera
-  // sits — at the original default CAM_DISTANCE=3.2 the max offset (0.94)
-  // reads as a mild ~16 degree tilt, but at a small zoomed-in distance
-  // (0.6, added to let zoom-in get closer to inspect small props) the
-  // exact same 0.94 offset is a ~57 degree tilt, which is what read as
-  // "zooming in snaps the view to a top-down angle." PITCH_HEIGHT_RATIO
-  // is that original offset-to-distance ratio (1.2 / 3.2, the distance
-  // this pitch range was originally tuned against), so the vertical
-  // offset now scales with CAM_DISTANCE and the look angle stays
-  // consistent at any zoom level, including the new closer-in range.
-  var PITCH_HEIGHT_RATIO = 1.2 / 3.2;
+  // Second, deeper zoom bug, found after the first "scale the pitch
+  // offset by distance" fix still snapped to a top-down view when zoomed
+  // close: that fix only scaled the *pitch-driven* part of the vertical
+  // offset, but CAM_HEIGHT itself (1.6, a fixed absolute height) was
+  // still added on top, completely independent of CAM_DISTANCE — and the
+  // camera's lookAt target sits at a different fixed height (TARGET_Y,
+  // 0.9). That 0.7-unit gap between CAM_HEIGHT and TARGET_Y is present
+  // even at pitch=0 (no deliberate look-up/down at all), and like any
+  // fixed-size offset, the angle it produces relative to CAM_DISTANCE
+  // grows the closer the camera gets — at distance 3.2 that 0.7 gap is
+  // only a ~12 degree tilt, but at distance 0.6 the exact same 0.7 gap is
+  // already a ~49 degree tilt, using up most of the pitch range's own
+  // headroom before the user even touches the mouse — which is exactly
+  // why pitch felt "stuck looking at your feet" and unresponsive once
+  // zoomed in close: the fixed CAM_HEIGHT/TARGET_Y gap was already doing
+  // most of the tilting, leaving pitch's own, now-much-smaller remaining
+  // range nowhere near enough room to fight back to eye level.
+  //
+  // Real fix: a proper orbital/spherical camera, not an "absolute height
+  // plus an absolute offset" formula. The camera always sits on a sphere
+  // of radius CAM_DISTANCE centred on the look target (the character, at
+  // TARGET_Y) — pitch is the elevation angle on that sphere, yaw the
+  // azimuth — so the *geometry* of "how far above/below eye-level does
+  // the camera sit, as an angle" depends only on pitch, never on
+  // CAM_DISTANCE at all. This is the standard orbit-camera construction
+  // (the same shape OrbitControls itself uses internally), not a
+  // from-scratch invention.
+  var TARGET_Y = 0.9; // the character's own "look at" height, unchanged from before
 
   var desiredCamPos = new THREE.Vector3();
   var desiredCamTarget = new THREE.Vector3();
   function updateCamera() {
-    // Camera rig offset behind/above the character, per the character's
-    // own yaw (research/3d-booking/asset-sourcing.md's cited third-person
-    // pattern: a pivot behind the character, lerping toward its target
-    // transform rather than snapping).
-    var backX = Math.sin(yaw) * CAM_DISTANCE;
-    var backZ = Math.cos(yaw) * CAM_DISTANCE;
+    // Horizontal distance shrinks as pitch tilts up/down (cos(pitch)),
+    // the same way a sphere's "radius at this latitude" shrinks away from
+    // its equator — this is what keeps the camera genuinely CAM_DISTANCE
+    // away from the target at any pitch, not just at pitch=0.
+    var horizontalDist = CAM_DISTANCE * Math.cos(pitch);
+    var backX = Math.sin(yaw) * horizontalDist;
+    var backZ = Math.cos(yaw) * horizontalDist;
     var rawX = characterRoot.position.x + backX, rawZ = characterRoot.position.z + backZ;
     var clamped = clampCameraPos(rawX, rawZ);
-    var rawY = CAM_HEIGHT + Math.sin(pitch) * CAM_DISTANCE * PITCH_HEIGHT_RATIO;
+    var rawY = TARGET_Y + CAM_DISTANCE * Math.sin(pitch);
     var clampedY = Math.max(CAM_HEIGHT_MARGIN, Math.min(wallHeight - CAM_HEIGHT_MARGIN, rawY));
     desiredCamPos.set(clamped.x, clampedY, clamped.z);
     camera.position.lerp(desiredCamPos, CAM_LERP);
-    desiredCamTarget.set(characterRoot.position.x, 0.9, characterRoot.position.z);
+    desiredCamTarget.set(characterRoot.position.x, TARGET_Y, characterRoot.position.z);
     camera.lookAt(desiredCamTarget);
   }
   characterRoot.position.set(pos.x, 0, pos.z);
-  var initialCam = clampCameraPos(pos.x, pos.z + CAM_DISTANCE);
-  camera.position.set(initialCam.x, CAM_HEIGHT, initialCam.z);
-  camera.lookAt(pos.x, 0.9, pos.z);
+  var initialCam = clampCameraPos(pos.x, pos.z + CAM_DISTANCE * Math.cos(pitch));
+  camera.position.set(initialCam.x, TARGET_Y + CAM_DISTANCE * Math.sin(pitch), initialCam.z);
+  camera.lookAt(pos.x, TARGET_Y, pos.z);
 
   // --- desktop: WASD (always active) + pointer-lock mouse-look. Movement
   // never depends on pointer lock being active (Playwright's automated
