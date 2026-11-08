@@ -307,11 +307,20 @@ const STYLES = `
   /* plans/laundry-scan-phone-simulator.md: a no-phone fallback shown
      beside the real QR code — not a second copy of the reservation UI,
      just a real <iframe src="/"> (the same page a scan already redirects
-     an identified visitor to) framed to look like a phone. */
+     an identified visitor to) framed to look like a phone.
+     .phone-frame is appended as a sibling of #laundry-examine-body (both
+     direct children of the row-flex .laundry-examine-overlay above), not
+     nested inside it — nesting it inside the column-flex body stacked it
+     underneath the QR code instead of beside it.
+     Sized by height (min() against both the overlay's own box and a sane
+     cap) with aspect-ratio deriving the width, instead of a fixed
+     650px — a fixed height could exceed .laundry-canvas-wrap's own
+     height (70vh, with overflow:hidden), clipping the phone's bottom
+     half on shorter viewports. */
   #laundry-examine-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
-  .phone-frame { width: 320px; height: 650px; max-height: 80vh; border-radius: 2.5rem; border: 10px solid #1c1a17; background: #000; box-shadow: 0 1rem 2rem rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; padding-top: 1.25rem; }
-  .phone-frame::before { content: ""; width: 5rem; height: 0.35rem; border-radius: 1rem; background: #444; margin-bottom: 0.75rem; }
-  .phone-frame iframe { width: 100%; flex: 1; border: 0; background: #fff; border-radius: 0 0 1.5rem 1.5rem; }
+  .phone-frame { flex: none; height: min(85%, 34rem); aspect-ratio: 9 / 19.5; border-radius: 2rem; border: 10px solid #1c1a17; background: #000; box-shadow: 0 1rem 2rem rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; padding-top: 1rem; }
+  .phone-frame::before { content: ""; width: 5rem; height: 0.35rem; border-radius: 1rem; background: #444; margin-bottom: 0.75rem; flex: none; }
+  .phone-frame iframe { width: 100%; flex: 1; min-height: 0; border: 0; background: #fff; border-radius: 0 0 1.5rem 1.5rem; }
   /* Touch controls: a joystick (left) for movement, a drag-look zone
      (right, everywhere else) for camera — only shown on a touch-capable
      viewport (toggled by JS, not CSS media query, since touch capability

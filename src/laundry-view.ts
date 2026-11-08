@@ -1710,6 +1710,11 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   function showExamineOverlay(contentHtml) {
     if (!overlay || !overlayBody) return;
     overlayBody.innerHTML = contentHtml;
+    // A previous call may have appended a .phone-frame as a sibling of
+    // overlayBody (see openMachineExamine below) — drop it so a stale
+    // phone from a different machine/interaction doesn't linger.
+    var stalePhone = overlay.querySelector(".phone-frame");
+    if (stalePhone) stalePhone.remove();
     overlay.classList.remove("is-hidden");
   }
   function hideExamineOverlay() {
@@ -1750,7 +1755,14 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
         iframe.src = "/";
         iframe.title = "Simulated phone — the real home page";
         frame.appendChild(iframe);
-        if (overlayBody) overlayBody.appendChild(frame);
+        // Inserted as a sibling of overlayBody, right before the close
+        // button: the overlay itself is a row-flex
+        // (.laundry-examine-overlay), so a sibling lands beside the QR
+        // code; nesting it inside overlayBody (a column-flex) stacked it
+        // underneath instead. Inserting before overlayClose (rather than
+        // appending, which would land after it) keeps the close button
+        // visually last, not sandwiched between the QR code and the phone.
+        if (overlay) overlay.insertBefore(frame, overlayClose || null);
       });
     }
   }
