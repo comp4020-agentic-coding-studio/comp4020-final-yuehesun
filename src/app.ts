@@ -84,7 +84,7 @@ app.get("/", (c) => {
   // the same reason loadOwned exists, not relying on the caller to have
   // scoped it already).
   const getHandoffSuggestion = (reservationId: number) => queue.suggestedHandoff(reservationId, identity);
-  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer, getHandoffSuggestion, pendingPickups));
+  return c.html(homePage(identity, allMachines, rowsByMachine, myOffers, now, queue.suggestedDryer, getHandoffSuggestion, pendingPickups, queue.carriedSuggestionsFor(identity)));
 });
 
 // plans/3d-walkthrough.md Stage 8.1: the real CC0 GLTF models (washer,
@@ -387,7 +387,7 @@ app.get("/my-status", (c) => {
   });
   const myOffers = pendingOffersFor(identity, now);
   const pendingPickups = queue.doneUnacknowledgedFor(identity);
-  return c.html(myStatusBlock(mine, myOffers, now, pendingPickups));
+  return c.html(myStatusBlock(mine, myOffers, now, pendingPickups, queue.carriedSuggestionsFor(identity)));
 });
 
 // plans/3d-walkthrough.md Stage 3: an optional `redirect` field, sent only

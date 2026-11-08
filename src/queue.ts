@@ -914,9 +914,6 @@ export interface HandoffSuggestion {
   // and the phone card can never show different numbers.
   suggestedSpot: string | undefined;
   freeSpots: string[];
-  // True when this resident already picked the laundry up (IN_TRANSIT):
-  // the card then has no "No" — they are mid-task, not being asked.
-  carrying: boolean;
 }
 
 function freeSpotsNow(): string[] {
@@ -940,43 +937,55 @@ function inTransitCarriedBy(machineId: number, personName: string): Reservation 
     .get();
 }
 
+function spotChoicesFor(intended: string | null | undefined): { suggestedSpot: string | undefined; freeSpots: string[] } {
+  const freeSpots = freeSpotsNow();
+  const suggestedSpot = intended && freeSpots.includes(intended) ? intended : freeSpots[0];
+  return { suggestedSpot, freeSpots };
+}
+
 // plans/laundry-handoff-decouple-from-claim.md: surfaced as a home-page
 // card the instant a claim succeeds on a machine that still has the
 // previous resident's laundry sitting in it — same "dismissible prompt,
 // recomputed fresh on every render" shape as suggestedDryer above, not a
-// one-shot notice. undefined means "don't show the card".
-//
-// plans/laundry-dropoff-spot-confirm.md Stage 2: the card is now also
-// shown while this resident is *carrying* the laundry (IN_TRANSIT, picked
-// up in the 3D room) — before, it vanished at exactly the moment they
-// walked to the drop-off table, because only untouched laundry counted.
-// "No" (handoffPromptDismissed) only silences the untouched-laundry
-// question; a resident who has already picked the laundry up is mid-task
-// and keeps the card until they place it.
+// one-shot notice. undefined means "don't show the card". Only about
+// laundry still untouched in the machine; laundry this resident is
+// already carrying is carriedSuggestionsFor below.
 export function suggestedHandoff(claimReservationId: number, personName: string): HandoffSuggestion | undefined {
   const claim = db.select().from(reservations).where(eq(reservations.id, claimReservationId)).get();
   if (!claim || claim.personName !== personName) return undefined;
+  if (claim.status !== "claimed") return undefined;
+  if (claim.handoffPromptDismissed) return undefined;
 
-  const carried = claim.status === "claimed" || claim.status === "waiting" ? inTransitCarriedBy(claim.machineId, personName) : undefined;
-
-  let previousRoom: string;
-  if (carried) {
-    previousRoom = carried.personName;
-  } else {
-    if (claim.status !== "claimed") return undefined;
-    if (claim.handoffPromptDismissed) return undefined;
-    const laundry = unacknowledgedLaundryOn(claim.machineId);
-    if (!laundry) return undefined;
-    previousRoom = laundry.personName;
-  }
+  const laundry = unacknowledgedLaundryOn(claim.machineId);
+  if (!laundry) return undefined;
 
   const machine = db.select().from(machines).where(eq(machines.id, claim.machineId)).get();
   if (!machine) return undefined;
 
-  const freeSpots = freeSpotsNow();
-  const intended = carried?.intendedSpot;
-  const suggestedSpot = intended && freeSpots.includes(intended) ? intended : freeSpots[0];
-  return { machineId: machine.id, machineLabel: machine.label, previousRoom, suggestedSpot, freeSpots, carrying: carried != null };
+  return { machineId: machine.id, machineLabel: machine.label, previousRoom: laundry.personName, ...spotChoicesFor(undefined) };
+}
+
+// plans/laundry-dropoff-spot-confirm.md Stage 2: one card per load this
+// resident is carrying right now (IN_TRANSIT, picked up in the 3D room).
+// Deliberately NOT tied to any reservation of theirs: the first version
+// hung this card off the carrier's own waiting/claimed reservation on
+// that machine, so it vanished the moment they started their own wash
+// (start() allows that — a carried load no longer blocks the drum) and
+// the laundry stayed in their hands with nowhere to submit where it went.
+// "No" doesn't exist for these: they are mid-task, not being asked.
+export function carriedSuggestionsFor(personName: string): HandoffSuggestion[] {
+  const rows = db
+    .select()
+    .from(reservations)
+    .where(and(eq(reservations.status, "done"), eq(reservations.pickupSpot, IN_TRANSIT), eq(reservations.carriedBy, personName)))
+    .all();
+  const result: HandoffSuggestion[] = [];
+  for (const row of rows) {
+    const machine = db.select().from(machines).where(eq(machines.id, row.machineId)).get();
+    if (!machine) continue;
+    result.push({ machineId: machine.id, machineLabel: machine.label, previousRoom: row.personName, ...spotChoicesFor(row.intendedSpot) });
+  }
+  return result;
 }
 
 // plans/laundry-handoff-decouple-from-claim.md: "No" on the handoff

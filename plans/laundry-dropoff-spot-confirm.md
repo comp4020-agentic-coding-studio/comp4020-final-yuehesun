@@ -182,3 +182,18 @@ on the filled-in card.
   design had the server pick the shelf; I overruled it") — hash filled
   in only from `git log`.
 - Update `plan.md`'s state and fold it into each stage's last commit.
+
+## Follow-up after the user's hand-check (2026-11-09)
+
+The user still saw no card. Cause: Stage 2 hung the carrying card off the
+carrier's own waiting/claimed reservation on that machine, so it vanished
+as soon as they started their own wash (allowed — a carried load no
+longer blocks the drum), leaving the laundry in their hands with nowhere
+to submit. Fix: the carrying card no longer depends on any reservation;
+`queue.carriedSuggestionsFor(person)` returns one card per load in their
+hands, rendered at the top of "Your status". The untouched-laundry
+question ("did you move it?", with its "No") still hangs off the claimed
+reservation. Regression spec: "keeps the carrier's spot card after their
+own wash starts". The user's local dev database (`.data/app.db`) was
+also emptied of runtime rows (reservations, offers, scans) at their
+request — a backup of the old file is in the session scratchpad only.

@@ -1031,7 +1031,7 @@ function dryerPromptCard(washReservationId: number, suggestion: DryerOption): Ht
 // — the same "Yes"/"No" two-button shape as dryerPromptCard above, named
 // by machine since MAX_ACTIVE_PER_TYPE = 2 can put two of these on
 // screen at once, each independently dismissible/actionable.
-function handoffPromptCard(claimReservationId: number, suggestion: HandoffSuggestion): Html {
+function handoffPromptCard(claimReservationId: number | undefined, suggestion: HandoffSuggestion): Html {
   // plans/laundry-dropoff-spot-confirm.md Stage 2 (docs/adr/0017): the
   // resident confirms WHERE the laundry went. A <select> of the free
   // spots (never free text), pre-filled with the server's proposal — the
@@ -1051,7 +1051,7 @@ function handoffPromptCard(claimReservationId: number, suggestion: HandoffSugges
             </label>
             <button class="btn-primary" type="submit">Confirm</button>`}
       </form>
-      ${suggestion.carrying
+      ${claimReservationId === undefined
         ? raw("")
         : html`<form method="post" action="/reservations/${claimReservationId}/dismiss-handoff-prompt" style="display:inline">
         <button class="btn-quiet" type="submit">No</button>
@@ -1149,9 +1149,12 @@ export function myStatusBlock(
   myOffers: OfferRow[],
   now: number,
   pendingPickups: DoneUnacknowledged[] = [],
+  carrying: HandoffSuggestion[] = [],
 ): Html {
-  if (mine.length === 0 && myOffers.length === 0 && pendingPickups.length === 0) return raw("");
-  return html`${pendingPickups.map((p) => pendingPickupCard(p))}${myOffers.map((o) => offerCard(o, now))}
+  if (mine.length === 0 && myOffers.length === 0 && pendingPickups.length === 0 && carrying.length === 0) return raw("");
+  // Laundry in this resident's hands comes first and is independent of any
+  // reservation of theirs (queue.carriedSuggestionsFor).
+  return html`${carrying.map((s) => handoffPromptCard(undefined, s))}${pendingPickups.map((p) => pendingPickupCard(p))}${myOffers.map((o) => offerCard(o, now))}
     ${mine.map(({ machine, row, aheadLabel, dryerSuggestion, handoffSuggestion }) =>
       html`${noticeBanner(row)}${statusHero(machine, row, now, aheadLabel, dryerSuggestion, handoffSuggestion)}`,
     )}`;
@@ -1237,6 +1240,7 @@ export function homePage(
   getDryerSuggestion: (reservationId: number) => DryerOption | undefined,
   getHandoffSuggestion: (reservationId: number) => HandoffSuggestion | undefined,
   pendingPickups: DoneUnacknowledged[] = [],
+  carrying: HandoffSuggestion[] = [],
 ): Html {
   const mine = machines.flatMap((m) => {
     const rowsForMachine = rowsByMachine.get(m.id) ?? [];
@@ -1274,7 +1278,7 @@ export function homePage(
           <a class="btn-primary" href="/laundry">Go to the laundry</a>
         </div>
         <div id="my-status-wrapper" hx-trigger="sse:changed" hx-get="/my-status" hx-swap="innerHTML">
-          ${myStatusBlock(mine, myOffers, now, pendingPickups)}
+          ${myStatusBlock(mine, myOffers, now, pendingPickups, carrying)}
         </div>
       </div>
       <div class="board-column">

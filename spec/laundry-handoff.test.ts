@@ -692,3 +692,36 @@ it("refuses to propose a spot when nothing of yours is being carried", async () 
   await acknowledgePickup(owner, ownerReservation);
   await cleanupReservation(baseUrl, next, nextReservation);
 });
+
+// Regression for a real report: "the card never showed up". The card used
+// to hang off the carrier's own waiting/claimed reservation on that
+// machine, so once they started their own wash (start() allows it — a
+// carried load no longer blocks the drum) their reservation became
+// "running", the card vanished, and the laundry stayed in their hands
+// with nowhere to submit where it went.
+it("keeps the carrier's spot card after their own wash starts, and the spot can still be submitted", async () => {
+  const { owner, ownerReservation, next, nextReservation } = await laundryAndClaimedNext();
+  expect((await pickUp(next, MACHINE_ID)).status).toBe(200);
+
+  const startRes = await fetch(new URL(`/reservations/${nextReservation}/start`, baseUrl), {
+    method: "POST",
+    headers: { cookie: next },
+    redirect: "manual",
+  });
+  expect(startRes.status, "a carried load no longer blocks starting").toBeLessThan(400);
+
+  const card = await myStatusHtml(next);
+  expect(card, "still carrying, so the card must still be there once the reservation is running").toContain('name="spot"');
+
+  const homeRes = await fetch(new URL("/", baseUrl), { headers: { cookie: next } });
+  expect(await homeRes.text(), "the full home page shows it too, not just the live fragment").toContain('name="spot"');
+
+  const { spot } = (await (await proposeSpot(next)).json()) as { spot: string };
+  expect((await confirmHandoff(next, spot)).status).toBe(303);
+  expect(await myStatusHtml(next), "after confirming, the card is gone").not.toContain('name="spot"');
+
+  await acknowledgePickup(owner, ownerReservation);
+  const finishRes = await fetch(new URL(`/reservations/${nextReservation}/finish`, baseUrl), { method: "POST", headers: { cookie: next }, redirect: "manual" });
+  expect(finishRes.status).toBeLessThan(400);
+  await cleanupReservation(baseUrl, next, nextReservation);
+});
