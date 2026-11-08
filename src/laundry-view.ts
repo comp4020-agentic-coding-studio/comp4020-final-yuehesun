@@ -174,9 +174,20 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // the wall's own face) and shown mostly closed — reads as a real door
   // rather than an empty doorway, without needing a hinge/open-close
   // interaction the room doesn't otherwise support for anything else.
+  //
+  // Real bug fixed here: the door panel used to be centered at
+  // DOOR_WIDTH * 0.08 (0.088 for DOOR_WIDTH=1.1) instead of 0 — the
+  // doorway gap itself (the two side walls above) is centered on x=0, so
+  // that offset pushed the panel visibly off-center within its own frame,
+  // reading as "the door and frame don't line up." DOOR_PANEL_WIDTH/
+  // DOOR_PANEL_HEIGHT are named here (not inlined into the geometry call)
+  // specifically so the handle's own x position below is derived from the
+  // same panel width, not a second hand-copied fraction that could drift
+  // from it the same way the original offset did.
+  var DOOR_PANEL_WIDTH = DOOR_WIDTH * 0.92, DOOR_PANEL_HEIGHT = DOOR_HEIGHT * 0.97;
   var doorMat = new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.7 }); // a wood tone distinct from --paper walls
-  var door = new THREE.Mesh(new THREE.BoxGeometry(DOOR_WIDTH * 0.92, DOOR_HEIGHT * 0.97, 0.06), doorMat);
-  door.position.set(DOOR_WIDTH * 0.08, DOOR_HEIGHT * 0.485, roomHalfDepth - 0.05);
+  var door = new THREE.Mesh(new THREE.BoxGeometry(DOOR_PANEL_WIDTH, DOOR_PANEL_HEIGHT, 0.06), doorMat);
+  door.position.set(0, DOOR_PANEL_HEIGHT / 2, roomHalfDepth - 0.05);
   door.castShadow = true;
   door.receiveShadow = true;
   scene.add(door);
@@ -185,7 +196,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     new THREE.MeshStandardMaterial({ color: 0x9aa7b0, metalness: 0.6, roughness: 0.4 }),
   );
   doorHandle.rotation.z = Math.PI / 2;
-  doorHandle.position.set(DOOR_WIDTH * 0.08 - DOOR_WIDTH * 0.92 * 0.35, DOOR_HEIGHT * 0.5, roomHalfDepth - 0.08);
+  doorHandle.position.set(-DOOR_PANEL_WIDTH * 0.35, DOOR_PANEL_HEIGHT * 0.5, roomHalfDepth - 0.08);
   scene.add(doorHandle);
 
   var ceiling = new THREE.Mesh(
@@ -486,19 +497,25 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     group.add(numberLabel);
 
     // Stage 10: a downward-pointing marker above the number label on
-    // whichever machine(s) the viewer holds an active reservation on —
-    // same visual language as the local character's own "this is you"
-    // selfMarker (a downward ConeGeometry, same colour), so "this points
-    // at something that's yours" reads as one consistent convention
-    // across the scene rather than two different shapes meaning the same
-    // thing. Hidden by default; applyMachineState (below) toggles it from
-    // the real isMine field GET /laundry/machines-state now returns.
+    // whichever machine(s) the viewer holds an active reservation on.
+    // Originally shared the local character's own "this is you" selfMarker
+    // colour (amber) for a consistent "this points at something that's
+    // yours" convention — revised per user feedback to a distinct, more
+    // attention-grabbing red (STATE_COLOR's own "your-turn"/"unclaimed"
+    // alert colour, 0xb5402a — already the app's one colour reserved for
+    // "needs your attention now") plus a gentle bob (see bobbingMarkers'
+    // own per-frame update below), since picking your own machine out of
+    // a room of ten at a glance is a more urgent, frequent task than the
+    // local self-marker's "which one is me" — a colour this app already
+    // uses everywhere else for the same meaning, and motion, do that job
+    // better than a static, muted colour match.
     var mineMarker = new THREE.Mesh(
       new THREE.ConeGeometry(0.09, 0.18, 4),
-      new THREE.MeshStandardMaterial({ color: 0xe6b422, emissive: 0x6b4f00, emissiveIntensity: 0.4 }),
+      new THREE.MeshStandardMaterial({ color: 0xb5402a, emissive: 0xb5402a, emissiveIntensity: 0.5 }),
     );
     mineMarker.rotation.x = Math.PI; // point down, toward the number label/machine below it
-    mineMarker.position.set(0, footprint.h + 0.5, 0);
+    mineMarker.userData.baseY = footprint.h + 0.5;
+    mineMarker.position.set(0, mineMarker.userData.baseY, 0);
     mineMarker.visible = false;
     group.add(mineMarker);
     mineMarkers[p.id] = mineMarker;
@@ -1034,17 +1051,18 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // and it doesn't touch movement/collision at all (clampCameraPos,
   // called every frame from CAM_DISTANCE's current value, already keeps
   // the resulting camera position off the walls regardless of distance).
-  // Bounds and sensitivity revised per user feedback: the original range
-  // (1.8-5, at a weak 0.0025 multiplier) couldn't get close enough to
-  // read small detail (e.g. the iron on the table) even scrolled all the
-  // way in — one wheel notch (~100 deltaY) only moved the camera ~0.25
-  // units. 0.6 is close enough to inspect small props up close while
-  // standing next to them without the camera clipping into the character
-  // model itself; 7 gives a genuinely wider room overview than 5 did.
-  // The multiplier itself is also raised 4x (0.0025 -> 0.01) so a normal
-  // scroll gesture covers the whole range in a handful of notches instead
-  // of needing dozens.
-  var CAM_DISTANCE_MIN = 0.6, CAM_DISTANCE_MAX = 7;
+  // Revised per user feedback, twice: the first widened range (0.6-7 at
+  // 0.01/deltaY) moved too fast in both directions, and zooming in that
+  // close triggered the pitch bug fixed below (a fixed vertical camera
+  // offset reads as a much steeper up/down angle the closer the camera
+  // sits — see updateCamera's own comment). Final shape: sensitivity
+  // reverts to the original 0.0025 (the "too sensitive" complaint); the
+  // max distance (zoom-out) reverts to the original 5 — the user's own
+  // "zoom in more, zoom out doesn't need as much" request; only the min
+  // distance (zoom-in) keeps the closer 0.6 from the first attempt, since
+  // "get closer to inspect a small prop" was the one real, specific ask.
+  var CAM_DISTANCE_MIN = 0.6, CAM_DISTANCE_MAX = 5;
+  var CAM_ZOOM_SENSITIVITY = 0.0025;
 
   function collidesAt(x, z) {
     for (var i = 0; i < collisionBoxes.length; i++) {
@@ -1084,6 +1102,22 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     };
   }
 
+  // Stage 10 zoom bug: the vertical pitch offset below used to be a fixed
+  // absolute height change (Math.sin(pitch) * 1.2) applied regardless of
+  // CAM_DISTANCE. Since the camera always looks at a fixed target (the
+  // character, y=0.9) from CAM_DISTANCE away, the same absolute vertical
+  // offset creates a much steeper viewing angle the closer the camera
+  // sits — at the original default CAM_DISTANCE=3.2 the max offset (0.94)
+  // reads as a mild ~16 degree tilt, but at a small zoomed-in distance
+  // (0.6, added to let zoom-in get closer to inspect small props) the
+  // exact same 0.94 offset is a ~57 degree tilt, which is what read as
+  // "zooming in snaps the view to a top-down angle." PITCH_HEIGHT_RATIO
+  // is that original offset-to-distance ratio (1.2 / 3.2, the distance
+  // this pitch range was originally tuned against), so the vertical
+  // offset now scales with CAM_DISTANCE and the look angle stays
+  // consistent at any zoom level, including the new closer-in range.
+  var PITCH_HEIGHT_RATIO = 1.2 / 3.2;
+
   var desiredCamPos = new THREE.Vector3();
   var desiredCamTarget = new THREE.Vector3();
   function updateCamera() {
@@ -1095,7 +1129,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     var backZ = Math.cos(yaw) * CAM_DISTANCE;
     var rawX = characterRoot.position.x + backX, rawZ = characterRoot.position.z + backZ;
     var clamped = clampCameraPos(rawX, rawZ);
-    var rawY = CAM_HEIGHT + Math.sin(pitch) * 1.2;
+    var rawY = CAM_HEIGHT + Math.sin(pitch) * CAM_DISTANCE * PITCH_HEIGHT_RATIO;
     var clampedY = Math.max(CAM_HEIGHT_MARGIN, Math.min(wallHeight - CAM_HEIGHT_MARGIN, rawY));
     desiredCamPos.set(clamped.x, clampedY, clamped.z);
     camera.position.lerp(desiredCamPos, CAM_LERP);
@@ -1167,7 +1201,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // also move the surrounding page).
   renderer.domElement.addEventListener("wheel", function (e) {
     e.preventDefault();
-    CAM_DISTANCE = Math.max(CAM_DISTANCE_MIN, Math.min(CAM_DISTANCE_MAX, CAM_DISTANCE + e.deltaY * 0.01));
+    CAM_DISTANCE = Math.max(CAM_DISTANCE_MIN, Math.min(CAM_DISTANCE_MAX, CAM_DISTANCE + e.deltaY * CAM_ZOOM_SENSITIVITY));
   }, { passive: false });
 
   // --- touch: a left-side joystick for movement, a drag-anywhere-else
@@ -1788,6 +1822,20 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
     updateCamera();
     reportPresence(now);
     updateRemoteCharacters(dt);
+
+    // Stage 10: bob every visible "this machine is yours" marker up and
+    // down — a static marker (even in an attention colour) is easy to
+    // miss in a room with ten machines; motion is what actually draws the
+    // eye at a glance. Driven by wall-clock time (now), not dt-accumulated
+    // state, so every marker bobs in sync regardless of how many frames
+    // have run, and the animation doesn't drift or need its own reset
+    // when a marker's visibility toggles on.
+    var bobOffset = Math.sin(now * 0.003) * 0.06;
+    for (var mId in mineMarkers) {
+      var marker = mineMarkers[mId];
+      if (marker.visible) marker.position.y = marker.userData.baseY + bobOffset;
+    }
+
     renderer.render(scene, camera);
     window.requestAnimationFrame(frame);
   }
