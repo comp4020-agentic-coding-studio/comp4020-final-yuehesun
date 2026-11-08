@@ -1726,15 +1726,24 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   if (overlayClose) overlayClose.addEventListener("click", hideExamineOverlay);
 
   // plans/laundry-scan-phone-simulator.md: "Simulate a phone scan" loads
-  // the real home page in a same-origin <iframe src="/"> — this is the
-  // exact page an identified visitor's real scan already redirects to
-  // (see src/app.ts's GET /laundry/scan/:id), not a second rendering of
-  // it, so claim/start done inside it are real actions against the real
-  // database. It's a no-phone fallback for someone evaluating the build
-  // (e.g. a tutor at a crit) — it does NOT stand in for, or satisfy, the
-  // real two-device phone-camera scan rehearsal plan.md still has
-  // outstanding, since it proves nothing about whether a real camera can
-  // actually decode the QR image itself.
+  // the real scan landing route in a same-origin iframe — this is the
+  // exact page a real phone's camera lands on after scanning this
+  // machine's actual code (src/app.ts's GET /laundry/scan/:id), not a
+  // second rendering of it, so claim/start done inside it are real
+  // actions against the real database. It's a no-phone fallback for
+  // someone evaluating the build (e.g. a tutor at a crit) — it does NOT
+  // stand in for, or satisfy, the real two-device phone-camera scan
+  // rehearsal plan.md still has outstanding, since it proves nothing
+  // about whether a real camera can actually decode the QR image itself.
+  //
+  // plans/laundry-scan-gated-claim.md Stage 2: changed from a fixed
+  // src="/" to this machine's own /laundry/scan/:id, once claim() started
+  // requiring a real scan record — GET /laundry/scan/:id is the one real
+  // place that record gets written (src/app.ts), so this iframe has to
+  // hit that exact route for *this* machine, not the generic home page,
+  // or the simulator would land on a page that then rejects its own
+  // claim attempt with "scan the machine's code first," which would look
+  // broken rather than simulating anything.
   function openMachineExamine(machineId) {
     var label = "Machine " + machineId;
     var m = machines.find(function (mm) { return mm.id === machineId; });
@@ -1754,8 +1763,8 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
         var frame = document.createElement("div");
         frame.className = "phone-frame";
         var iframe = document.createElement("iframe");
-        iframe.src = "/";
-        iframe.title = "Simulated phone — the real home page";
+        iframe.src = "/laundry/scan/" + machineId;
+        iframe.title = "Simulated phone — the real scan landing page";
         frame.appendChild(iframe);
         // Inserted as a sibling of overlayBody, right before the close
         // button: the overlay itself is a row-flex

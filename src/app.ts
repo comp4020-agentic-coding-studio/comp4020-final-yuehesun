@@ -257,6 +257,16 @@ app.get("/laundry/scan/:id", (c) => {
     return c.html(scanIdentityPage(machineId, prefill));
   }
 
+  // plans/laundry-scan-gated-claim.md Stage 2: this is the one real
+  // place a scan event gets recorded — reaching this route with a known
+  // identity is, definitionally, a real scan (a phone's camera scanning
+  // the machine's actual code, or the just-identified visitor's own
+  // redirect back through this exact route after typing their room
+  // number). Recorded before the redirect, so a claim attempted the
+  // instant the home page loads already sees it.
+  queue.recordScan(machineId, identity);
+  logging.logEvent("machine_scanned", { room: identity, machine: machineId });
+
   return c.redirect("/", 303);
 });
 
