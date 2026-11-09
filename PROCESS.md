@@ -42,38 +42,35 @@ It produced a home page that actually looked considered
 ([`8402c26`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8402c26)),
 cheaper than my usual back-and-forth.
 
-After this experience, I used the unattended approach again to build the simulation page, an important early attempt at
+After this experience, I used the unattended approach again to build the simulation page - an important early attempt at
 simulating real use. Crit 9 replaced "miss your window, get ejected" with
-"move back one place." The reasoning is recorded in `docs/adr/0005`, but
-that was only a theoretical argument. I wanted to test how it would work in
-actual use, but I couldn't connect the system to real washing machines, so
+"move back one place" in `docs/adr/0005`, but had never been tested in
+actual use. I couldn't connect the system to real washing machines, so
 I came up with using seeded data to simulate real usage at scale: 100
 residents over a whole day. That's what `/simulation` is — an animation
 for watching the results of three different queueing policies at real scale
 ([`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59)).
 Running the full batch hung my machine twice. The agent blamed its own
-background tasks. I didn't take its word for it: I ran the script in another
+background tasks. I didn't take its word for it, but ran the script in another
 terminal with no agent involved, and it crashed the same way. This ruled out
 the agent's background process and turned my attention to the script itself.
 The real cause was the script never
-yielding control across its 150 seeds, so it kept hogging the machine's resources. Once that was fixed, the simulation
-worked
+yielding control across its 150 seeds, so it kept hogging the machine's resources.
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
 Its first resident model was also wrong: each resident's lateness was fixed
 once, so a slow resident missed every chance forever. That only showed up once
 it ran, so I added a rule to write this kind of design down before coding
 ([`c2abbcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/c2abbcd)).
-But at this stage the simulation still stayed at the level of data, and I'd
-always felt the project never connected to a real use case.
 
-Not long after, a tutor reviewing the deployed app raised a question:
+
+At this stage the simulation still stayed at the level of data, and I'd
+always felt the project never connected to a real use case. Later, a tutor reviewing the deployed app raised a question:
 showing simulation results alone might not be enough to convince a hall
 manager to actually adopt the system. The tutor suggested building a 3D
 walkthrough of the laundry room, where a user scans a real QR code on a
-virtual washing machine and goes straight to their own home page. I had
-never thought of it from that angle. I found it really interesting and
-started trying to build it right away. But a cool idea is rarely easy to bring to
-life, and problems in the details kept coming up. When building the 3D room,
+virtual washing machine and goes straight to their own home page. I was really inspired and
+started right away. But an interesting idea is rarely easy to bring to
+life. When building the 3D room,
 I found the character standing still while the agent's checks called it
 working as intended. I didn't accept the agent's first explanation, and had
 it swap in a simpler, bone-free placeholder instead — if that moved and the

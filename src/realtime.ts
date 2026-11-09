@@ -41,9 +41,26 @@ async function broadcast(event: string): Promise<void> {
 // without.
 const lastDigest = new Map<number, string>();
 
+// Only real state goes in the digest. An estimate built on "now" (a dryer
+// waiting on a wash that hasn't started) differs on every tick, and including
+// it made a queue like that broadcast "changed" twice a second forever: every
+// open home page re-rendered, wiping inline notices and resetting form fields
+// before anyone could read or use them. Countdowns tick in the browser, so an
+// estimate moving on its own needs no broadcast.
 function digestOf(machineId: number, now: number): string {
   const rows = queue.queueFor(machineId, now);
-  return JSON.stringify(rows);
+  return JSON.stringify(
+    rows.map((r) => ({
+      reservationId: r.reservationId,
+      person: r.person,
+      status: r.status,
+      position: r.position,
+      fixed: r.fixed,
+      fixedStartMs: r.fixed ? r.scheduledStartMs : null,
+      claimDeadlineMs: r.claimDeadlineMs,
+      notice: r.notice,
+    })),
+  );
 }
 
 // Stage 8.4 (plans/3d-walkthrough.md, docs/adr/0013): a handoff's own
