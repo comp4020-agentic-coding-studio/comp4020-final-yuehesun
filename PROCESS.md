@@ -16,26 +16,22 @@ real-time. The cost is a bigger Docker build for the SQLite driver
 # Process overview
 
 The first step was settling on a topic and a design plan. The agent first
-suggested three generic ideas and a co-op-game direction, all rejected
+suggested three generic ideas, all rejected
 ([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
-In the end I started from a pain point in my own life, the time wasted
-queueing for the laundry room in my residence. At first the agent couldn't write a satisfactory plan either. Only once I had worked out the real scenario myself and explained
-it step by step did the plan start to match what I expected
+I decided to start from a pain point in my own life, the time wasted
+queueing for the laundry room dorm. I worked out the real scenario myself and explained
+it step by step, and the plan start to match what I expected
 ([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
-`docs/adr/0001-app-concept.md`). As the work went on, the division of labour
-between me and the agent became clear: decisions already made can be left
-to the agent to implement and argue for, but what problem to solve, and
+`docs/adr/0001-app-concept.md`). As the work went on, the division between human and agent became clear: agent can implement and argue for existing decisions, but what problem to solve, and
 what the app should finally become, stay mine to decide.
 
 During the build I tried several ways of managing the agent. One is the
 workflow in `CLAUDE.md`: the overall plan is split into small stages, and
 each stage starts with planning and can only end after I've tested it by
 hand. That testing once kept showing me old text after the agent's fixes,
-because one of its test servers was still on my dev port serving old code. I
-made that a rule in `CLAUDE.md` instead of asking it to be more careful
-([`71f3426`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/71f3426)).
-Another way of managing it is unattended runs. After trying one in the tutorial riff, I
-wrote a `prompt.md` for crit 10's extension that could keep the agent
+because one of its test servers was still on my dev port serving old code. Therefore I made that a rule in `CLAUDE.md` ([`71f3426`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/71f3426)).
+
+Another way of managing it is unattended runs. After trying one in the tutorial riff, I tried writing a `prompt.md` for crit 10's extension that could keep the agent
 working for two hours. I wrote every decision down first — identity, the
 harness, in-page alerts, no separate board — into ADRs, and used an
 "Unattended runs" section in `CLAUDE.md` to start the run, with Claude
@@ -46,7 +42,7 @@ It produced a home page that actually looked considered
 ([`8402c26`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/8402c26)),
 cheaper than my usual back-and-forth.
 
-After that run I built the simulation page, an important early attempt at
+After this experience, I used the unattended approach again to build the simulation page, an important early attempt at
 simulating real use. Crit 9 replaced "miss your window, get ejected" with
 "move back one place." The reasoning is recorded in `docs/adr/0005`, but
 that was only a theoretical argument. I wanted to test how it would work in
@@ -56,9 +52,11 @@ residents over a whole day. That's what `/simulation` is — an animation
 for watching the results of three different queueing policies at real scale
 ([`f2b0b59`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/f2b0b59)).
 Running the full batch hung my machine twice. The agent blamed its own
-background tasks, so I ran the script in another terminal with no agent
-involved, and it crashed the same way. The real cause was the script never
-yielding control across its 150 seeds. Once that was fixed, the simulation
+background tasks. I didn't take its word for it: I ran the script in another
+terminal with no agent involved, and it crashed the same way. This ruled out
+the agent's background process and turned my attention to the script itself.
+The real cause was the script never
+yielding control across its 150 seeds, so it kept hogging the machine's resources. Once that was fixed, the simulation
 worked
 ([`2e1f913`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/2e1f913)).
 Its first resident model was also wrong: each resident's lateness was fixed
@@ -74,7 +72,7 @@ manager to actually adopt the system. The tutor suggested building a 3D
 walkthrough of the laundry room, where a user scans a real QR code on a
 virtual washing machine and goes straight to their own home page. I had
 never thought of it from that angle. I found it really interesting and
-started building it right away. But a cool idea is rarely easy to bring to
+started trying to build it right away. But a cool idea is rarely easy to bring to
 life, and problems in the details kept coming up. When building the 3D room,
 I found the character standing still while the agent's checks called it
 working as intended. I didn't accept the agent's first explanation, and had
