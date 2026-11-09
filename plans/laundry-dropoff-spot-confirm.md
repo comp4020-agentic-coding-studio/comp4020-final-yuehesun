@@ -197,3 +197,15 @@ reservation. Regression spec: "keeps the carrier's spot card after their
 own wash starts". The user's local dev database (`.data/app.db`) was
 also emptied of runtime rows (reservations, offers, scans) at their
 request — a backup of the old file is in the session scratchpad only.
+
+## Follow-up: the owner collecting their own laundry (2026-11-09)
+
+Real use showed the owner had no way to collect in the 3D room: the shelf said
+"you're not carrying any laundry", and their own machine offered a pick-up and
+the drop-off. Design: `/laundry/machines-state` reports the viewer's own laundry
+(`myLaundryReservation` per machine, `myShelved` overall). Interacting with their
+machine or the shelf calls the existing `acknowledgePickup`, shows "you collected
+your laundry", and the record is finished. Collecting from the drum also empties
+the machine (same rule as a pick-up), and a resident's own laundry never blocks
+their own `start()` or asks them to move it. The home page's "Got it" stays, so a
+phone-only resident can still free the spot (the user's decision).

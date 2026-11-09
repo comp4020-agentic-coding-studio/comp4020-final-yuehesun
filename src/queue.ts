@@ -448,8 +448,14 @@ export function start(reservationId: number, personName: string): ActionResult {
   // pickUpLaundry's own authoritative "is there really still laundry
   // here" check — rather than re-deriving it, so there's exactly one
   // query that decides this, not two that could drift apart.
-  if (unacknowledgedLaundryOn(row.machineId)) {
-    return { ok: false, status: 409, message: "move the previous resident's laundry out first" };
+  const laundry = unacknowledgedLaundryOn(row.machineId);
+  if (laundry) {
+    if (laundry.personName !== personName) {
+      return { ok: false, status: 409, message: "move the previous resident's laundry out first" };
+    }
+    // Their own finished wash: starting again means they have taken it out,
+    // so it can't block them, and nobody is asked to move it.
+    markDrumCollected(laundry);
   }
 
   db.update(reservations).set({ status: "running", startedAt: clockNow() }).where(eq(reservations.id, row.id)).run();
@@ -903,6 +909,14 @@ function sweepStaleLaundry(machineId: number, carriedId: number): void {
     .run();
 }
 
+// The owner has taken their laundry out of the machine: this record is
+// finished, and the machine is empty (the same rule as a pick-up, so older
+// stale rows on it can't bring the prompt back).
+function markDrumCollected(laundry: Reservation): void {
+  db.update(reservations).set({ pickedUpAt: clockNow(), notice: null }).where(eq(reservations.id, laundry.id)).run();
+  sweepStaleLaundry(laundry.machineId, laundry.id);
+}
+
 export interface HandoffSuggestion {
   machineId: number;
   machineLabel: string;
@@ -958,6 +972,7 @@ export function suggestedHandoff(claimReservationId: number, personName: string)
 
   const laundry = unacknowledgedLaundryOn(claim.machineId);
   if (!laundry) return undefined;
+  if (laundry.personName === personName) return undefined; // their own laundry never goes to the drop-off
 
   const machine = db.select().from(machines).where(eq(machines.id, claim.machineId)).get();
   if (!machine) return undefined;
@@ -1227,7 +1242,9 @@ export function acknowledgePickup(reservationId: number, personName: string): Ac
     return { ok: false, status: 409, message: "no pending pickup to acknowledge" };
   }
 
-  db.update(reservations).set({ pickedUpAt: clockNow(), notice: null }).where(eq(reservations.id, row.id)).run();
+  // Collected straight from the machine: the machine is empty now too.
+  if (row.pickupSpot == null) markDrumCollected(row);
+  else db.update(reservations).set({ pickedUpAt: clockNow(), notice: null }).where(eq(reservations.id, row.id)).run();
   logging.logEvent("laundry_pickup_acknowledged", { reservation: row.id, room: personName, spot: row.pickupSpot ?? "-" });
   return { ok: true };
 }

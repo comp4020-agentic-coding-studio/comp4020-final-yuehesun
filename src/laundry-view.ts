@@ -1489,6 +1489,7 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
 
       canHandoffOn[entry.id] = !!(entry.unclaimedLaundry && entry.unclaimedLaundry.canHandOff);
       isMyTurnOn[entry.id] = !!entry.isMyTurn;
+      myLaundryOn[entry.id] = entry.myLaundryReservation == null ? null : entry.myLaundryReservation;
 
       // plans/laundry-scan-gated-claim.md Stage 6.2: switched from
       // entry.isMine (true for ANY active reservation on this machine —
@@ -1577,10 +1578,13 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // which machine's laundry is being carried — surviving a page reload
   // mid-carry, unlike the old pendingHandoffSpot client variable.
   var carryingFromMachine = null;
+  var myShelved = []; // this resident's own laundry someone moved to a shelf: [{ reservationId, spot }]
+  var myLaundryOn = {}; // machine id -> reservation id of this resident's own finished laundry still inside it
   function applyBasketState(data) {
     setBasketVisible(!!data.myBasketVisible);
     setBasketKind(data.basketKind === "other" ? "other" : "own");
     carryingFromMachine = data.carryingFromMachine == null ? null : data.carryingFromMachine;
+    myShelved = data.myShelved || [];
   }
 
   function refetchMachineState() {
@@ -1961,7 +1965,26 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   // notifies the owner. Nothing is placed from the 3D scene itself. This
   // replaces the old browser-side guess ("Shelf X looks free"), which
   // could disagree with what the server later assigned.
+  function collectLaundry(reservationIds, successHtml) {
+    Promise.all(reservationIds.map(function (id) {
+      return fetch("/reservations/" + id + "/acknowledge-pickup", { method: "POST" }).then(function (res) { return res.ok; });
+    })).then(function (results) {
+      refetchMachineState();
+      showExamineOverlay(results.every(Boolean) ? successHtml : "<h3>Couldn't collect your laundry</h3><p>Something went wrong — try again.</p>");
+    }).catch(function () {
+      showExamineOverlay("<h3>Couldn't collect your laundry</h3><p>Something went wrong — try again.</p>");
+    });
+  }
+
   function openDropoffExamine() {
+    if (carryingFromMachine == null && myShelved.length > 0) {
+      var spots = myShelved.map(function (s) { return s.spot; }).join(", ");
+      collectLaundry(
+        myShelved.map(function (s) { return s.reservationId; }),
+        "<h3>Drop-off table</h3><p>You collected your laundry from slot " + spots + ".</p>"
+      );
+      return;
+    }
     if (carryingFromMachine == null) {
       showExamineOverlay(
         "<h3>Drop-off table</h3>" +
@@ -2036,7 +2059,11 @@ import { clone as cloneSkinned } from "${THREE_BASE}/examples/jsm/utils/Skeleton
   function handleInteract() {
     if (!highlighted) return;
     if (highlighted.kind === "machine") {
-      if (isMyTurnOn[highlighted.id]) {
+      if (myLaundryOn[highlighted.id] != null) {
+        // The owner of the finished laundry in this machine just takes it
+        // out: no pick-up, no drop-off, and the system is done with them.
+        collectLaundry([myLaundryOn[highlighted.id]], "<h3>Laundry collected</h3><p>You collected your finished laundry.</p>");
+      } else if (isMyTurnOn[highlighted.id]) {
         openMachineExamine(highlighted.id);
       } else if (carryingFromMachine === highlighted.id) {
         // Already picked up and mid-carry — nothing left to pick up here

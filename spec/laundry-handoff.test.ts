@@ -723,5 +723,82 @@ it("keeps the carrier's spot card after their own wash starts, and the spot can 
   await acknowledgePickup(owner, ownerReservation);
   const finishRes = await fetch(new URL(`/reservations/${nextReservation}/finish`, baseUrl), { method: "POST", headers: { cookie: next }, redirect: "manual" });
   expect(finishRes.status).toBeLessThan(400);
+  // Collected, so this wash's own laundry doesn't sit in the shared machine
+  // and block the next test's start().
+  await acknowledgePickup(next, nextReservation);
+});
+
+// plans/laundry-dropoff-spot-confirm.md follow-up: the owner collecting their
+// own laundry, from the shelf and from the machine.
+async function fullState(cookie: string): Promise<{
+  occupiedSpots: string[];
+  myShelved: { reservationId: number; spot: string }[];
+  myBasketVisible: boolean;
+  machines: { id: number; unclaimedLaundry?: { room: string; canHandOff: boolean }; myLaundryReservation?: number }[];
+}> {
+  const res = await fetch(new URL("/laundry/machines-state", baseUrl), { headers: { cookie } });
+  return res.json();
+}
+
+it("lets only the owner collect shelved laundry, which frees the spot", async () => {
+  const { owner, ownerReservation, next, nextReservation } = await laundryAndClaimedNext();
+  const { spot } = await pickUpAndPlace(next, MACHINE_ID);
+
+  const before = await fullState(owner);
+  expect(before.myShelved, "the owner is told what's theirs on the shelf").toEqual([{ reservationId: ownerReservation, spot }]);
+  expect(before.occupiedSpots).toContain(spot);
+  expect((await fullState(next)).myShelved, "the carrier has nothing of their own there").toEqual([]);
+
+  expect((await acknowledgePickup(next, ownerReservation)).status, "nobody else can collect it").toBeGreaterThanOrEqual(400);
+  expect((await fullState(owner)).occupiedSpots).toContain(spot);
+
+  expect((await acknowledgePickup(owner, ownerReservation)).status).toBeLessThan(400);
+  const after = await fullState(owner);
+  expect(after.occupiedSpots, "collecting frees the spot").not.toContain(spot);
+  expect(after.myShelved).toEqual([]);
+
   await cleanupReservation(baseUrl, next, nextReservation);
+});
+
+it("lets the owner collect from their own machine: no pick-up, and the machine is empty for the next room", async () => {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const next = await identityCookie(baseUrl, uniqueRoom());
+  const ownerReservation = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, ownerReservation);
+  const nextReservation = await join(baseUrl, next, MACHINE_ID);
+  await scan(baseUrl, next, MACHINE_ID);
+  await claim(baseUrl, next, nextReservation);
+
+  const ownerView = (await fullState(owner)).machines.find((m) => m.id === MACHINE_ID);
+  expect(ownerView?.myLaundryReservation).toBe(ownerReservation);
+  expect(ownerView?.unclaimedLaundry?.canHandOff, "the owner is never offered a pick-up").toBe(false);
+  expect((await fullState(next)).machines.find((m) => m.id === MACHINE_ID)?.myLaundryReservation).toBeUndefined();
+
+  expect((await acknowledgePickup(owner, ownerReservation)).status).toBeLessThan(400);
+
+  const nextView = (await fullState(next)).machines.find((m) => m.id === MACHINE_ID);
+  expect(nextView?.unclaimedLaundry, "the machine is empty once its owner collects").toBeUndefined();
+  expect(await myStatusHtml(next), "nothing left to move").not.toContain("Where did you put");
+  expect((await fullState(owner)).myBasketVisible, "and the system is done with the owner").toBe(false);
+
+  await cleanupReservation(baseUrl, next, nextReservation);
+});
+
+it("doesn't let a resident's own finished laundry block their next wash on that machine", async () => {
+  const owner = await identityCookie(baseUrl, uniqueRoom());
+  const first = await join(baseUrl, owner, MACHINE_ID);
+  await startAndFinish(owner, first);
+  const second = await join(baseUrl, owner, MACHINE_ID);
+  await scan(baseUrl, owner, MACHINE_ID);
+  await claim(baseUrl, owner, second);
+
+  expect((await fullState(owner)).machines.find((m) => m.id === MACHINE_ID)?.unclaimedLaundry?.canHandOff).toBe(false);
+  expect(await myStatusHtml(owner), "they are never asked to move their own laundry").not.toContain("Where did you put");
+
+  const startRes = await fetch(new URL(`/reservations/${second}/start`, baseUrl), { method: "POST", headers: { cookie: owner }, redirect: "manual" });
+  expect(startRes.status, "their own laundry can't block them").toBeLessThan(400);
+
+  const finishRes = await fetch(new URL(`/reservations/${second}/finish`, baseUrl), { method: "POST", headers: { cookie: owner }, redirect: "manual" });
+  expect(finishRes.status).toBeLessThan(400);
+  await acknowledgePickup(owner, second);
 });

@@ -179,9 +179,13 @@ app.get("/laundry/machines-state", (c) => {
       unclaimedLaundry: unclaimed
         ? {
             room: unclaimed.personName,
-            canHandOff: front?.person === identity && (front.status === "waiting" || front.status === "claimed"),
+            // Never offered on the viewer's own laundry: they just collect it.
+            canHandOff: unclaimed.personName !== identity && front?.person === identity && (front.status === "waiting" || front.status === "claimed"),
           }
         : undefined,
+      // plans/laundry-dropoff-spot-confirm.md: the viewer's own finished
+      // laundry still in this machine, so interacting with it collects it.
+      myLaundryReservation: unclaimed?.personName === identity ? unclaimed.reservationId : undefined,
     };
   });
   // 8.4a: a basket is "carried" whenever the viewer has a reservation not
@@ -211,6 +215,9 @@ app.get("/laundry/machines-state", (c) => {
     basketKind: carrying != null ? "other" : "own",
     carryingFromMachine: carrying?.machineId,
     occupiedSpots,
+    // The viewer's own laundry someone moved to a shelf, so interacting with
+    // the shelf collects it and frees the spot.
+    myShelved: doneMine.filter((d) => d.pickupSpot != null).map((d) => ({ reservationId: d.reservationId, spot: d.pickupSpot })),
   });
 });
 
