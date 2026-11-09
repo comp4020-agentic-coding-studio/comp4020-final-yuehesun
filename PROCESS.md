@@ -19,7 +19,7 @@ The first step was settling on a topic and a design plan. The agent first
 suggested three generic ideas and a co-op-game direction, all rejected
 ([`25bf1ab`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/25bf1ab)).
 In the end I started from a pain point in my own life, the time wasted
-queueing for the laundry room in my residence. At first the agent couldn't write a 令人满意的plan either. Only once I had worked out the real scenario myself and explained
+queueing for the laundry room in my residence. At first the agent couldn't write a satisfactory plan either. Only once I had worked out the real scenario myself and explained
 it step by step did the plan start to match what I expected
 ([`1323937`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-yuehesun/commit/1323937),
 `docs/adr/0001-app-concept.md`). As the work went on, the division of labour
